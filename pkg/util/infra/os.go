@@ -23,8 +23,8 @@ func GetTimezone() (string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(cmd.Output()))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "Timezone=") {
-			tz := strings.TrimPrefix(line, "Timezone=")
+		if after, ok := strings.CutPrefix(line, "Timezone="); ok {
+			tz := after
 			return tz, nil
 		}
 	}

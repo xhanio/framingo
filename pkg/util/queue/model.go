@@ -1,6 +1,13 @@
 package queue
 
-import "xhanio/framingo/pkg/types/common"
+import (
+	"io"
+	"xhanio/framingo/pkg/types/common"
+)
+
+var (
+	_ io.ReadWriter = (DoubleBufferQueue)(nil)
+)
 
 type PriorityItem interface {
 	common.Unique
@@ -40,3 +47,11 @@ type Queue[T any] interface {
 	MustShift() T
 	ShiftN(n int) ([]T, error)
 }
+
+type DoubleBufferQueueG[T any] interface {
+	Write(p []T) (int, error)
+	Read(p []T) (int, error)
+	io.Closer
+}
+
+type DoubleBufferQueue = DoubleBufferQueueG[byte]
