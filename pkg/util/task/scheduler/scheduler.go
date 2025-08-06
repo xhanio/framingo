@@ -199,8 +199,8 @@ func (s *scheduler) Start(ctx context.Context) error {
 				// cancel all currently executing tasks
 				s.el.RLock()
 				defer s.el.RUnlock()
-				for _, je := range s.executing {
-					_ = je.Stop(false)
+				for _, te := range s.executing {
+					_ = te.Stop(false)
 				}
 				s.log.Infof("stopped executing tasks")
 				return
@@ -223,11 +223,11 @@ func (s *scheduler) Start(ctx context.Context) error {
 						<-s.workers
 					}(plan)
 					s.log.Debugf("plan of task %s received", plan.Task.ID())
-					je := executor.New(plan.Task, plan.Opts...)
+					te := executor.New(plan.Task, plan.Opts...)
 					s.el.Lock()
-					s.executing[plan.Key()] = je
+					s.executing[plan.Key()] = te
 					s.el.Unlock()
-					_ = je.Start(plan.Ctx)
+					_ = te.Start(plan.Ctx)
 				}()
 			}
 		}
@@ -250,8 +250,8 @@ func (s *scheduler) Stop(wait bool) error {
 func (s *scheduler) Stats(id string) *executor.Stats {
 	s.el.RLock()
 	defer s.el.RUnlock()
-	if je, ok := s.executing[id]; ok {
-		return je.Stats()
+	if te, ok := s.executing[id]; ok {
+		return te.Stats()
 	}
 	return nil
 }

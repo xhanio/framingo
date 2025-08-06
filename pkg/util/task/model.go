@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"xhanio/framingo/pkg/util/errors"
 	"xhanio/framingo/pkg/util/log"
 
 	"k8s.io/apimachinery/pkg/labels"
@@ -16,6 +17,12 @@ var (
 )
 
 type Func func(ctx Context) error
+
+func Wrap(fn func(context.Context) error) Func {
+	return func(jc Context) error {
+		return errors.Wrap(fn(jc.Context()))
+	}
+}
 
 type Context interface {
 	ID() string

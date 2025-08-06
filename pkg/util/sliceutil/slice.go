@@ -1,14 +1,11 @@
 package sliceutil
 
+import "slices"
+
 // This function checks whether the first element is present in the subsequent elements
 // It has a time complexity of O(n)
 func In[T comparable](element T, elements ...T) bool {
-	for _, e := range elements {
-		if e == element {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(elements, element)
 }
 
 // This function returns the first non-default element in the elements
@@ -78,31 +75,31 @@ func Copy[T any](source []T) []T {
 	return target
 }
 
-func Diff[T comparable](a []T, b []T) ([]T, []T) {
-	am := make(map[T]int)
-	bm := make(map[T]int)
-	for _, item := range a {
-		am[item]++
+func Changes[T comparable](from []T, to []T) ([]T, []T) {
+	fromMap := make(map[T]int)
+	toMap := make(map[T]int)
+	for _, item := range from {
+		fromMap[item]++
 	}
-	for _, item := range b {
-		bm[item]++
+	for _, item := range to {
+		toMap[item]++
 	}
-	var toCreate, toDelete []T
-	for item, ac := range am {
-		bc := bm[item]
-		if ac > bc {
-			for i := 0; i < ac-bc; i++ {
-				toCreate = append(toCreate, item)
+	var toAdd, toRemove []T
+	for item, toCount := range toMap {
+		fromCount := fromMap[item]
+		if toCount > fromCount {
+			for i := 0; i < toCount-fromCount; i++ {
+				toAdd = append(toAdd, item)
 			}
 		}
 	}
-	for item, bc := range bm {
-		ac := am[item]
-		if bc > ac {
-			for i := 0; i < bc-ac; i++ {
-				toDelete = append(toDelete, item)
+	for item, fromCount := range fromMap {
+		toCount := toMap[item]
+		if fromCount > toCount {
+			for i := 0; i < fromCount-toCount; i++ {
+				toRemove = append(toRemove, item)
 			}
 		}
 	}
-	return toCreate, toDelete
+	return toAdd, toRemove
 }
