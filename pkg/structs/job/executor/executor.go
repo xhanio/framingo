@@ -1,0 +1,119 @@
+package executor
+
+import (
+	"context"
+	"time"
+
+	"github.com/avast/retry-go/v4"
+
+	"xhanio/framingo/pkg/structs/job"
+	"xhanio/framingo/pkg/utils/errors"
+)
+
+var _ Executor = (*executor)(nil)
+
+type executor struct {
+	j        job.Job
+	once     bool
+	timeout  *timeoutOptions
+	retry    *retryOptions
+	cooldown *cooldownOptions
+}
+
+func New(j job.Job, opts ...Option) Executor {
+	return newExecuter(j, opts...)
+}
+
+func newExecuter(j job.Job, opts ...Option) *executor {
+	e := &executor{
+		j: j,
+	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
+}
+
+func (e *executor) Reset() {
+	if e.retry != nil {
+		e.retry.Lock()
+		e.retry.attempted = 0
+		e.retry.errs = make([]error, e.retry.Attempts)
+		e.retry.Unlock()
+	}
+	if e.cooldown != nil {
+		e.cooldown.Lock()
+		e.cooldown.endedAt = time.Time{}
+		e.cooldown.Unlock()
+	}
+}
+
+func (e *executor) run(ctx context.Context) error {
+	if e.timeout != nil {
+		timeoutctx, cancel := context.WithTimeout(ctx, e.timeout.Duration)
+		defer cancel()
+		e.j.Start(timeoutctx)
+	} else {
+		e.j.Start(ctx)
+	}
+	e.j.Wait()
+	return e.j.Err()
+}
+
+func (e *executor) Start(ctx context.Context) error {
+	if e.j.IsDone() {
+		if e.once {
+			return errors.Conflict.Newf("job can only start once")
+		}
+		if e.cooldown != nil && time.Now().Before(e.cooldown.endedAt) {
+			return errors.Conflict.Newf("job is still in cooldown, %s left", time.Until(e.cooldown.endedAt).Round(time.Second).String())
+		}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !e.once && e.retry != nil {
+		// with retries
+		return retry.Do(
+			func() error {
+				return e.run(ctx)
+			},
+			retry.Attempts(e.retry.Attempts),
+			retry.Delay(e.retry.Delay),
+			retry.OnRetry(func(n uint, err error) {
+				e.retry.attempted = n + 1
+				e.retry.errs[n] = err
+			}),
+		)
+	}
+	return e.run(ctx)
+}
+
+func (e *executor) Stop(wait bool) error {
+	canceling := e.j.Cancel()
+	if canceling && wait {
+		e.j.Wait()
+	}
+	return nil
+}
+
+func (e *executor) isCooling() (time.Duration, bool) {
+	if e.cooldown == nil {
+		return 0, false
+	}
+	e.cooldown.RLock()
+	defer e.cooldown.RUnlock()
+	d := time.Until(e.cooldown.endedAt)
+	return d, d > 0
+}
+
+func (e *executor) Stats() *Stats {
+	cooldown, _ := e.isCooling()
+	stat := &Stats{
+		Cooldown: cooldown,
+	}
+	if e.retry != nil {
+		stat.Retries = e.retry.attempted
+	}
+	return stat
+}
