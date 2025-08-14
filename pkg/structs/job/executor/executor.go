@@ -6,8 +6,8 @@ import (
 
 	"github.com/avast/retry-go/v4"
 
-	"xhanio/framingo/pkg/structs/job"
-	"xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/structs/job"
+	"github.com/xhanio/framingo/pkg/utils/errors"
 )
 
 var _ Executor = (*executor)(nil)

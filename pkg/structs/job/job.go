@@ -9,8 +9,8 @@ import (
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"xhanio/framingo/pkg/utils/errors"
-	"xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
 var _ Job = (*job)(nil)

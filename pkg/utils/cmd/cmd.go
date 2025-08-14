@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/errors"
 )
 
 const ErrorCodeCmd string = "CMD_ERROR"

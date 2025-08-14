@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"xhanio/framingo/pkg/structs/job"
-	"xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/structs/job"
+	"github.com/xhanio/framingo/pkg/utils/errors"
 )
 
 func TestJobRetry(t *testing.T) {

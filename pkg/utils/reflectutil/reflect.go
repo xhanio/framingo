@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"xhanio/framingo/pkg/types/common"
-	"xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/errors"
 )
 
 const tagKey = "scan"

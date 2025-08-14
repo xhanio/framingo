@@ -61,6 +61,7 @@ func (l *logger) With(args ...interface{}) Logger {
 	}
 }
 
+func (l *logger) Sugared() *zap.SugaredLogger                 { return l.core }
 func (l *logger) Level() zapcore.Level                        { return l.level }
 func (l *logger) Debug(args ...interface{})                   { l.core.Debug(args...) }
 func (l *logger) Info(args ...interface{})                    { l.core.Info(args...) }

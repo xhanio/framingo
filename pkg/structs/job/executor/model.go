@@ -2,7 +2,8 @@ package executor
 
 import (
 	"time"
-	"xhanio/framingo/pkg/types/common"
+
+	"github.com/xhanio/framingo/pkg/types/common"
 )
 
 type Stats struct {

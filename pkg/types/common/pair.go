@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"xhanio/framingo/pkg/utils/strutil"
+	"github.com/xhanio/framingo/pkg/utils/strutil"
 )
 
 var _ Pair[string, string] = (*pair[string, string])(nil)

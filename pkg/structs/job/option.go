@@ -1,7 +1,7 @@
 package job
 
 import (
-	"xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
 type Option func(*job)

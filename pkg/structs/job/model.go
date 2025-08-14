@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"xhanio/framingo/pkg/utils/errors"
-	"xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/log"
 
 	"k8s.io/apimachinery/pkg/labels"
 )

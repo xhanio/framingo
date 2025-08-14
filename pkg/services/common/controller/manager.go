@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"xhanio/framingo/pkg/structs/graph"
-	"xhanio/framingo/pkg/types/common"
-	"xhanio/framingo/pkg/utils/errors"
-	"xhanio/framingo/pkg/utils/log"
-	"xhanio/framingo/pkg/utils/printutil"
-	"xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/structs/graph"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/printutil"
+	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 type manager struct {

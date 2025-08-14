@@ -9,9 +9,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"xhanio/framingo/pkg/types/common"
-	"xhanio/framingo/pkg/utils/reflectutil"
-	"xhanio/framingo/pkg/utils/sliceutil"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 )
 
 const tagKey = "print"

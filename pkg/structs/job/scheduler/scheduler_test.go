@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"xhanio/framingo/pkg/structs/job"
-	"xhanio/framingo/pkg/structs/job/executor"
-	"xhanio/framingo/pkg/utils/errors"
-	"xhanio/framingo/pkg/utils/log"
-	"xhanio/framingo/pkg/utils/strutil"
+	"github.com/xhanio/framingo/pkg/structs/job"
+	"github.com/xhanio/framingo/pkg/structs/job/executor"
+	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/strutil"
 )
 
 func newTestJob(id string, d time.Duration, fail bool) job.Job {

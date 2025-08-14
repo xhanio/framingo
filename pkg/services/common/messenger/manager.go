@@ -3,9 +3,9 @@ package messenger
 import (
 	"path"
 
-	"xhanio/framingo/pkg/types/common"
-	"xhanio/framingo/pkg/utils/log"
-	"xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 type manager struct {

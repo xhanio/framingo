@@ -6,9 +6,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
-	"xhanio/framingo/pkg/structs/job"
-	"xhanio/framingo/pkg/structs/job/executor"
-	"xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/structs/job"
+	"github.com/xhanio/framingo/pkg/structs/job/executor"
+	"github.com/xhanio/framingo/pkg/types/common"
 )
 
 type Manager interface {

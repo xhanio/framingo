@@ -1,12 +1,14 @@
 package log
 
 import (
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 var Default = New(WithLevel(-1))
 
 type Logger interface {
+	Sugared() *zap.SugaredLogger
 	Level() zapcore.Level
 
 	Debug(args ...interface{})

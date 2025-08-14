@@ -5,8 +5,8 @@ import (
 
 	"github.com/google/btree"
 
-	"xhanio/framingo/pkg/utils/errors"
-	"xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
 type priority[T PriorityItem] struct {

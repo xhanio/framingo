@@ -2,7 +2,8 @@ package queue
 
 import (
 	"io"
-	"xhanio/framingo/pkg/types/common"
+
+	"github.com/xhanio/framingo/pkg/types/common"
 )
 
 var (

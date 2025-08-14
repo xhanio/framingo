@@ -1,6 +1,6 @@
 package messenger
 
-import "xhanio/framingo/pkg/types/common"
+import "github.com/xhanio/framingo/pkg/types/common"
 
 type Manager interface {
 	common.Service

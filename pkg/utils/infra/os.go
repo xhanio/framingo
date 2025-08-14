@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"xhanio/framingo/pkg/utils/cmd"
-	"xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/cmd"
+	"github.com/xhanio/framingo/pkg/utils/errors"
 )
 
 var (

@@ -8,13 +8,13 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"xhanio/framingo/pkg/structs/job/executor"
-	"xhanio/framingo/pkg/structs/queue"
-	"xhanio/framingo/pkg/types/common"
-	"xhanio/framingo/pkg/utils/errors"
-	"xhanio/framingo/pkg/utils/infra"
-	"xhanio/framingo/pkg/utils/log"
-	"xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/structs/job/executor"
+	"github.com/xhanio/framingo/pkg/structs/queue"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/infra"
+	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 var exiting = &Plan{}

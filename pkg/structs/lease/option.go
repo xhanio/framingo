@@ -1,6 +1,6 @@
 package lease
 
-import "xhanio/framingo/pkg/utils/log"
+import "github.com/xhanio/framingo/pkg/utils/log"
 
 type LeaseOption func(*lease)
 

@@ -3,9 +3,9 @@ package scheduler
 import (
 	"context"
 
-	"xhanio/framingo/pkg/structs/job"
-	"xhanio/framingo/pkg/structs/job/executor"
-	"xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/structs/job"
+	"github.com/xhanio/framingo/pkg/structs/job/executor"
+	"github.com/xhanio/framingo/pkg/types/common"
 )
 
 var (

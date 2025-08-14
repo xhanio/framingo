@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"xhanio/framingo/pkg/structs/buffer"
+	"github.com/xhanio/framingo/pkg/structs/buffer"
 )
 
 // buffered[T] double buffer buffered using object pool

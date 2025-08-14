@@ -1,10 +1,10 @@
 package graph
 
 import (
-	"xhanio/framingo/pkg/structs/queue"
-	"xhanio/framingo/pkg/types/common"
-	"xhanio/framingo/pkg/utils/errors"
-	"xhanio/framingo/pkg/utils/maputil"
+	"github.com/xhanio/framingo/pkg/structs/queue"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/maputil"
 )
 
 type graph[T common.Named] struct {

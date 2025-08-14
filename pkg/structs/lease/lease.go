@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
 const (

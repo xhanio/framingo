@@ -3,8 +3,8 @@ package controller
 import (
 	"time"
 
-	"xhanio/framingo/pkg/types/common"
-	"xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/errors"
 )
 
 type Manager interface {

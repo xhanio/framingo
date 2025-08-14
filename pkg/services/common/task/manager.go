@@ -11,14 +11,14 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
-	"xhanio/framingo/pkg/structs/job"
-	"xhanio/framingo/pkg/structs/job/executor"
-	"xhanio/framingo/pkg/structs/job/scheduler"
-	"xhanio/framingo/pkg/types/common"
-	"xhanio/framingo/pkg/utils/errors"
-	"xhanio/framingo/pkg/utils/log"
-	"xhanio/framingo/pkg/utils/printutil"
-	"xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/structs/job"
+	"github.com/xhanio/framingo/pkg/structs/job/executor"
+	"github.com/xhanio/framingo/pkg/structs/job/scheduler"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/printutil"
+	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 const timeFormat = "2006-01-02 15:04:05.00"

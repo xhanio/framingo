@@ -1,6 +1,6 @@
 package task
 
-import "xhanio/framingo/pkg/structs/job"
+import "github.com/xhanio/framingo/pkg/structs/job"
 
 type Option func(*manager)
 
