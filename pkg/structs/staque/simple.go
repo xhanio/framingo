@@ -1,4 +1,4 @@
-package queue
+package staque
 
 import (
 	"encoding/json"
@@ -15,12 +15,12 @@ type simple[T any] struct {
 
 // create a new simple.
 // max size <= 0 means no size limit.
-func New[T any](maxSize int) Queue[T] {
-	return newQueue[T](maxSize)
+func NewSimple[T any](maxSize int) Simple[T] {
+	return newSimple[T](maxSize)
 }
 
 // test purpose
-func newQueue[T any](maxSize int) *simple[T] {
+func newSimple[T any](maxSize int) *simple[T] {
 	if maxSize < 0 {
 		maxSize = 0
 	}

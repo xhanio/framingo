@@ -9,7 +9,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/xhanio/framingo/pkg/structs/job/executor"
-	"github.com/xhanio/framingo/pkg/structs/queue"
+	"github.com/xhanio/framingo/pkg/structs/staque"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/errors"
 	"github.com/xhanio/framingo/pkg/utils/infra"
@@ -31,7 +31,7 @@ type scheduler struct {
 	cl    *sync.RWMutex // lock for crons
 	crons map[string]cron.EntryID
 
-	pq   queue.PriorityQueue[*Plan]
+	pq   staque.Priority[*Plan]
 	pipe chan *Plan
 
 	concurrent int
@@ -71,10 +71,10 @@ func newScheduler(opts ...Option) *scheduler {
 		cron.WithLocation(s.tz),
 		cron.WithParser(cron.NewParser(cron.SecondOptional|cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow)),
 	)
-	s.pq = queue.NewPriority(
-		queue.WithLessFunc(priorityFunc),
-		queue.WithLogger[*Plan](s.log),
-		queue.BlockIfEmpty[*Plan](),
+	s.pq = staque.NewPriority(
+		staque.WithLessFunc(priorityFunc),
+		staque.WithLogger[*Plan](s.log),
+		staque.BlockIfEmpty[*Plan](),
 	)
 	s.pipe = make(chan *Plan, s.concurrent)
 	s.workers = make(chan struct{}, s.concurrent)
@@ -158,9 +158,9 @@ func (s *scheduler) Start(ctx context.Context) error {
 				continue
 			}
 			if plan.Exclusive {
-				s.log.Debug("wait for all other plans to complete...")
+				s.log.Debugf("plan %s wait for all other plans to complete...", plan.Key())
 				s.ew.Wait()
-				s.log.Debugf("continue on current exclusive plan %s...", plan.Job.ID())
+				s.log.Debugf("continue on current exclusive plan %s...", plan.Key())
 			}
 			select {
 			case <-s.ctx.Done():
@@ -170,11 +170,12 @@ func (s *scheduler) Start(ctx context.Context) error {
 				s.log.Infof("stopped fetching execution plans")
 				return
 			case s.pipe <- plan:
+				s.log.Warnf("add 1 to ew for %s", plan.Key())
 				s.ew.Add(1)
 			}
 			if plan.Exclusive {
 				// block all other plans from being popped
-				s.log.Debugf("wait for current exclusive plan %s to complete...", plan.Job.ID())
+				s.log.Debugf("wait for current exclusive plan %s to complete...", plan.Key())
 				s.ew.Wait()
 				s.log.Debug("continue popping other plans...")
 			}
@@ -206,28 +207,31 @@ func (s *scheduler) Start(ctx context.Context) error {
 				return
 			case s.workers <- struct{}{}:
 				go func() {
-					defer s.ew.Done()
 					plan := <-s.pipe
+					defer func(plan *Plan) {
+						s.log.Errorf("release 1 from ew for %s", plan.Key())
+						s.ew.Done() // unblock plan queue before releasing the worker
+						<-s.workers
+					}(plan)
 					if !plan.IsValid() {
 						return
 					}
 					defer func(plan *Plan) {
 						s.el.Lock()
-						delete(s.executing, plan.Job.ID())
+						delete(s.executing, plan.Key())
 						s.el.Unlock()
-						if plan.Job.Err() != nil {
-							s.log.Debugf("job %s ended with err: %s", plan.Job.ID(), plan.Job.Err())
-						} else {
-							s.log.Debugf("job %s completed succseefully", plan.Job.ID())
-						}
-						<-s.workers
 					}(plan)
-					s.log.Debugf("plan of job %s received", plan.Job.ID())
+					s.log.Debugf("plan %s received", plan.Key())
 					te := executor.New(plan.Job, plan.Opts...)
 					s.el.Lock()
 					s.executing[plan.Key()] = te
 					s.el.Unlock()
-					_ = te.Start(plan.Ctx)
+					err := te.Start(plan.Ctx, plan.Params)
+					if err != nil {
+						s.log.Debugf("job %s ended with err: %s", plan.Key(), err)
+					} else {
+						s.log.Debugf("job %s completed successfully", plan.Key())
+					}
 				}()
 			}
 		}

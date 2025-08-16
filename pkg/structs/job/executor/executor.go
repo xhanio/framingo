@@ -48,19 +48,23 @@ func (e *executor) Reset() {
 	}
 }
 
-func (e *executor) run(ctx context.Context) error {
+func (e *executor) run(ctx context.Context, params any) error {
+	var started bool
 	if e.timeout != nil {
 		timeoutctx, cancel := context.WithTimeout(ctx, e.timeout.Duration)
 		defer cancel()
-		e.j.Start(timeoutctx)
+		started = e.j.Run(timeoutctx, params)
 	} else {
-		e.j.Start(ctx)
+		started = e.j.Run(ctx, params)
+	}
+	if !started {
+		return errors.Conflict.Newf("job %s is still pending", e.j.ID())
 	}
 	e.j.Wait()
 	return e.j.Err()
 }
 
-func (e *executor) Start(ctx context.Context) error {
+func (e *executor) Start(ctx context.Context, params any) error {
 	if e.j.IsDone() {
 		if e.once {
 			return errors.Conflict.Newf("job can only start once")
@@ -76,7 +80,7 @@ func (e *executor) Start(ctx context.Context) error {
 		// with retries
 		return retry.Do(
 			func() error {
-				return e.run(ctx)
+				return e.run(ctx, params)
 			},
 			retry.Attempts(e.retry.Attempts),
 			retry.Delay(e.retry.Delay),
@@ -86,7 +90,7 @@ func (e *executor) Start(ctx context.Context) error {
 			}),
 		)
 	}
-	return e.run(ctx)
+	return e.run(ctx, params)
 }
 
 func (e *executor) Stop(wait bool) error {

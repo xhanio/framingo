@@ -1,7 +1,7 @@
 package graph
 
 import (
-	"github.com/xhanio/framingo/pkg/structs/queue"
+	"github.com/xhanio/framingo/pkg/structs/staque"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/errors"
 	"github.com/xhanio/framingo/pkg/utils/maputil"
@@ -44,7 +44,7 @@ func (g *graph[T]) add(node T) {
 	}
 }
 
-func (g *graph[T]) dfs(v T, stack queue.Queue[T]) bool {
+func (g *graph[T]) dfs(v T, stack staque.Simple[T]) bool {
 	name := v.Name()
 	g.visited.Add(name)
 	g.exists.Add(name)
@@ -67,7 +67,7 @@ func (g *graph[T]) TopoSort() error {
 	g.visited = make(maputil.Set[string], len(g.nodes))
 	g.exists = make(maputil.Set[string], len(g.nodes))
 
-	stack := queue.New[T](len(g.nodes))
+	stack := staque.NewSimple[T](len(g.nodes))
 	for _, node := range g.nodes {
 		if !g.visited.Has(node.Name()) {
 			if g.dfs(node, stack) {

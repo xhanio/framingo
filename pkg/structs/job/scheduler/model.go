@@ -24,6 +24,7 @@ type Scheduler interface {
 type Plan struct {
 	Job       job.Job
 	Ctx       context.Context
+	Params    any
 	Schedule  string
 	Priority  int
 	Exclusive bool

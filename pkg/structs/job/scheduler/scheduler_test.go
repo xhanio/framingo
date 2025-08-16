@@ -20,18 +20,14 @@ func newTestJob(id string, d time.Duration, fail bool) job.Job {
 			select {
 			case <-tc.Context().Done():
 				if tc.Context().Err() == context.DeadlineExceeded {
-					log.Default.Debugf("job %s timed out", tc.ID())
 					return errors.DeadlineExceeded.Newf("job timed out")
 				} else {
-					log.Default.Debugf("job %s canceled", tc.ID())
 					return errors.Cancaled.Newf("job canceled")
 				}
 			case <-time.After(d):
 				if fail {
-					log.Default.Debugf("job %s failed", tc.ID())
 					return errors.Newf("job %s failed", tc.ID())
 				}
-				log.Default.Debugf("job %s completed", tc.ID())
 				return nil
 			}
 		}

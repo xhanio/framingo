@@ -24,8 +24,8 @@ type job struct {
 
 	sync.RWMutex // state lock
 	state        State
-	params       []any // input
-	result       any   // output
+	params       any // input
+	result       any // output
 	err          error
 	createdAt    time.Time
 	startedAt    time.Time
@@ -81,7 +81,7 @@ func (j *job) initialize() {
 	// j.sendEvent(JobActionUpdate)
 }
 
-func (j *job) Start(ctx context.Context) bool {
+func (j *job) Run(ctx context.Context, params any) bool {
 	j.RLock()
 	// return if job is running, or is done without running once or without cooldown.
 	if IsPending(j.state) {
@@ -122,10 +122,7 @@ func (j *job) Start(ctx context.Context) bool {
 		// initialize
 		j.initialize()
 		// set params
-		params := ctx.Value(ContextKeyParams)
-		if p, ok := params.([]any); ok {
-			j.params = p
-		}
+		j.params = params
 		j.Unlock()
 
 		j.ctx, j.cancel = context.WithCancel(ctx)
@@ -247,7 +244,7 @@ func (j *job) SetResult(result any) {
 	j.result = result
 }
 
-func (j *job) GetParams() []any {
+func (j *job) GetParams() any {
 	return j.params
 }
 

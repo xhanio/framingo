@@ -10,12 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-type contextKey string
-
-var (
-	ContextKeyParams = contextKey("_job_params")
-)
-
 type Func func(ctx Context) error
 
 func Wrap(fn func(context.Context) error) Func {
@@ -31,7 +25,7 @@ type Context interface {
 	Labels() labels.Set
 	SetProgress(progress float64)
 	SetResult(result any)
-	GetParams() []any
+	GetParams() any
 }
 
 type Job interface {
@@ -40,15 +34,15 @@ type Job interface {
 	CreatedAt() time.Time
 	StartedAt() time.Time
 	EndedAt() time.Time
+	Run(ctx context.Context, params any) bool
+	Wait()
+	Cancel() bool
+	Result() any
+	Err() error
 	State() State
 	Context() context.Context
 	Progress() float64
-	Err() error
-	Result() any
-	Start(ctx context.Context) bool
 	ExecutionTime() time.Duration
-	Wait()
-	Cancel() bool
 	IsExecuting() bool
 	IsDone() bool
 	IsState(state State) bool

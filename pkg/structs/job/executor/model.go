@@ -1,9 +1,8 @@
 package executor
 
 import (
+	"context"
 	"time"
-
-	"github.com/xhanio/framingo/pkg/types/common"
 )
 
 type Stats struct {
@@ -12,6 +11,7 @@ type Stats struct {
 }
 
 type Executor interface {
-	common.Daemon
+	Start(ctx context.Context, params any) error
+	Stop(wait bool) error
 	Stats() *Stats
 }

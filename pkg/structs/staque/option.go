@@ -1,4 +1,4 @@
-package queue
+package staque
 
 import (
 	"github.com/google/btree"

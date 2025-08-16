@@ -1,4 +1,4 @@
-package queue
+package staque
 
 import (
 	"encoding/json"
@@ -17,9 +17,9 @@ type B struct {
 
 func TestQueue(t *testing.T) {
 	data := make(map[string]any)
-	queueA := newQueue[*A](0)
+	queueA := newSimple[*A](0)
 	queueA.Push(&A{DataA: "aaa"})
-	queueB := newQueue[*B](0)
+	queueB := newSimple[*B](0)
 	queueB.Push(&B{DataB: 111})
 	data["A"] = queueA.data
 	data["B"] = queueB.data

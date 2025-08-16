@@ -1,4 +1,4 @@
-package queue
+package staque
 
 import (
 	"sync"
@@ -21,7 +21,7 @@ type priority[T PriorityItem] struct {
 }
 
 // New initializes an empty priority queue.
-func NewPriority[T PriorityItem](opts ...Option[T]) PriorityQueue[T] {
+func NewPriority[T PriorityItem](opts ...Option[T]) Priority[T] {
 	p := &priority[T]{
 		items: make(map[string]T),
 		lf:    DefaultLessFunc[T],
@@ -107,6 +107,36 @@ func (p *priority[T]) Pop() (T, error) {
 	}
 	delete(p.items, item.Key())
 	return item, nil
+}
+
+func (p *priority[T]) MustPop() T {
+	element, err := p.Pop()
+	if err != nil {
+		return *new(T)
+	}
+	return element
+}
+
+func (p *priority[T]) Shift() (T, error) {
+	p.Lock()
+	defer p.Unlock()
+	item, ok := p.tree.DeleteMin()
+	if !ok {
+		if p.blocking {
+			p.empty.Wait()
+		}
+		return *new(T), errors.Newf("failed to pop element: the queue is empty")
+	}
+	delete(p.items, item.Key())
+	return item, nil
+}
+
+func (p *priority[T]) MustShift() T {
+	element, err := p.Shift()
+	if err != nil {
+		return *new(T)
+	}
+	return element
 }
 
 func (p *priority[T]) Items() []T {

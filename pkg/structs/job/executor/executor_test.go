@@ -28,7 +28,7 @@ func TestJobRetry(t *testing.T) {
 
 	t.Logf("job id is %s", j.ID())
 	je := New(j, WithRetry(2, 1*time.Second))
-	err := je.Start(context.Background())
+	err := je.Start(context.Background(), nil)
 	if err == nil {
 		t.Fatal("failed job completed without error")
 	}
@@ -54,7 +54,7 @@ func TestJobTimedOut(t *testing.T) {
 	}))
 	t.Logf("job id is %s", j.ID())
 	je := New(j, WithTimeout(1*time.Second))
-	err := je.Start(context.Background())
+	err := je.Start(context.Background(), nil)
 	if err == nil || err.Error() != "job timed out" {
 		t.Fatal("job completed without error or with incorrect err message")
 	}
@@ -81,7 +81,7 @@ func TestJobCanceled(t *testing.T) {
 		<-time.After(2 * time.Second)
 		j.Cancel()
 	}()
-	err := je.Start(context.Background())
+	err := je.Start(context.Background(), nil)
 	if err == nil || !j.IsState(job.StateCanceled) {
 		t.Fatalf("job completed without error or with incorrect job state %s and error %s", j.State(), j.Err().Error())
 	}
