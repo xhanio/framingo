@@ -39,8 +39,8 @@ func newDoubleBufferQueue[T any](ctx context.Context, initialSize int, swapInter
 		ctx = context.Background()
 	}
 	q := &buffered[T]{
-		writeBuffer:  buffer.NewPooledBuffer[T](initialSize),
-		readBuffer:   buffer.NewPooledBuffer[T](initialSize),
+		writeBuffer:  buffer.NewPooledBuffer(initialSize, buffer.NewPool[T]()),
+		readBuffer:   buffer.NewPooledBuffer(initialSize, buffer.NewPool[T]()),
 		wg:           &sync.WaitGroup{},
 		swapInterval: swapInterval,
 		swapTicker:   time.NewTicker(swapInterval),

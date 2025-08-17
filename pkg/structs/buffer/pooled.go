@@ -12,13 +12,12 @@ type pooled[T any] struct {
 	closed bool // whether closed
 }
 
-func NewPooledBuffer[T any](size int) PooledBufferG[T] {
-	return newPooledBuffer[T](size)
+func NewPooledBuffer[T any](size int, pool PoolG[T]) PooledBufferG[T] {
+	return newPooledBuffer[T](size, pool)
 }
 
 // newPooledBuffer creates a pooled buffer
-func newPooledBuffer[T any](size int) *pooled[T] {
-	pool := NewPool[T]()
+func newPooledBuffer[T any](size int, pool PoolG[T]) *pooled[T] {
 	return &pooled[T]{
 		data:   pool.Get(size),
 		pool:   pool,

@@ -15,14 +15,16 @@ type pool[T any] struct {
 }
 
 // NewPool creates a new generic buffer pool instance
-func NewPool[T any]() PoolG[T] {
-	return newPool[T]()
+func NewPool[T any](sizes ...int) PoolG[T] {
+	return newPool[T](sizes...)
 }
 
 // newPool creates a buffer pool
-func newPool[T any]() *pool[T] {
-	// predefined buffer sizes: 1KB, 4KB, 16KB, 64KB, 256KB, 1MB
-	sizes := []int{1024, 4096, 16384, 65536, 262144, 1048576}
+func newPool[T any](sizes ...int) *pool[T] {
+	if len(sizes) == 0 {
+		// predefined buffer sizes: 1KB, 4KB, 16KB, 64KB, 256KB, 1MB
+		sizes = []int{1024, 4096, 16384, 65536, 262144, 1048576}
+	}
 
 	p := &pool[T]{
 		pools: make(map[int]*sync.Pool),
