@@ -222,7 +222,7 @@ func (m *manager) initAll() error {
 			if ok {
 				if err != nil {
 					failed++
-					errs = append(errs, errors.Wrapf(err, service.Name()))
+					errs = append(errs, errors.Wrapf(err, "service %s", service.Name()))
 				}
 				total++
 			}
@@ -255,7 +255,7 @@ func (m *manager) startAll() error {
 		if ok {
 			if err != nil {
 				failed++
-				errs = append(errs, errors.Wrapf(err, service.Name()))
+				errs = append(errs, errors.Wrapf(err, "service %s", service.Name()))
 			}
 			total++
 		}
@@ -288,7 +288,7 @@ func (m *manager) stopAll(wait bool) error {
 		if ok {
 			if err != nil {
 				failed++
-				errs = append(errs, errors.Wrapf(err, service.Name()))
+				errs = append(errs, errors.Wrapf(err, "service %s", service.Name()))
 			}
 			total++
 		}

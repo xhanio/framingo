@@ -14,6 +14,12 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
+func WithName(name string) Option {
+	return func(m *manager) {
+		m.name = name
+	}
+}
+
 func WithType(dbtype string) Option {
 	return func(m *manager) {
 		m.dbtype = Type(dbtype)

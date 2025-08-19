@@ -1,8 +1,6 @@
-package controller
+package example
 
-import (
-	"github.com/xhanio/framingo/pkg/utils/log"
-)
+import "github.com/xhanio/framingo/pkg/utils/log"
 
 type Option func(*manager)
 

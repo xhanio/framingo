@@ -170,7 +170,6 @@ func (s *scheduler) Start(ctx context.Context) error {
 				s.log.Infof("stopped fetching execution plans")
 				return
 			case s.pipe <- plan:
-				s.log.Warnf("add 1 to ew for %s", plan.Key())
 				s.ew.Add(1)
 			}
 			if plan.Exclusive {
@@ -209,17 +208,11 @@ func (s *scheduler) Start(ctx context.Context) error {
 				go func() {
 					plan := <-s.pipe
 					defer func(plan *Plan) {
-						s.log.Errorf("release 1 from ew for %s", plan.Key())
-						s.ew.Done() // unblock plan queue before releasing the worker
-						<-s.workers
-					}(plan)
-					if !plan.IsValid() {
-						return
-					}
-					defer func(plan *Plan) {
 						s.el.Lock()
 						delete(s.executing, plan.Key())
 						s.el.Unlock()
+						s.ew.Done() // unblock plan queue before releasing the worker
+						<-s.workers
 					}(plan)
 					s.log.Debugf("plan %s received", plan.Key())
 					te := executor.New(plan.Job, plan.Opts...)
