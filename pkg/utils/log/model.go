@@ -1,6 +1,7 @@
 package log
 
 import (
+	"github.com/xhanio/framingo/pkg/types/common"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -26,4 +27,5 @@ type Logger interface {
 	Fatalf(template string, args ...interface{})
 
 	With(args ...interface{}) Logger
+	By(caller common.Named) Logger
 }

@@ -33,6 +33,7 @@ func newManager(opts ...Option) *manager {
 	if m.log == nil {
 		m.log = log.Default
 	}
+	m.log = m.log.By(m)
 	return m
 }
 
@@ -41,10 +42,6 @@ func (m *manager) Name() string {
 		m.name = path.Join(reflectutil.Locate(m))
 	}
 	return m.name
-}
-
-func (m *manager) Dependencies() []common.Service {
-	return nil
 }
 
 func (m *manager) Publish(svc common.Named, topic string, e common.Event) {

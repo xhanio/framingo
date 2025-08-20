@@ -6,6 +6,9 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/pathutil"
 )
 
 type logger struct {
@@ -59,6 +62,10 @@ func (l *logger) With(args ...interface{}) Logger {
 	return &logger{
 		core: c,
 	}
+}
+
+func (l *logger) By(caller common.Named) Logger {
+	return l.With(zap.String("caller", pathutil.Short(caller.Name())))
 }
 
 func (l *logger) Sugared() *zap.SugaredLogger                 { return l.core }

@@ -52,6 +52,7 @@ func newManager(es common.EventSender, opts ...Option) *manager {
 	if m.log == nil {
 		m.log = log.Default
 	}
+	m.log = m.log.By(m)
 	m.tm = task.New(
 		task.MaxConcurrency(10),
 		task.WithLogger(m.log),

@@ -44,6 +44,7 @@ func newService(opts ...Option) *manager {
 	if m.log == nil {
 		m.log = log.Default
 	}
+	m.log = m.log.By(m)
 	return m
 }
 

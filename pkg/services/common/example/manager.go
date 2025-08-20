@@ -1,6 +1,8 @@
 package example
 
 import (
+	"context"
+	"io"
 	"path"
 
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -25,6 +27,7 @@ func newManager(opts ...Option) *manager {
 	if m.log == nil {
 		m.log = log.Default
 	}
+	m.log = m.log.By(m)
 	return m
 }
 
@@ -37,4 +40,19 @@ func (m *manager) Name() string {
 
 func (m *manager) Dependencies() []common.Service {
 	return nil
+}
+
+func (m *manager) Init() error {
+	return nil
+}
+
+func (m *manager) Start(ctx context.Context) error {
+	return nil
+}
+
+func (m *manager) Stop(wait bool) error {
+	return nil
+}
+
+func (m *manager) Info(w io.Writer, debug bool) {
 }

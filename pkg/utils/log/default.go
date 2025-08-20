@@ -3,6 +3,8 @@ package log
 import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/xhanio/framingo/pkg/types/common"
 )
 
 var Default = New(WithLevel(-1))
@@ -25,3 +27,4 @@ func Errorf(template string, args ...interface{}) { Default.Errorf(template, arg
 func Fatalf(template string, args ...interface{}) { Default.Fatalf(template, args...) }
 func Sugared() *zap.SugaredLogger                 { return Default.Sugared() }
 func With(args ...interface{}) Logger             { return Default.With(args...) }
+func By(caller common.Named) Logger               { return Default.By(caller) }

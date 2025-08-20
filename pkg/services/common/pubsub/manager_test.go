@@ -80,11 +80,6 @@ func TestManagerNew(t *testing.T) {
 	if m.Name() == "" {
 		t.Error("expected manager to have a name")
 	}
-
-	deps := m.Dependencies()
-	if deps != nil {
-		t.Error("expected no dependencies")
-	}
 }
 
 func TestManagerSubscribe(t *testing.T) {
