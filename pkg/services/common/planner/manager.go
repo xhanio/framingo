@@ -11,6 +11,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
+	"github.com/google/uuid"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/errors"
 	"github.com/xhanio/framingo/pkg/utils/job"
@@ -30,11 +31,10 @@ type manager struct {
 
 	es common.EventSender
 
-	defaults []job.Option
-
 	tm task.Manager
+
 	sync.RWMutex
-	plans map[string]*task.Task
+	todos map[string]*TODO
 }
 
 func New(es common.EventSender, opts ...Option) Manager {
@@ -44,7 +44,7 @@ func New(es common.EventSender, opts ...Option) Manager {
 func newManager(es common.EventSender, opts ...Option) *manager {
 	m := &manager{
 		es:    es,
-		plans: make(map[string]*task.Task),
+		todos: make(map[string]*TODO),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -70,71 +70,58 @@ func (m *manager) Dependencies() []common.Service {
 	return nil
 }
 
-func (m *manager) Create(id string, fn job.Func, opts ...job.Option) (job.Job, error) {
-	if fn == nil {
-		return nil, errors.Newf("failed to create job: job func undefined")
+func (m *manager) Add(todo *TODO) error {
+	if todo.ID == "" {
+		todo.ID = uuid.NewString()
 	}
-	var options []job.Option
-	// apply manager options
-	options = append(options, m.defaults...)
-	// apply job options
-	options = append(options, opts...)
-	t := job.New(id, fn, options...)
-	return t, nil
-}
-
-func (m *manager) Add(plan *task.Task) error {
 	m.Lock()
 	defer m.Unlock()
-	if !plan.IsValid() {
+	if !todo.Task.IsValid() {
 		return nil
 	}
-	err := m.tm.Add(plan)
+	err := m.tm.Add(todo.Task)
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	m.plans[plan.Key()] = plan
+	m.todos[todo.ID] = todo
 	return nil
 }
 
 func (m *manager) Cancel(id string) error {
 	m.RLock()
 	defer m.RUnlock()
-	if plan, ok := m.plans[id]; ok {
-		plan.Job.Cancel()
+	if todo, ok := m.todos[id]; ok {
+		todo.Task.Job.Cancel()
 		return nil
 	}
-	return errors.NotFound.Newf("failed to cancel job %s: job id not found", id)
+	return errors.NotFound.Newf("failed to cancel todo %s: todo id not found", id)
 }
 
 func (m *manager) Delete(id string, force bool) error {
 	m.Lock()
 	defer m.Unlock()
-	plan, ok := m.plans[id]
+	todo, ok := m.todos[id]
 	if ok {
-		m.tm.Remove(plan)
-		if force {
-			plan.Job.Cancel()
-		}
-		delete(m.plans, id)
+		m.tm.Remove(todo.Task)
+		delete(m.todos, id)
 		return nil
 	}
-	return errors.NotFound.Newf("job id %s not found", id)
+	return errors.NotFound.Newf("todo id %s not found", id)
 }
 
 func (m *manager) GetResult(id string) (any, error) {
 	m.RLock()
 	defer m.RUnlock()
-	if plan, ok := m.plans[id]; ok {
-		return plan.Job.Result(), nil
+	if todo, ok := m.todos[id]; ok {
+		return todo.Task.Job.Result(), nil
 	}
-	return nil, errors.NotFound.Newf("failed to get result of job %s: job id not found", id)
+	return nil, errors.NotFound.Newf("failed to get result of todo %s: todo id not found", id)
 }
 
 func (m *manager) stats(all bool) []*Stats {
 	result := make([]*Stats, 0)
-	for _, plan := range m.plans {
-		t := plan.Job
+	for _, todo := range m.todos {
+		t := todo.Task.Job
 		if !all && t.State() == job.StateSucceeded {
 			continue
 		}
@@ -148,7 +135,7 @@ func (m *manager) stats(all bool) []*Stats {
 			Labels:        ts.Labels,
 			Error:         ts.Error,
 		}
-		stats.Schedule = plan.Schedule
+		stats.Schedule = todo.Task.Schedule
 		ss := m.tm.Stats(t.ID())
 		if ss != nil {
 			stats.Cooldown = ss.Cooldown
@@ -170,9 +157,9 @@ func (m *manager) Stats(opts StatsOptions) ([]*Stats, error) {
 	m.RLock()
 	defer m.RUnlock()
 	var result []*Stats
-	for _, job := range m.stats(opts.All) {
-		if selector.Empty() || selector.Matches(job.Labels) {
-			result = append(result, job)
+	for _, todo := range m.stats(opts.All) {
+		if selector.Empty() || selector.Matches(todo.Labels) {
+			result = append(result, todo)
 		}
 	}
 	return result, nil

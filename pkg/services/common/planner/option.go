@@ -1,7 +1,6 @@
 package planner
 
 import (
-	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -16,11 +15,5 @@ func WithLogger(logger log.Logger) Option {
 func WithName(name string) Option {
 	return func(m *manager) {
 		m.name = name
-	}
-}
-
-func WithDefaults(opts ...job.Option) Option {
-	return func(m *manager) {
-		m.defaults = append(m.defaults, opts...)
 	}
 }

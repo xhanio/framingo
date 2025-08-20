@@ -6,7 +6,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
@@ -14,8 +13,7 @@ type Manager interface {
 	common.Service
 	common.Debuggable
 	common.Daemon
-	Create(id string, fn job.Func, opts ...job.Option) (job.Job, error)
-	Add(plan *task.Task) error
+	Add(todo *TODO) error
 	Cancel(id string) error
 	Delete(id string, force bool) error
 	GetResult(id string) (any, error)
@@ -25,6 +23,7 @@ type Manager interface {
 type TODO struct {
 	ID          string
 	Description string
+	Task        *task.Task
 }
 
 type StatsOptions struct {
