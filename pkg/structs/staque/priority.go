@@ -139,6 +139,7 @@ func (p *priority[T]) MustShift() T {
 	return element
 }
 
+// !! the order of items is not guaranteed
 func (p *priority[T]) Items() []T {
 	p.RLock()
 	defer p.RUnlock()

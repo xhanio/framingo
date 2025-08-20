@@ -6,8 +6,8 @@ import (
 
 	"github.com/avast/retry-go/v4"
 
-	"github.com/xhanio/framingo/pkg/structs/job"
 	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
 var _ Executor = (*executor)(nil)
@@ -82,7 +82,7 @@ func (e *executor) Start(ctx context.Context, params any) error {
 			func() error {
 				return e.run(ctx, params)
 			},
-			retry.Attempts(e.retry.Attempts),
+			retry.Attempts(uint(e.retry.Attempts)),
 			retry.Delay(e.retry.Delay),
 			retry.OnRetry(func(n uint, err error) {
 				e.retry.attempted = n + 1

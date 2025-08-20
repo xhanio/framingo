@@ -1,4 +1,4 @@
-package cmd
+package cmdutil
 
 import (
 	"context"
@@ -17,12 +17,6 @@ func WithContext(ctx context.Context) Option {
 func WithEnv(envs ...string) Option {
 	return func(c *cmd) {
 		c.envs = envs
-	}
-}
-
-func Print() Option {
-	return func(c *cmd) {
-		c.print = true
 	}
 }
 

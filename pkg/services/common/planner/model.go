@@ -1,14 +1,13 @@
-package task
+package planner
 
 import (
-	"context"
 	"time"
 
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/xhanio/framingo/pkg/structs/job"
-	"github.com/xhanio/framingo/pkg/structs/job/executor"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/job"
+	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 type Manager interface {
@@ -16,11 +15,16 @@ type Manager interface {
 	common.Debuggable
 	common.Daemon
 	Create(id string, fn job.Func, opts ...job.Option) (job.Job, error)
-	Execute(ctx context.Context, t job.Job, schedule string, prioriry int, opts ...executor.Option) error
+	Add(plan *task.Task) error
 	Cancel(id string) error
 	Delete(id string, force bool) error
 	GetResult(id string) (any, error)
 	Stats(opts StatsOptions) ([]*Stats, error)
+}
+
+type TODO struct {
+	ID          string
+	Description string
 }
 
 type StatsOptions struct {

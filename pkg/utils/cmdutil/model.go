@@ -1,4 +1,4 @@
-package cmd
+package cmdutil
 
 type PrintFunc func(line string)
 

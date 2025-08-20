@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xhanio/framingo/pkg/utils/cmd"
+	"github.com/xhanio/framingo/pkg/utils/cmdutil"
 	"github.com/xhanio/framingo/pkg/utils/errors"
 )
 
@@ -15,7 +15,7 @@ var (
 )
 
 func GetTimezone() (string, error) {
-	c := cmd.New("timedatectl", []string{"show"})
+	c := cmdutil.New("timedatectl", []string{"show"})
 	err := c.Start()
 	if err != nil {
 		return "", errors.Wrap(err)

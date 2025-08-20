@@ -1,7 +1,7 @@
-package task
+package planner
 
 import (
-	"github.com/xhanio/framingo/pkg/structs/job"
+	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 

@@ -8,7 +8,7 @@ import (
 type Option func(*executor)
 
 type retryOptions struct {
-	Attempts uint
+	Attempts int
 	Delay    time.Duration
 
 	sync.RWMutex
@@ -16,9 +16,9 @@ type retryOptions struct {
 	errs      []error
 }
 
-func WithRetry(attempts uint, interval time.Duration) Option {
+func WithRetry(attempts int, interval time.Duration) Option {
 	return func(e *executor) {
-		if attempts == 0 {
+		if attempts <= 0 {
 			return
 		}
 		e.retry = &retryOptions{

@@ -1,4 +1,4 @@
-package eventbus
+package pubsub
 
 import (
 	"path"
@@ -55,9 +55,9 @@ func (m *manager) Publish(svc common.Named, topic string, e common.Event) {
 	m.RLock()
 	var subscribers []common.Named
 
-	topicParts := strings.Split(topic, "/")
-	for i := range topicParts {
-		prefix := strings.Join(topicParts[:i+1], "/")
+	sections := strings.Split(topic, "/")
+	for i := range sections {
+		prefix := strings.Join(sections[:i+1], "/")
 		if node, ok := m.topics.Find(prefix); ok {
 			subscribers = append(subscribers, node.Value()...)
 		}
@@ -66,12 +66,12 @@ func (m *manager) Publish(svc common.Named, topic string, e common.Event) {
 
 	for _, subscriber := range subscribers {
 		go func(sub common.Named) {
-			if handler, ok := sub.(common.EventHandler); ok {
-				if err := handler.HandleEvent(e); err != nil {
+			if eh, ok := sub.(common.EventHandler); ok {
+				if err := eh.HandleEvent(e); err != nil {
 					m.log.Error("error handling event", "topic", topic, "subscriber", sub.Name(), "error", err)
 				}
-			} else if rawHandler, ok := sub.(common.RawEventHandler); ok {
-				if err := rawHandler.HandleRawEvent(e.Kind(), e); err != nil {
+			} else if reh, ok := sub.(common.RawEventHandler); ok {
+				if err := reh.HandleRawEvent(e.Kind(), e); err != nil {
 					m.log.Error("error handling raw event", "topic", topic, "subscriber", sub.Name(), "error", err)
 				}
 			}

@@ -1,4 +1,4 @@
-package eventbus
+package pubsub
 
 import (
 	"github.com/xhanio/framingo/pkg/types/common"

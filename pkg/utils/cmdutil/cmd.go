@@ -1,4 +1,4 @@
-package cmd
+package cmdutil
 
 import (
 	"bufio"
@@ -20,7 +20,6 @@ type cmd struct {
 	bin     string
 	args    []string
 	envs    []string
-	print   bool
 	async   bool
 	in      io.Reader
 	out     io.Reader

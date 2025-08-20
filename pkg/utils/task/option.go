@@ -1,6 +1,8 @@
-package eventbus
+package task
 
-import "github.com/xhanio/framingo/pkg/utils/log"
+import (
+	"github.com/xhanio/framingo/pkg/utils/log"
+)
 
 type Option func(*manager)
 
@@ -10,8 +12,8 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
-func WithName(name string) Option {
+func MaxConcurrency(size int) Option {
 	return func(m *manager) {
-		m.name = name
+		m.concurrent = size
 	}
 }

@@ -1,4 +1,4 @@
-package task
+package planner
 
 import (
 	"context"
@@ -11,14 +11,13 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/xhanio/framingo/pkg/structs/job"
-	"github.com/xhanio/framingo/pkg/structs/job/executor"
-	"github.com/xhanio/framingo/pkg/structs/job/scheduler"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 const timeFormat = "2006-01-02 15:04:05.00"
@@ -33,9 +32,9 @@ type manager struct {
 
 	defaults []job.Option
 
-	s scheduler.Scheduler
+	tm task.Manager
 	sync.RWMutex
-	plans map[string]*scheduler.Plan
+	plans map[string]*task.Task
 }
 
 func New(es common.EventSender, opts ...Option) Manager {
@@ -45,7 +44,7 @@ func New(es common.EventSender, opts ...Option) Manager {
 func newManager(es common.EventSender, opts ...Option) *manager {
 	m := &manager{
 		es:    es,
-		plans: make(map[string]*scheduler.Plan),
+		plans: make(map[string]*task.Task),
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -53,9 +52,9 @@ func newManager(es common.EventSender, opts ...Option) *manager {
 	if m.log == nil {
 		m.log = log.Default
 	}
-	m.s = scheduler.New(
-		scheduler.MaxConcurrency(10),
-		scheduler.WithLogger(m.log),
+	m.tm = task.New(
+		task.MaxConcurrency(10),
+		task.WithLogger(m.log),
 	)
 	return m
 }
@@ -84,24 +83,17 @@ func (m *manager) Create(id string, fn job.Func, opts ...job.Option) (job.Job, e
 	return t, nil
 }
 
-func (m *manager) Execute(ctx context.Context, t job.Job, schedule string, prioriry int, opts ...executor.Option) error {
+func (m *manager) Add(plan *task.Task) error {
 	m.Lock()
 	defer m.Unlock()
-	if t == nil {
+	if !plan.IsValid() {
 		return nil
 	}
-	plan := &scheduler.Plan{
-		Job:      t,
-		Ctx:      ctx,
-		Schedule: schedule,
-		Priority: prioriry,
-		Opts:     opts,
-	}
-	err := m.s.Add(plan)
+	err := m.tm.Add(plan)
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	m.plans[t.ID()] = plan
+	m.plans[plan.Key()] = plan
 	return nil
 }
 
@@ -120,7 +112,7 @@ func (m *manager) Delete(id string, force bool) error {
 	defer m.Unlock()
 	plan, ok := m.plans[id]
 	if ok {
-		m.s.Remove(plan)
+		m.tm.Remove(plan)
 		if force {
 			plan.Job.Cancel()
 		}
@@ -157,7 +149,7 @@ func (m *manager) stats(all bool) []*Stats {
 			Error:         ts.Error,
 		}
 		stats.Schedule = plan.Schedule
-		ss := m.s.Stats(t.ID())
+		ss := m.tm.Stats(t.ID())
 		if ss != nil {
 			stats.Cooldown = ss.Cooldown
 			stats.Retries = ss.Retries
@@ -211,7 +203,7 @@ func (m *manager) Info(w io.Writer, debug bool) {
 }
 
 func (m *manager) Start(ctx context.Context) error {
-	err := m.s.Start(ctx)
+	err := m.tm.Start(ctx)
 	if err != nil {
 		return errors.Wrap(err)
 	}
@@ -220,6 +212,6 @@ func (m *manager) Start(ctx context.Context) error {
 
 func (m *manager) Stop(wait bool) error {
 	var errs []error
-	errs = append(errs, m.s.Stop(wait))
+	errs = append(errs, m.tm.Stop(wait))
 	return errors.Combine(errs...)
 }
