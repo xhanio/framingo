@@ -11,3 +11,9 @@ func WithLogger(logger log.Logger) Option {
 		m.log = logger
 	}
 }
+
+func WithDataSource(source Source) Option {
+	return func(m *manager) {
+		m.source = source
+	}
+}

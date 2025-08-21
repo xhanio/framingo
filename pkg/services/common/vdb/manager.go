@@ -16,6 +16,8 @@ type manager struct {
 	name string
 	log  log.Logger
 
+	source Source
+
 	c client.Client
 }
 
@@ -36,7 +38,10 @@ func (m *manager) Init() error {
 
 func (m *manager) Start() error {
 	c, err := client.NewClient(context.Background(), client.Config{
-		Address: "",
+		Address:  m.source.Host,
+		Username: m.source.User,
+		Password: m.source.Password,
+		DBName:   m.source.DBName,
 	})
 	if err != nil {
 		return errors.Wrap(err)
@@ -47,4 +52,8 @@ func (m *manager) Start() error {
 
 func (m *manager) Stop(wait bool) error {
 	return m.c.Close()
+}
+
+func (m *manager) Client() client.Client {
+	return m.c
 }
