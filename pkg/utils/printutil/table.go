@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
@@ -86,6 +88,10 @@ func (t *table) Row(values ...any) {
 		}
 	}
 	fmt.Fprintf(t.tw, "%s\n", line)
+}
+
+func (t *table) Diff(a, b any) {
+	t.NewLine(cmp.Diff(a, b))
 }
 
 func (t *table) Object(obj any) {

@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	github.com/avast/retry-go/v4 v4.6.1
 	github.com/google/btree v1.1.3
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
 	github.com/pkg/errors v0.9.1

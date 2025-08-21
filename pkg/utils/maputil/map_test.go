@@ -180,13 +180,13 @@ func TestKeys(t *testing.T) {
 			if len(result) != len(tt.m) {
 				t.Errorf("Keys() length = %v, want %v", len(result), len(tt.m))
 			}
-			
+
 			// Check all keys are present
 			keyMap := make(map[string]bool)
 			for _, key := range result {
 				keyMap[key] = true
 			}
-			
+
 			for expectedKey := range tt.m {
 				if !keyMap[expectedKey] {
 					t.Errorf("Keys() missing key %v", expectedKey)
@@ -221,13 +221,13 @@ func TestValues(t *testing.T) {
 			if len(result) != len(tt.m) {
 				t.Errorf("Values() length = %v, want %v", len(result), len(tt.m))
 			}
-			
+
 			// Check all values are present
 			valueMap := make(map[int]bool)
 			for _, value := range result {
 				valueMap[value] = true
 			}
-			
+
 			for _, expectedValue := range tt.m {
 				if !valueMap[expectedValue] {
 					t.Errorf("Values() missing value %v", expectedValue)

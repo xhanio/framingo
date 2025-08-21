@@ -21,9 +21,10 @@ type Manager interface {
 }
 
 type TODO struct {
-	ID          string
-	Description string
-	Task        *task.Task
+	ID          string     `json:"id"`
+	Metadata    labels.Set `json:"metadata"`
+	Description string     `json:"description"`
+	Task        *task.Task `json:"task"`
 }
 
 type StatsOptions struct {
