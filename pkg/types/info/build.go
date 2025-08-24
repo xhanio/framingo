@@ -41,7 +41,47 @@ var (
 		"BuildDate":    &BuildDate,
 		"BuildTime":    &BuildTime,
 	}
+
+	build *Build
 )
+
+type Build struct {
+	ProductName    string `json:"product_name"`
+	ProductModel   string `json:"product_model"`
+	ProductVersion string `json:"product_version"`
+
+	ProjectRoot string `json:"project_root"`
+	ProjectName string `json:"project_name"`
+	ProjectPath string `json:"project_path"`
+
+	GitBranch string `json:"git_branch"`
+	GitTag    string `json:"git_tag"`
+
+	BuildVersion string `json:"build_version"`
+	BuildType    string `json:"build_type"`
+	BuildDate    string `json:"build_date"`
+	BuildTime    string `json:"build_time"`
+}
+
+func GetBuildInfo() Build {
+	if build == nil {
+		build = &Build{
+			ProductName:    ProductName,
+			ProductModel:   ProductModel,
+			ProductVersion: ProductVersion,
+			ProjectRoot:    ProjectRoot,
+			ProjectName:    ProjectName,
+			ProjectPath:    ProjectPath,
+			GitBranch:      GitBranch,
+			GitTag:         GitTag,
+			BuildVersion:   BuildVersion,
+			BuildType:      BuildType,
+			BuildDate:      BuildDate,
+			BuildTime:      BuildTime,
+		}
+	}
+	return *build
+}
 
 func Version() string {
 	var version []string
