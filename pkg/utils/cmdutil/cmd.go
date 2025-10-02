@@ -104,7 +104,7 @@ func (c *cmd) Start() error {
 	err := c.p.Start()
 	if err != nil {
 		return errors.New(
-			errors.WithFormat("(%s) %s", err, c.Error()),
+			errors.WithMessage("(%s) %s", err, c.Error()),
 			errors.WithCode(ErrorCodeCmd, map[string]string{
 				"cmd":    c.String(),
 				"stage":  "start",
@@ -124,7 +124,7 @@ func (c *cmd) Wait() error {
 		err := c.p.Wait()
 		if err != nil {
 			return errors.New(
-				errors.WithFormat("(%s) %s", err, c.Error()),
+				errors.WithMessage("(%s) %s", err, c.Error()),
 				errors.WithCode(ErrorCodeCmd, map[string]string{
 					"cmd":    c.String(),
 					"stage":  "wait",

@@ -9,28 +9,28 @@ func Combine(errors ...error) error {
 }
 
 func New(opts ...Option) error {
-	b := &errBase{
+	b := &base{
 		stack: callers(),
 	}
 	return b.apply(opts...)
 }
 
 func Newf(format string, args ...any) error {
-	b := &errBase{
+	b := &base{
 		stack: callers(),
 	}
-	return b.apply(WithFormat(format, args...))
+	return b.apply(WithMessage(format, args...))
 }
 
 func Wrap(err error, opts ...Option) error {
 	if err == nil {
 		return nil
 	}
-	_, ok := err.(*errBase)
+	_, ok := err.(*base)
 	if ok && len(opts) == 0 {
 		return err
 	}
-	b := &errBase{
+	b := &base{
 		cause: err,
 	}
 	if !ok {
@@ -43,21 +43,21 @@ func Wrapf(err error, format string, args ...any) error {
 	if err == nil {
 		return nil
 	}
-	_, ok := err.(*errBase)
+	_, ok := err.(*base)
 	if ok && format == "" {
 		return err
 	}
-	b := &errBase{
+	b := &base{
 		cause: err,
 	}
 	if !ok {
 		b.stack = callers()
 	}
-	return b.apply(WithFormat(format, args...))
+	return b.apply(WithMessage(format, args...))
 }
 
 func Has(err error, cause error) bool {
-	be, ok := err.(Base)
+	be, ok := err.(Error)
 	if !ok {
 		return be == cause
 	}
@@ -65,7 +65,7 @@ func Has(err error, cause error) bool {
 }
 
 func Is(err error, c Category) bool {
-	be, ok := err.(Base)
+	be, ok := err.(Error)
 	if !ok {
 		return false
 	}

@@ -6,15 +6,16 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-type Base interface {
+type Error interface {
 	Message() string // latest error message without cause
-	Error() string
+	Error() string   // all error messages concatenated
 	Format(f fmt.State, c rune)
 	Code() (string, labels.Set)
 	Category() Category
 	Has(cause error) bool
 	Cause() error
 	RootCause() error
+	Chain() []error
 }
 
 type Category interface {
