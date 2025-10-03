@@ -76,9 +76,12 @@ func (e *executor) Start(ctx context.Context, params any) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if !e.once && e.retry != nil {
-		// with retries
-		return retry.Do(
+
+	var err error
+	if e.retry != nil {
+		// with retries - works regardless of Once setting
+		// Once means "can only start once", retry means "retry within this execution"
+		err = retry.Do(
 			func() error {
 				return e.run(ctx, params)
 			},
@@ -89,8 +92,18 @@ func (e *executor) Start(ctx context.Context, params any) error {
 				e.retry.errs[n] = err
 			}),
 		)
+	} else {
+		err = e.run(ctx, params)
 	}
-	return e.run(ctx, params)
+
+	// Set cooldown after job completes
+	if e.cooldown != nil {
+		e.cooldown.Lock()
+		e.cooldown.endedAt = time.Now().Add(e.cooldown.Duration)
+		e.cooldown.Unlock()
+	}
+
+	return err
 }
 
 func (e *executor) Stop(wait bool) error {
