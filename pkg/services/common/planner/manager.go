@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/google/uuid"
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/errors"
 	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/printutil"

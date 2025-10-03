@@ -57,7 +57,7 @@ func (l *logger) newCores(w io.Writer) []zapcore.Core {
 	return cores
 }
 
-func (l *logger) With(args ...interface{}) Logger {
+func (l *logger) With(args ...any) Logger {
 	c := l.core.With(args...)
 	return &logger{
 		core: c,
@@ -68,20 +68,20 @@ func (l *logger) By(caller common.Named) Logger {
 	return l.With(zap.String("caller", pathutil.Short(caller.Name())))
 }
 
-func (l *logger) Sugared() *zap.SugaredLogger                 { return l.core }
-func (l *logger) Level() zapcore.Level                        { return l.level }
-func (l *logger) Debug(args ...interface{})                   { l.core.Debug(args...) }
-func (l *logger) Info(args ...interface{})                    { l.core.Info(args...) }
-func (l *logger) Warn(args ...interface{})                    { l.core.Warn(args...) }
-func (l *logger) Error(args ...interface{})                   { l.core.Error(args...) }
-func (l *logger) Fatal(args ...interface{})                   { l.core.Fatal(args...) }
-func (l *logger) Debugln(args ...interface{})                 { l.core.Debugln(args...) }
-func (l *logger) Infoln(args ...interface{})                  { l.core.Infoln(args...) }
-func (l *logger) Warnln(args ...interface{})                  { l.core.Warnln(args...) }
-func (l *logger) Errorln(args ...interface{})                 { l.core.Errorln(args...) }
-func (l *logger) Fatalln(args ...interface{})                 { l.core.Fatalln(args...) }
-func (l *logger) Debugf(template string, args ...interface{}) { l.core.Debugf(template, args...) }
-func (l *logger) Infof(template string, args ...interface{})  { l.core.Infof(template, args...) }
-func (l *logger) Warnf(template string, args ...interface{})  { l.core.Warnf(template, args...) }
-func (l *logger) Errorf(template string, args ...interface{}) { l.core.Errorf(template, args...) }
-func (l *logger) Fatalf(template string, args ...interface{}) { l.core.Fatalf(template, args...) }
+func (l *logger) Sugared() *zap.SugaredLogger         { return l.core }
+func (l *logger) Level() zapcore.Level                { return l.level }
+func (l *logger) Debug(args ...any)                   { l.core.Debug(args...) }
+func (l *logger) Info(args ...any)                    { l.core.Info(args...) }
+func (l *logger) Warn(args ...any)                    { l.core.Warn(args...) }
+func (l *logger) Error(args ...any)                   { l.core.Error(args...) }
+func (l *logger) Fatal(args ...any)                   { l.core.Fatal(args...) }
+func (l *logger) Debugln(args ...any)                 { l.core.Debugln(args...) }
+func (l *logger) Infoln(args ...any)                  { l.core.Infoln(args...) }
+func (l *logger) Warnln(args ...any)                  { l.core.Warnln(args...) }
+func (l *logger) Errorln(args ...any)                 { l.core.Errorln(args...) }
+func (l *logger) Fatalln(args ...any)                 { l.core.Fatalln(args...) }
+func (l *logger) Debugf(template string, args ...any) { l.core.Debugf(template, args...) }
+func (l *logger) Infof(template string, args ...any)  { l.core.Infof(template, args...) }
+func (l *logger) Warnf(template string, args ...any)  { l.core.Warnf(template, args...) }
+func (l *logger) Errorf(template string, args ...any) { l.core.Errorf(template, args...) }
+func (l *logger) Fatalf(template string, args ...any) { l.core.Fatalf(template, args...) }

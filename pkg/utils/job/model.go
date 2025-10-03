@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
 	"k8s.io/apimachinery/pkg/labels"

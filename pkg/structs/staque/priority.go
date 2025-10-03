@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/btree"
 
-	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 

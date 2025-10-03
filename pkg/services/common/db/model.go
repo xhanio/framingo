@@ -7,8 +7,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/errors"
 )
 
 type Type string

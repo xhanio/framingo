@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/cmdutil"
-	"github.com/xhanio/framingo/pkg/utils/errors"
 	"github.com/xhanio/framingo/pkg/utils/job"
 	"k8s.io/apimachinery/pkg/labels"
 )

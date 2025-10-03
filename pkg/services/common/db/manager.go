@@ -5,8 +5,8 @@ import (
 	"io"
 	"path"
 
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/errors"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"

@@ -3,7 +3,7 @@ package graph
 import (
 	"testing"
 
-	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/errors"
 )
 
 // testNode implements common.Named for testing

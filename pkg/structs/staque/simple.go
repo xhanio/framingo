@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/errors"
 )
 
 type simple[T any] struct {

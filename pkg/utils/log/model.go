@@ -10,22 +10,22 @@ type Logger interface {
 	Sugared() *zap.SugaredLogger
 	Level() zapcore.Level
 
-	Debug(args ...interface{})
-	Info(args ...interface{})
-	Warn(args ...interface{})
-	Error(args ...interface{})
-	Fatal(args ...interface{})
-	Debugln(args ...interface{})
-	Infoln(args ...interface{})
-	Warnln(args ...interface{})
-	Errorln(args ...interface{})
-	Fatalln(args ...interface{})
-	Debugf(template string, args ...interface{})
-	Infof(template string, args ...interface{})
-	Warnf(template string, args ...interface{})
-	Errorf(template string, args ...interface{})
-	Fatalf(template string, args ...interface{})
+	Debug(args ...any)
+	Info(args ...any)
+	Warn(args ...any)
+	Error(args ...any)
+	Fatal(args ...any)
+	Debugln(args ...any)
+	Infoln(args ...any)
+	Warnln(args ...any)
+	Errorln(args ...any)
+	Fatalln(args ...any)
+	Debugf(template string, args ...any)
+	Infof(template string, args ...any)
+	Warnf(template string, args ...any)
+	Errorf(template string, args ...any)
+	Fatalf(template string, args ...any)
 
-	With(args ...interface{}) Logger
+	With(args ...any) Logger
 	By(caller common.Named) Logger
 }

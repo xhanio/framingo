@@ -6,7 +6,7 @@ import (
 
 	"github.com/avast/retry-go/v4"
 
-	"github.com/xhanio/framingo/pkg/utils/errors"
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 

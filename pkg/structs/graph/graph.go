@@ -1,9 +1,9 @@
 package graph
 
 import (
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/structs/staque"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/errors"
 	"github.com/xhanio/framingo/pkg/utils/maputil"
 )
 
