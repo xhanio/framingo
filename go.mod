@@ -4,14 +4,19 @@ go 1.24.5
 
 require (
 	github.com/avast/retry-go/v4 v4.6.1
+	github.com/dustin/go-humanize v1.0.1
+	github.com/fatih/color v1.18.0
 	github.com/google/btree v1.1.3
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
+	github.com/labstack/echo/v4 v4.5.0
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.10.0
-	github.com/xhanio/errors v1.0.1
+	github.com/xhanio/errors v1.0.2
+	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d
 	go.uber.org/zap v1.27.0
+	golang.org/x/time v0.9.0
 	gorm.io/driver/clickhouse v0.7.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0
@@ -19,6 +24,7 @@ require (
 	gorm.io/gorm v1.30.1
 	k8s.io/apimachinery v0.34.1
 	moul.io/zapgorm2 v1.3.0
+	software.sslmate.com/src/go-pkcs12 v0.6.0
 )
 
 require (
@@ -48,6 +54,9 @@ require (
 	github.com/klauspost/compress v1.17.8 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/labstack/gommon v0.3.0 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/milvus-io/milvus-proto/go-api/v2 v2.4.10-0.20240819025435-512e3b98866a // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
@@ -60,6 +69,8 @@ require (
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasttemplate v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.26.0 // indirect
 	go.opentelemetry.io/otel/trace v1.26.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
