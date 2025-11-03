@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 	"path"
@@ -12,10 +11,10 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/xhanio/errors"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
-	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/common/api"
 	"github.com/xhanio/framingo/pkg/utils/log"
@@ -27,11 +26,11 @@ type server struct {
 	name string
 	log  log.Logger
 
-	endpoint       *api.Endpoint
-	tlsConfig      *api.ServerTLS
-	throttleConfig *api.ThrottleConfig
+	throttleConfig *api.ThrottleConfig // default throttle config
 
-	core *echo.Echo
+	endpoint  *api.Endpoint
+	tlsConfig *api.ServerTLS
+	core      *echo.Echo
 
 	groups   map[string]*api.HandlerGroup
 	handlers map[string]*api.Handler
@@ -128,19 +127,13 @@ func (s *server) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 	}
 
 	// Parse YAML config
-	var config struct {
-		HTTP *api.HandlerGroup `yaml:"http"`
-	}
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	var group *api.HandlerGroup
+	if err := yaml.Unmarshal(data, &group); err != nil {
 		return nil, errors.Wrapf(err, "failed to parse router config")
 	}
-
-	if config.HTTP == nil {
+	if group == nil {
 		return nil, errors.Newf("http configuration not found in router.yaml")
 	}
-
-	group := config.HTTP
-
 	// Get handler functions from router
 	handlers := router.Handlers()
 	if handlers == nil {
@@ -153,8 +146,7 @@ func (s *server) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 		if !ok {
 			return nil, errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
 		}
-
-		key := api.HandlerKey(group, handler)
+		key := api.HandlerKey(s.endpoint.Path, group, handler)
 		s.handlerFuncs[key] = handlerFunc
 	}
 
@@ -190,18 +182,21 @@ func (s *server) RegisterRouters(routers ...api.Router) error {
 			}
 
 			// Register route with Echo
-			if hf, ok := s.handlerFuncs[api.HandlerKey(g, h)]; ok {
+			if hf, ok := s.handlerFuncs[api.HandlerKey(prefix, g, h)]; ok {
 				group.Add(h.Method, h.Path, hf, mwfuncs...)
 			}
 
 			// Store handler metadata for request lookup
-			fullPath := path.Join(prefix, h.Path)
-			key := fmt.Sprintf("<%s>%s", h.Method, fullPath)
+			key := api.HandlerKey(prefix, g, h)
 			s.groups[key] = g
 			s.handlers[key] = h
 		}
 	}
 	return nil
+}
+
+func (s *server) Routers() (map[string]*api.HandlerGroup, map[string]*api.Handler) {
+	return s.groups, s.handlers
 }
 
 // collectMiddlewares gathers handler-specific and group-level middlewares

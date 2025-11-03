@@ -12,4 +12,5 @@ type Server interface {
 	Endpoint() *api.Endpoint
 	RegisterRouters(routers ...api.Router) error
 	RegisterMiddlewares(middlewares ...api.Middleware)
+	Routers() (map[string]*api.HandlerGroup, map[string]*api.Handler)
 }

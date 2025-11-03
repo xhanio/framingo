@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/xhanio/framingo/pkg/types/common/api"
-
 	"github.com/dustin/go-humanize"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/xhanio/framingo/pkg/types/common/api"
 )
 
 func (s *server) requestInfo(c echo.Context) *api.RequestInfo {

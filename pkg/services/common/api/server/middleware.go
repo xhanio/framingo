@@ -5,9 +5,9 @@ import (
 	"runtime/debug"
 
 	"github.com/labstack/echo/v4"
+	"github.com/xhanio/errors"
 	"golang.org/x/time/rate"
 
-	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/common/api"
 )
