@@ -5,12 +5,6 @@ import (
 	"io"
 	"path"
 
-	"github.com/xhanio/errors"
-	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/printutil"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
-
 	"go.uber.org/zap/zapcore"
 	"gorm.io/driver/clickhouse"
 	"gorm.io/driver/mysql"
@@ -19,13 +13,19 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"moul.io/zapgorm2"
+
+	"github.com/xhanio/errors"
+	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/printutil"
+	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 type manager struct {
 	name string
 	log  log.Logger
 
-	dbtype     Type
+	dbtype     string
 	source     Source
 	migration  MigrationConfig
 	connection ConnectionConfig
@@ -58,7 +58,7 @@ func (m *manager) Dependencies() []common.Service {
 	return nil
 }
 
-func (m *manager) use(dbtype Type, dsn string) (gorm.Dialector, error) {
+func (m *manager) use(dbtype string, dsn string) (gorm.Dialector, error) {
 	switch dbtype {
 	case SQLite:
 		return sqlite.Open(dsn), nil
@@ -73,7 +73,7 @@ func (m *manager) use(dbtype Type, dsn string) (gorm.Dialector, error) {
 	}
 }
 
-func (m *manager) connect(dbtype Type, s Source) error {
+func (m *manager) connect(dbtype string, s Source) error {
 	dsn, err := s.DSN(dbtype)
 	if err != nil {
 		return errors.Wrap(err)

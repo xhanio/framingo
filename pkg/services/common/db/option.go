@@ -22,7 +22,7 @@ func WithName(name string) Option {
 
 func WithType(dbtype string) Option {
 	return func(m *manager) {
-		m.dbtype = Type(dbtype)
+		m.dbtype = dbtype
 	}
 }
 
