@@ -30,4 +30,5 @@ type Manager interface {
 	DB() *sql.DB
 	FromContext(ctx context.Context) *gorm.DB
 	FromContextTimeout(ctx context.Context, timeout time.Duration) (*gorm.DB, context.CancelFunc)
+	Cleanup(schema bool) error
 }
