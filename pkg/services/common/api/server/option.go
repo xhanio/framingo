@@ -16,22 +16,10 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
-func WithHTTP(host string, port uint, prefix string) Option {
+func WithEndpoint(host string, port uint, prefix string) Option {
 	return func(s *server) {
 		if host != "" && port > 0 {
-			s.httpEndpoint = &api.Endpoint{
-				Host: host,
-				Port: port,
-				Path: prefix,
-			}
-		}
-	}
-}
-
-func WithHTTPS(host string, port uint, prefix string) Option {
-	return func(s *server) {
-		if host != "" && port > 0 {
-			s.httpsEndpoint = &api.Endpoint{
+			s.endpoint = &api.Endpoint{
 				Host: host,
 				Port: port,
 				Path: prefix,
@@ -59,11 +47,5 @@ func WithThrottle(rps float64, burstSize int) Option {
 			RPS:       rate.Limit(rps),
 			BurstSize: burstSize,
 		}
-	}
-}
-
-func WithHandlerWrapper(hw api.HandlerWrapper) Option {
-	return func(s *server) {
-		s.handlerWrapper = hw
 	}
 }

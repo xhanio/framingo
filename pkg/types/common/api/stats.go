@@ -6,19 +6,19 @@ import (
 )
 
 type RequestInfo struct {
-	URI       string
-	Method    string
-	Path      string
-	RawPath   string
-	TraceID   string
-	IP        string
-	StartedAt time.Time
-	Handler   *Handler
-	Router    *Router
+	URI          string
+	Method       string
+	Path         string
+	RawPath      string
+	TraceID      string
+	IP           string
+	StartedAt    time.Time
+	Handler      *Handler
+	HandlerGroup *HandlerGroup
 }
 
 func (s *RequestInfo) Key() string {
-	return fmt.Sprintf("%s:%s", s.Method, s.RawPath)
+	return fmt.Sprintf("<%s>%s", s.Method, s.RawPath)
 }
 
 type ResponseInfo struct {

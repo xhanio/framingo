@@ -95,8 +95,8 @@ func (s *server) Throttle(next echo.HandlerFunc) echo.HandlerFunc {
 		s.Lock()
 		rl, ok := s.limits[key]
 		if !ok {
-			if req.Handler.ThrottleRPS != 0 {
-				rl = rate.NewLimiter(req.Handler.ThrottleRPS, req.Handler.ThrottleBurstSize)
+			if req.Handler.Throttle != nil {
+				rl = rate.NewLimiter(req.Handler.Throttle.RPS, req.Handler.Throttle.BurstSize)
 			} else if s.throttleConfig != nil {
 				rl = rate.NewLimiter(s.throttleConfig.RPS, s.throttleConfig.BurstSize)
 			} else {

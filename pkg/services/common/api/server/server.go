@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
 	"golang.org/x/time/rate"
+	"gopkg.in/yaml.v3"
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -18,37 +22,39 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
+// server implements the Server interface
 type server struct {
 	name string
 	log  log.Logger
 
-	httpEndpoint   *api.Endpoint
-	httpsEndpoint  *api.Endpoint
+	endpoint       *api.Endpoint
 	tlsConfig      *api.ServerTLS
 	throttleConfig *api.ThrottleConfig
 
-	http  *echo.Echo
-	https *echo.Echo
+	core *echo.Echo
 
+	groups   map[string]*api.HandlerGroup
 	handlers map[string]*api.Handler
-	routers  map[string]*api.Router
+
+	handlerFuncs    map[string]echo.HandlerFunc
+	middlewareFuncs map[string]echo.MiddlewareFunc
 
 	sync.Mutex // lock for rate limiters
 	limits     map[string]*rate.Limiter
-
-	handlerWrapper api.HandlerWrapper
 }
 
+// New creates a new server instance with the given options
 func New(opts ...Option) Server {
 	return newServer(opts...)
 }
 
 func newServer(opts ...Option) *server {
 	s := &server{
-		handlers:       make(map[string]*api.Handler),
-		routers:        make(map[string]*api.Router),
-		limits:         make(map[string]*rate.Limiter),
-		handlerWrapper: api.DefaultHandlerWrapper,
+		groups:          make(map[string]*api.HandlerGroup),
+		handlers:        make(map[string]*api.Handler),
+		handlerFuncs:    make(map[string]echo.HandlerFunc),
+		middlewareFuncs: make(map[string]echo.MiddlewareFunc),
+		limits:          make(map[string]*rate.Limiter),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -67,6 +73,10 @@ func (s *server) newEcho() *echo.Echo {
 	return e
 }
 
+// ============================================================================
+// Service Interface Implementation
+// ============================================================================
+
 func (s *server) Name() string {
 	if s.name == "" {
 		s.name = path.Join(reflectutil.Locate(s))
@@ -79,9 +89,8 @@ func (s *server) Dependencies() []common.Service {
 }
 
 func (s *server) Init() error {
-	s.http = s.newEcho()
-	s.https = s.newEcho()
-	s.RegisterMiddlewares(
+	s.core = s.newEcho()
+	s.core.Use(
 		s.Recover,
 		s.Logger,
 		s.Info,
@@ -91,100 +100,180 @@ func (s *server) Init() error {
 	return nil
 }
 
-func (s *server) RegisterRouters(routers []*api.Router, middlewares ...echo.MiddlewareFunc) error {
+func (s *server) Endpoint() *api.Endpoint {
+	return s.endpoint
+}
+
+// ============================================================================
+// Router Registration
+// ============================================================================
+
+// registerRouter loads the router's configuration and registers its handlers
+func (s *server) registerRouter(router api.Router) (*api.HandlerGroup, error) {
+	// Get router package path to locate router.yaml
+	pkgPath, _ := reflectutil.Locate(router)
+
+	// Convert package path to file system path
+	// e.g., "github.com/xhanio/framingo/pkg/routers/example" -> "pkg/routers/example"
+	routerDir := pkgPath
+	if idx := strings.Index(pkgPath, "/pkg/"); idx != -1 {
+		routerDir = pkgPath[idx+1:]
+	}
+
+	// Load router.yaml configuration
+	configPath := filepath.Join(routerDir, "router.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to read router config at %s", configPath)
+	}
+
+	// Parse YAML config
+	var config struct {
+		HTTP *api.HandlerGroup `yaml:"http"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, errors.Wrapf(err, "failed to parse router config")
+	}
+
+	if config.HTTP == nil {
+		return nil, errors.Newf("http configuration not found in router.yaml")
+	}
+
+	group := config.HTTP
+
+	// Get handler functions from router
+	handlers := router.Handlers()
+	if handlers == nil {
+		return nil, errors.Newf("router.Handlers() returned nil")
+	}
+
+	// Register each handler function
+	for _, handler := range group.Handlers {
+		handlerFunc, ok := handlers[handler.Func]
+		if !ok {
+			return nil, errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
+		}
+
+		key := api.HandlerKey(group, handler)
+		s.handlerFuncs[key] = handlerFunc
+	}
+
+	s.log.Debugf("registered router %s with %d handlers", router.Name(), len(group.Handlers))
+	return group, nil
+}
+
+// RegisterRouters registers one or more routers with the server
+func (s *server) RegisterRouters(routers ...api.Router) error {
 	for _, r := range routers {
-		s.log.Debugf("registering router %s", r.Name)
-		prefix, group := s.routerGroup(r)
-		for _, h := range r.Handlers {
-			var mw []echo.MiddlewareFunc
-			mw = append(mw, h.Middlewares...)
-			mw = append(mw, r.Middlewares...)
-			mw = append(mw, middlewares...)
-			group.Add(h.Method, h.Path, s.handlerWrapper(h.Handler), mw...)
-			// register API key to retrieve its handler and router
-			key := fmt.Sprintf("%s:%s", h.Method, path.Join(prefix, h.Path))
+		// Register router and get handler group
+		g, err := s.registerRouter(r)
+		if err != nil {
+			return err
+		}
+
+		// Create echo group with API prefix
+		var prefix string
+		if s.endpoint != nil {
+			prefix = path.Join(s.endpoint.Path, g.Prefix)
+		}
+		if prefix == "" {
+			prefix = api.DefaultAPIPrefix
+		}
+		group := s.core.Group(prefix)
+
+		// Register each handler with middlewares
+		for _, h := range g.Handlers {
+			// Collect middlewares (handler-specific + group-level)
+			mwfuncs, err := s.collectMiddlewares(h, g)
+			if err != nil {
+				return err
+			}
+
+			// Register route with Echo
+			if hf, ok := s.handlerFuncs[api.HandlerKey(g, h)]; ok {
+				group.Add(h.Method, h.Path, hf, mwfuncs...)
+			}
+
+			// Store handler metadata for request lookup
+			fullPath := path.Join(prefix, h.Path)
+			key := fmt.Sprintf("<%s>%s", h.Method, fullPath)
+			s.groups[key] = g
 			s.handlers[key] = h
-			s.routers[key] = r
 		}
 	}
 	return nil
 }
 
-func (s *server) RegisterMiddlewares(middlewares ...echo.MiddlewareFunc) {
-	s.http.Use(middlewares...)
-	s.https.Use(middlewares...)
-}
+// collectMiddlewares gathers handler-specific and group-level middlewares
+func (s *server) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]echo.MiddlewareFunc, error) {
+	var mwfuncs []echo.MiddlewareFunc
 
-func (s *server) ServerPrefix(router *api.Router) string {
-	var prefix string
-	if router.Secure {
-		if s.httpsEndpoint != nil {
-			prefix = path.Join(s.httpsEndpoint.Path, router.Prefix)
-		}
-	} else {
-		if s.httpEndpoint != nil {
-			prefix = path.Join(s.httpEndpoint.Path, router.Prefix)
+	// Collect handler-specific middlewares
+	for _, name := range h.Middlewares {
+		if mw, ok := s.middlewareFuncs[name]; ok {
+			mwfuncs = append(mwfuncs, mw)
+		} else {
+			return nil, errors.NotImplemented.Newf("middleware %s not found", name)
 		}
 	}
-	if prefix == "" {
-		return "/"
+
+	// Collect group-level middlewares
+	for _, name := range g.Middlewares {
+		if mw, ok := s.middlewareFuncs[name]; ok {
+			mwfuncs = append(mwfuncs, mw)
+		} else {
+			return nil, errors.NotImplemented.Newf("middleware %s not found", name)
+		}
 	}
-	return prefix
+
+	return mwfuncs, nil
 }
 
-func (s *server) routerGroup(router *api.Router) (string, *echo.Group) {
-	prefix := s.ServerPrefix(router)
-	var group *echo.Group
-	if router.Secure {
-		group = s.https.Group(prefix)
-	} else {
-		group = s.http.Group(prefix)
+// RegisterMiddlewares registers middlewares with the server
+func (s *server) RegisterMiddlewares(middlewares ...api.Middleware) {
+	for _, mw := range middlewares {
+		s.middlewareFuncs[mw.Name()] = mw.Func
 	}
-	return prefix, group
 }
 
-func (s *server) startHTTP() error {
-	if s.httpEndpoint == nil {
+// ============================================================================
+// Server Lifecycle
+// ============================================================================
+
+// start starts the HTTP or HTTPS server
+func (s *server) start() error {
+	if s.endpoint == nil {
 		return nil
 	}
-	s.log.Infof("serves http on %s", s.httpEndpoint.String())
-	return s.http.Start(s.httpEndpoint.Address())
-}
 
-func (s *server) startHTTPS() error {
-	if s.httpsEndpoint == nil {
-		return nil
+	if s.tlsConfig == nil {
+		s.log.Infof("serves http on %s", s.endpoint.String())
+		return s.core.Start(s.endpoint.Address())
 	}
-	s.https.TLSServer = &http.Server{
-		Addr:      s.httpsEndpoint.Address(),
+
+	s.core.TLSServer = &http.Server{
+		Addr:      s.endpoint.Address(),
 		TLSConfig: s.tlsConfig.AsConfig(),
 	}
-	s.log.Infof("serves https on %s", s.httpsEndpoint.String())
-	return s.https.StartServer(s.https.TLSServer)
+	s.log.Infof("serves https on %s", s.endpoint.String())
+	return s.core.StartServer(s.core.TLSServer)
 }
 
+// Start starts the server in a goroutine
 func (s *server) Start(ctx context.Context) error {
-	// TODO: find a better way
 	go func() {
-		if err := s.startHTTP(); err != nil {
-			s.log.Debugf("startHTTP returns err: %v", err)
-		}
-	}()
-	go func() {
-		if err := s.startHTTPS(); err != nil {
-			s.log.Debugf("startHTTPS returns err: %v", err)
+		if err := s.start(); err != nil {
+			s.log.Debugf("server start error: %v", err)
 		}
 	}()
 	return nil
 }
 
+// Stop gracefully shuts down the server
 func (s *server) Stop(wait bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.http.Shutdown(ctx); err != nil {
-		return errors.Wrap(err)
-	}
-	if err := s.https.Shutdown(ctx); err != nil {
+	if err := s.core.Shutdown(ctx); err != nil {
 		return errors.Wrap(err)
 	}
 	return nil

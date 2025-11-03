@@ -32,7 +32,7 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 	c.Echo().Router().Find(r.Method, r.URL.EscapedPath(), c)
 	key := req.Key()
 	req.Handler = s.handlers[key]
-	req.Router = s.routers[key]
+	req.HandlerGroup = s.groups[key]
 	return req
 }
 
