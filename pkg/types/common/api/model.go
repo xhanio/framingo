@@ -23,6 +23,7 @@ type Middleware interface {
 
 type Router interface {
 	common.Service
+	Config() []byte
 	Handlers() map[string]echo.HandlerFunc
 }
 
@@ -45,10 +46,11 @@ type Handler struct {
 
 type HandlerFunc func(Context) error
 
-func HandlerKey(prefix string, g *HandlerGroup, h *Handler) string {
-	var gp string
-	if g != nil && g.Prefix != "" {
-		gp = g.Prefix
+func HandlerKey(g *HandlerGroup, h *Handler) string {
+	var server, group string
+	if g != nil {
+		server = g.Server
+		group = g.Prefix
 	}
-	return fmt.Sprintf("<%s>%s", h.Method, path.Join(prefix, gp, h.Path))
+	return fmt.Sprintf("%s<%s>%s", server, h.Method, path.Join(group, h.Path))
 }

@@ -31,11 +31,11 @@ func WithEndpoint(host string, port uint, prefix string) ServerOption {
 	}
 }
 
-func WithTLS(cert certutil.CertBundle) ServerOption {
+func WithTLS(cert certutil.CertBundle, auth bool) ServerOption {
 	return func(s *server) {
 		s.tlsConfig = &api.ServerTLS{
 			CertBundle:  cert,
-			AuthEnabled: true,
+			AuthEnabled: auth,
 		}
 	}
 }

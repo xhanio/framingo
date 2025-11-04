@@ -2,10 +2,12 @@ package api
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
 type RequestInfo struct {
+	Server       string
 	URI          string
 	Method       string
 	Path         string
@@ -17,8 +19,9 @@ type RequestInfo struct {
 	HandlerGroup *HandlerGroup
 }
 
-func (s *RequestInfo) Key() string {
-	return fmt.Sprintf("<%s>%s", s.Method, s.RawPath)
+func (s *RequestInfo) Key(prefix string) string {
+	path := strings.TrimPrefix(s.RawPath, prefix)
+	return fmt.Sprintf("%s<%s>%s", s.Server, s.Method, path)
 }
 
 type ResponseInfo struct {

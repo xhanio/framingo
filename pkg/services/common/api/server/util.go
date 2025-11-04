@@ -13,7 +13,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common/api"
 )
 
-func (m *manager) requestInfo(c echo.Context) *api.RequestInfo {
+func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 	r := c.Request()
 	prevID := c.Request().Header.Get(api.HeaderKeyTrace)
 	traceID := uuid.NewString()[:8]
@@ -21,6 +21,7 @@ func (m *manager) requestInfo(c echo.Context) *api.RequestInfo {
 		traceID = fmt.Sprintf("%s/%s", prevID, traceID)
 	}
 	req := &api.RequestInfo{
+		Server:    s.name,
 		URI:       r.RequestURI,
 		Method:    r.Method,
 		Path:      r.URL.EscapedPath(),
@@ -30,13 +31,14 @@ func (m *manager) requestInfo(c echo.Context) *api.RequestInfo {
 		StartedAt: time.Now(),
 	}
 	c.Echo().Router().Find(r.Method, r.URL.EscapedPath(), c)
-	key := req.Key()
-	req.Handler = m.handlers[key]
-	req.HandlerGroup = m.groups[key]
+	// find the handler and group from this server instance
+	key := req.Key(s.endpoint.Path)
+	req.Handler = s.handlers[key]
+	req.HandlerGroup = s.groups[key]
 	return req
 }
 
-func (m *manager) responseInfo(started time.Time, c echo.Context) *api.ResponseInfo {
+func (s *server) responseInfo(started time.Time, c echo.Context) *api.ResponseInfo {
 	r := c.Response()
 	resp := &api.ResponseInfo{
 		Status: r.Status,
@@ -53,7 +55,7 @@ func (m *manager) responseInfo(started time.Time, c echo.Context) *api.ResponseI
 	return resp
 }
 
-func (m *manager) print(req *api.RequestInfo, resp *api.ResponseInfo) {
+func (s *server) print(req *api.RequestInfo, resp *api.ResponseInfo) {
 	parts := []any{
 		fmt.Sprintf("%-15s", color.CyanString(req.Method)),
 		fmt.Sprintf("%-21s", colorStatusCode(resp.Status)),
@@ -67,14 +69,14 @@ func (m *manager) print(req *api.RequestInfo, resp *api.ResponseInfo) {
 	parts = append(parts, fmt.Sprintf("%-23s", "tid="+color.YellowString(tid)))
 	parts = append(parts, req.URI)
 	if resp.Status >= 400 && resp.Error != nil {
-		if m.log.Level() == zapcore.DebugLevel {
-			m.log.Errorf("%v", resp.Error.Origin)
+		if s.log.Level() == zapcore.DebugLevel {
+			s.log.Errorf("%v", resp.Error.Origin)
 		} else if resp.Status >= 500 {
-			m.log.Errorf("%s", resp.Error.Origin)
+			s.log.Errorf("%s", resp.Error.Origin)
 		}
-		m.log.Error(parts...)
+		s.log.Error(parts...)
 	} else {
-		m.log.Info(parts...)
+		s.log.Info(parts...)
 	}
 }
 
