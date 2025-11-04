@@ -26,11 +26,15 @@ func NewEndpoint(address string) *Endpoint {
 }
 
 func (e *Endpoint) String() string {
-	return fmt.Sprintf("%s%s%s", e.Protocol, e.Address(), e.Path)
+	var protocol string
+	if e.Protocol != "" {
+		protocol = fmt.Sprintf("%s://", e.Protocol)
+	}
+	return fmt.Sprintf("%s%s%s", protocol, e.Address(), e.Path)
 }
 
 func (e *Endpoint) Address() string {
-	port := ""
+	var port string
 	if e.Port > 0 {
 		port = fmt.Sprintf(":%d", e.Port)
 	}
