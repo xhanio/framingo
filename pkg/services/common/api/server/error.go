@@ -9,13 +9,13 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common/api"
 )
 
-func (s *server) ErrorHandler(err error, c echo.Context) {
+func (m *manager) ErrorHandler(err error, c echo.Context) {
 	if c.Response().Committed || err == nil {
 		return
 	}
 	req, ok := c.Get(common.ContextKeyAPIRequestInfo).(*api.RequestInfo)
 	if !ok || req == nil {
-		req = s.requestInfo(c)
+		req = m.requestInfo(c)
 	}
 	resp, ok := c.Get(common.ContextKeyAPIResponseInfo).(*api.ResponseInfo)
 	if !ok || resp == nil {
@@ -25,9 +25,9 @@ func (s *server) ErrorHandler(err error, c echo.Context) {
 			Error:  ae,
 			Took:   time.Since(req.StartedAt).Round(time.Microsecond),
 		}
-		s.print(req, resp)
+		m.print(req, resp)
 	}
 	if err := c.JSON(resp.Status, resp.Error); err != nil {
-		s.log.Errorf("failed to send json response: %v", err)
+		m.log.Errorf("failed to send json response: %v", err)
 	}
 }

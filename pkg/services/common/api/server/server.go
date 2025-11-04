@@ -21,16 +21,20 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
-// server implements the Server interface
+// server holds an echo instance with its configuration
 type server struct {
+	endpoint       *api.Endpoint
+	tlsConfig      *api.ServerTLS
+	throttleConfig *api.ThrottleConfig
+	echo           *echo.Echo
+}
+
+// manager implements the Manager interface
+type manager struct {
 	name string
 	log  log.Logger
 
-	throttleConfig *api.ThrottleConfig // default throttle config
-
-	endpoint  *api.Endpoint
-	tlsConfig *api.ServerTLS
-	core      *echo.Echo
+	servers map[string]*server // map of server name to server instance
 
 	groups   map[string]*api.HandlerGroup
 	handlers map[string]*api.Handler
@@ -43,12 +47,13 @@ type server struct {
 }
 
 // New creates a new server instance with the given options
-func New(opts ...Option) Server {
-	return newServer(opts...)
+func New(opts ...Option) Manager {
+	return newManager(opts...)
 }
 
-func newServer(opts ...Option) *server {
-	s := &server{
+func newManager(opts ...Option) *manager {
+	m := &manager{
+		servers:         make(map[string]*server),
 		groups:          make(map[string]*api.HandlerGroup),
 		handlers:        make(map[string]*api.Handler),
 		handlerFuncs:    make(map[string]echo.HandlerFunc),
@@ -56,19 +61,19 @@ func newServer(opts ...Option) *server {
 		limits:          make(map[string]*rate.Limiter),
 	}
 	for _, opt := range opts {
-		opt(s)
+		opt(m)
 	}
-	if s.log == nil {
-		s.log = log.Default
+	if m.log == nil {
+		m.log = log.Default
 	}
-	return s
+	return m
 }
 
-func (s *server) newEcho() *echo.Echo {
+func (m *manager) newEcho() *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
-	e.HTTPErrorHandler = s.ErrorHandler
+	e.HTTPErrorHandler = m.ErrorHandler
 	return e
 }
 
@@ -76,31 +81,38 @@ func (s *server) newEcho() *echo.Echo {
 // Service Interface Implementation
 // ============================================================================
 
-func (s *server) Name() string {
-	if s.name == "" {
-		s.name = path.Join(reflectutil.Locate(s))
+func (m *manager) Name() string {
+	if m.name == "" {
+		m.name = path.Join(reflectutil.Locate(m))
 	}
-	return s.name
+	return m.name
 }
 
-func (s *server) Dependencies() []common.Service {
+func (m *manager) Dependencies() []common.Service {
 	return nil
 }
 
-func (s *server) Init() error {
-	s.core = s.newEcho()
-	s.core.Use(
-		s.Recover,
-		s.Logger,
-		s.Info,
-		s.Error,
-		s.Throttle,
+func (m *manager) Init() error {
+	return nil
+}
+
+// AddServer adds a new echo server instance with the given configuration
+func (m *manager) AddServer(name string, opts ...ServerOption) {
+	s := &server{}
+	for _, opt := range opts {
+		opt(s)
+	}
+
+	e := m.newEcho()
+	e.Use(
+		m.Recover,
+		m.Logger,
+		m.Info,
+		m.Error,
+		m.Throttle,
 	)
-	return nil
-}
-
-func (s *server) Endpoint() *api.Endpoint {
-	return s.endpoint
+	s.echo = e
+	m.servers[name] = s
 }
 
 // ============================================================================
@@ -108,7 +120,7 @@ func (s *server) Endpoint() *api.Endpoint {
 // ============================================================================
 
 // registerRouter loads the router's configuration and registers its handlers
-func (s *server) registerRouter(router api.Router) (*api.HandlerGroup, error) {
+func (m *manager) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 	// Get router package path to locate router.yaml
 	pkgPath, _ := reflectutil.Locate(router)
 
@@ -140,27 +152,57 @@ func (s *server) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 		return nil, errors.Newf("router.Handlers() returned nil")
 	}
 
+	// Determine which server to use
+	serverName := group.Server
+	if serverName == "" {
+		serverName = "http"
+	}
+
+	// Get the server for this server to determine endpoint path
+	s, ok := m.servers[serverName]
+	if !ok {
+		return nil, errors.Newf("server %s not found, please call AddServer first", serverName)
+	}
+
+	// Get endpoint path from the server
+	var endpointPath string
+	if s.endpoint != nil {
+		endpointPath = s.endpoint.Path
+	}
+
 	// Register each handler function
 	for _, handler := range group.Handlers {
 		handlerFunc, ok := handlers[handler.Func]
 		if !ok {
 			return nil, errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
 		}
-		key := api.HandlerKey(s.endpoint.Path, group, handler)
-		s.handlerFuncs[key] = handlerFunc
+		key := api.HandlerKey(endpointPath, group, handler)
+		m.handlerFuncs[key] = handlerFunc
 	}
 
-	s.log.Debugf("registered router %s with %d handlers", router.Name(), len(group.Handlers))
+	m.log.Debugf("registered router %s with %d handlers", router.Name(), len(group.Handlers))
 	return group, nil
 }
 
 // RegisterRouters registers one or more routers with the server
-func (s *server) RegisterRouters(routers ...api.Router) error {
+func (m *manager) RegisterRouters(routers ...api.Router) error {
 	for _, r := range routers {
 		// Register router and get handler group
-		g, err := s.registerRouter(r)
+		g, err := m.registerRouter(r)
 		if err != nil {
 			return err
+		}
+
+		// Determine which server to use (from group config or http)
+		serverName := g.Server
+		if serverName == "" {
+			serverName = "http"
+		}
+
+		// Get the echo instance for this server
+		s, ok := m.servers[serverName]
+		if !ok {
+			return errors.Newf("server %s not found, please call AddServer first", serverName)
 		}
 
 		// Create echo group with API prefix
@@ -171,41 +213,41 @@ func (s *server) RegisterRouters(routers ...api.Router) error {
 		if prefix == "" {
 			prefix = api.DefaultAPIPrefix
 		}
-		group := s.core.Group(prefix)
+		group := s.echo.Group(prefix)
 
 		// Register each handler with middlewares
 		for _, h := range g.Handlers {
 			// Collect middlewares (handler-specific + group-level)
-			mwfuncs, err := s.collectMiddlewares(h, g)
+			mwfuncs, err := m.collectMiddlewares(h, g)
 			if err != nil {
 				return err
 			}
 
 			// Register route with Echo
-			if hf, ok := s.handlerFuncs[api.HandlerKey(prefix, g, h)]; ok {
+			if hf, ok := m.handlerFuncs[api.HandlerKey(prefix, g, h)]; ok {
 				group.Add(h.Method, h.Path, hf, mwfuncs...)
 			}
 
 			// Store handler metadata for request lookup
 			key := api.HandlerKey(prefix, g, h)
-			s.groups[key] = g
-			s.handlers[key] = h
+			m.groups[key] = g
+			m.handlers[key] = h
 		}
 	}
 	return nil
 }
 
-func (s *server) Routers() (map[string]*api.HandlerGroup, map[string]*api.Handler) {
-	return s.groups, s.handlers
+func (m *manager) Routers() (map[string]*api.HandlerGroup, map[string]*api.Handler) {
+	return m.groups, m.handlers
 }
 
 // collectMiddlewares gathers handler-specific and group-level middlewares
-func (s *server) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]echo.MiddlewareFunc, error) {
+func (m *manager) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]echo.MiddlewareFunc, error) {
 	var mwfuncs []echo.MiddlewareFunc
 
 	// Collect handler-specific middlewares
 	for _, name := range h.Middlewares {
-		if mw, ok := s.middlewareFuncs[name]; ok {
+		if mw, ok := m.middlewareFuncs[name]; ok {
 			mwfuncs = append(mwfuncs, mw)
 		} else {
 			return nil, errors.NotImplemented.Newf("middleware %s not found", name)
@@ -214,7 +256,7 @@ func (s *server) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]echo
 
 	// Collect group-level middlewares
 	for _, name := range g.Middlewares {
-		if mw, ok := s.middlewareFuncs[name]; ok {
+		if mw, ok := m.middlewareFuncs[name]; ok {
 			mwfuncs = append(mwfuncs, mw)
 		} else {
 			return nil, errors.NotImplemented.Newf("middleware %s not found", name)
@@ -225,9 +267,9 @@ func (s *server) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]echo
 }
 
 // RegisterMiddlewares registers middlewares with the server
-func (s *server) RegisterMiddlewares(middlewares ...api.Middleware) {
+func (m *manager) RegisterMiddlewares(middlewares ...api.Middleware) {
 	for _, mw := range middlewares {
-		s.middlewareFuncs[mw.Name()] = mw.Func
+		m.middlewareFuncs[mw.Name()] = mw.Func
 	}
 }
 
@@ -235,41 +277,46 @@ func (s *server) RegisterMiddlewares(middlewares ...api.Middleware) {
 // Server Lifecycle
 // ============================================================================
 
-// start starts the HTTP or HTTPS server
-func (s *server) start() error {
+// startServer starts a single HTTP or HTTPS server
+func (m *manager) startServer(name string, s *server) error {
 	if s.endpoint == nil {
 		return nil
 	}
 
 	if s.tlsConfig == nil {
-		s.log.Infof("serves http on %s", s.endpoint.String())
-		return s.core.Start(s.endpoint.Address())
+		m.log.Infof("serves http [%s] on %s", name, s.endpoint.String())
+		return s.echo.Start(s.endpoint.Address())
 	}
 
-	s.core.TLSServer = &http.Server{
+	s.echo.TLSServer = &http.Server{
 		Addr:      s.endpoint.Address(),
 		TLSConfig: s.tlsConfig.AsConfig(),
 	}
-	s.log.Infof("serves https on %s", s.endpoint.String())
-	return s.core.StartServer(s.core.TLSServer)
+	m.log.Infof("serves https [%s] on %s", name, s.endpoint.String())
+	return s.echo.StartServer(s.echo.TLSServer)
 }
 
-// Start starts the server in a goroutine
-func (s *server) Start(ctx context.Context) error {
-	go func() {
-		if err := s.start(); err != nil {
-			s.log.Debugf("server start error: %v", err)
-		}
-	}()
+// Start starts all servers in goroutines
+func (m *manager) Start(ctx context.Context) error {
+	for name, s := range m.servers {
+		go func(n string, srv *server) {
+			if err := m.startServer(n, srv); err != nil {
+				m.log.Debugf("server %s start error: %v", n, err)
+			}
+		}(name, s)
+	}
 	return nil
 }
 
-// Stop gracefully shuts down the server
-func (s *server) Stop(wait bool) error {
+// Stop gracefully shuts down all servers
+func (m *manager) Stop(wait bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.core.Shutdown(ctx); err != nil {
-		return errors.Wrap(err)
+	for name, s := range m.servers {
+		if err := s.echo.Shutdown(ctx); err != nil {
+			m.log.Errorf("failed to stop server %s: %v", name, err)
+			return errors.Wrap(err)
+		}
 	}
 	return nil
 }

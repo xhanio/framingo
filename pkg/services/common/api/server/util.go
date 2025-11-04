@@ -13,7 +13,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common/api"
 )
 
-func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
+func (m *manager) requestInfo(c echo.Context) *api.RequestInfo {
 	r := c.Request()
 	prevID := c.Request().Header.Get(api.HeaderKeyTrace)
 	traceID := uuid.NewString()[:8]
@@ -31,12 +31,12 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 	}
 	c.Echo().Router().Find(r.Method, r.URL.EscapedPath(), c)
 	key := req.Key()
-	req.Handler = s.handlers[key]
-	req.HandlerGroup = s.groups[key]
+	req.Handler = m.handlers[key]
+	req.HandlerGroup = m.groups[key]
 	return req
 }
 
-func (s *server) responseInfo(started time.Time, c echo.Context) *api.ResponseInfo {
+func (m *manager) responseInfo(started time.Time, c echo.Context) *api.ResponseInfo {
 	r := c.Response()
 	resp := &api.ResponseInfo{
 		Status: r.Status,
@@ -53,7 +53,7 @@ func (s *server) responseInfo(started time.Time, c echo.Context) *api.ResponseIn
 	return resp
 }
 
-func (s *server) print(req *api.RequestInfo, resp *api.ResponseInfo) {
+func (m *manager) print(req *api.RequestInfo, resp *api.ResponseInfo) {
 	parts := []any{
 		fmt.Sprintf("%-15s", color.CyanString(req.Method)),
 		fmt.Sprintf("%-21s", colorStatusCode(resp.Status)),
@@ -67,14 +67,14 @@ func (s *server) print(req *api.RequestInfo, resp *api.ResponseInfo) {
 	parts = append(parts, fmt.Sprintf("%-23s", "tid="+color.YellowString(tid)))
 	parts = append(parts, req.URI)
 	if resp.Status >= 400 && resp.Error != nil {
-		if s.log.Level() == zapcore.DebugLevel {
-			s.log.Errorf("%v", resp.Error.Origin)
+		if m.log.Level() == zapcore.DebugLevel {
+			m.log.Errorf("%v", resp.Error.Origin)
 		} else if resp.Status >= 500 {
-			s.log.Errorf("%s", resp.Error.Origin)
+			m.log.Errorf("%s", resp.Error.Origin)
 		}
-		s.log.Error(parts...)
+		m.log.Error(parts...)
 	} else {
-		s.log.Info(parts...)
+		m.log.Info(parts...)
 	}
 }
 

@@ -8,15 +8,18 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
-type Option func(*server)
+type Option func(*manager)
 
 func WithLogger(logger log.Logger) Option {
-	return func(s *server) {
-		s.log = logger
+	return func(m *manager) {
+		m.log = logger
 	}
 }
 
-func WithEndpoint(host string, port uint, prefix string) Option {
+// ServerOption configures a server (echo server instance)
+type ServerOption func(*server)
+
+func WithEndpoint(host string, port uint, prefix string) ServerOption {
 	return func(s *server) {
 		if host != "" && port > 0 {
 			s.endpoint = &api.Endpoint{
@@ -28,7 +31,7 @@ func WithEndpoint(host string, port uint, prefix string) Option {
 	}
 }
 
-func WithCert(cert certutil.CertBundle) Option {
+func WithTLS(cert certutil.CertBundle) ServerOption {
 	return func(s *server) {
 		s.tlsConfig = &api.ServerTLS{
 			CertBundle:  cert,
@@ -37,7 +40,7 @@ func WithCert(cert certutil.CertBundle) Option {
 	}
 }
 
-func WithThrottle(rps float64, burstSize int) Option {
+func WithThrottle(rps float64, burstSize int) ServerOption {
 	return func(s *server) {
 		if rps == 0 || burstSize == 0 {
 			// no throttle control

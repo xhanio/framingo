@@ -5,11 +5,11 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common/api"
 )
 
-type Server interface {
+type Manager interface {
 	common.Service
 	common.Initializable
 	common.Daemon
-	Endpoint() *api.Endpoint
+	AddServer(name string, opts ...ServerOption)
 	RegisterRouters(routers ...api.Router) error
 	RegisterMiddlewares(middlewares ...api.Middleware)
 	Routers() (map[string]*api.HandlerGroup, map[string]*api.Handler)
