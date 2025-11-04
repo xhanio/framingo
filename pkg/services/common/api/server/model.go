@@ -8,7 +8,9 @@ import (
 // Server represents a single echo server instance
 type Server interface {
 	common.Named
-	Routers() (map[string]*api.HandlerGroup, map[string]*api.Handler)
+	Endpoint() *api.Endpoint
+	Routers() []*api.HandlerGroup
+	HandlerPath(group *api.HandlerGroup, handler *api.Handler) string
 }
 
 // Manager manages multiple server instances
