@@ -16,8 +16,9 @@ type Manager interface {
 	common.Service
 	common.Initializable
 	common.Daemon
-	AddServer(name string, opts ...ServerOption) error
-	GetServer(name string) Server
+	Add(name string, opts ...ServerOption) error
+	Get(name string) (Server, error)
+	List() []Server
 	RegisterRouters(routers ...api.Router) error
 	RegisterMiddlewares(middlewares ...api.Middleware)
 }

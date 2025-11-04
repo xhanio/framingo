@@ -78,8 +78,8 @@ func (m *manager) Init() error {
 	return nil
 }
 
-// AddServer adds a new echo server instance with the given configuration
-func (m *manager) AddServer(name string, opts ...ServerOption) error {
+// Add adds a new echo server instance with the given configuration
+func (m *manager) Add(name string, opts ...ServerOption) error {
 	s := &server{
 		name:     name,
 		log:      m.log,
@@ -107,9 +107,22 @@ func (m *manager) AddServer(name string, opts ...ServerOption) error {
 	return nil
 }
 
-// GetServer returns the Server interface for the given server name
-func (m *manager) GetServer(name string) Server {
-	return m.servers[name]
+// Get returns the Server interface for the given server name
+func (m *manager) Get(name string) (Server, error) {
+	s, ok := m.servers[name]
+	if !ok {
+		return nil, errors.Newf("server %s not found", name)
+	}
+	return s, nil
+}
+
+// List returns all registered servers
+func (m *manager) List() []Server {
+	servers := make([]Server, 0, len(m.servers))
+	for _, s := range m.servers {
+		servers = append(servers, s)
+	}
+	return servers
 }
 
 // ============================================================================
