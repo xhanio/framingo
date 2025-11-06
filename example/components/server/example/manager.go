@@ -28,7 +28,7 @@ import (
 	// "github.com/xhanio/framingo/pkg/services/common/eventbus"
 
 	"github.com/xhanio/framingo/example/services/example"
-	"github.com/xhanio/framingo/example/types/infra"
+	"github.com/xhanio/framingo/example/utils/infra"
 )
 
 type manager struct {
