@@ -1,0 +1,48 @@
+package api
+
+import (
+	"fmt"
+	"path"
+
+	"github.com/labstack/echo/v4"
+	"github.com/xhanio/framingo/pkg/types/common"
+)
+
+const DefaultAPIPrefix = "/"
+
+type Middleware interface {
+	common.Service
+	Func(echo.HandlerFunc) echo.HandlerFunc
+}
+
+type Router interface {
+	common.Service
+	Config() []byte
+	Handlers() map[string]echo.HandlerFunc
+}
+
+type HandlerGroup struct {
+	Server      string     `json:"server"` // default: http
+	Prefix      string     `json:"prefix"` // default: /
+	Handlers    []*Handler `json:"handlers"`
+	Middlewares []string   `json:"middlewares"`
+}
+
+type Handler struct {
+	Method      string          `json:"method"`
+	Path        string          `json:"path"`
+	Middlewares []string        `json:"middlewares"`
+	Permission  string          `json:"permission"`
+	Poll        bool            `json:"poll"`
+	Throttle    *ThrottleConfig `json:"throttle,omitempty"`
+	Func        string          `json:"func"`
+}
+
+func HandlerKey(g *HandlerGroup, h *Handler) string {
+	var server, group string
+	if g != nil {
+		server = g.Server
+		group = g.Prefix
+	}
+	return fmt.Sprintf("%s<%s>%s", server, h.Method, path.Join(group, h.Path))
+}

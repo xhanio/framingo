@@ -1,0 +1,7 @@
+server: http # server name
+prefix: /example # group prefix
+handlers:
+  - method: POST
+    path: /helloworld/:message
+    func: Example # key of Handlers()
+    middleware: example # middleware name
