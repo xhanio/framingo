@@ -7,21 +7,21 @@
 
 ## Features
 
-✨ **Service-Oriented Architecture** - Built-in service lifecycle management with automatic dependency resolution
+- **Service-Oriented Architecture** - Built-in service lifecycle management with automatic dependency resolution
 
-🚀 **HTTP API Server** - Production-ready API server with routing, middleware, and rate limiting
+- **HTTP API Server** - Production-ready API server with routing, middleware, and rate limiting
 
-🔧 **Rich Utilities** - Extensive collection of utility packages for common operations
+- **Rich Utilities** - Extensive collection of utility packages for common operations
 
-📦 **Modular Design** - Pick and choose components based on your needs
+- **Modular Design** - Pick and choose components based on your needs
 
-⚙️ **Configuration Management** - YAML-based configuration with environment variable overrides
+- **Configuration Management** - YAML-based configuration with environment variable overrides
 
-🔌 **Database Integration** - Database manager with connection pooling and migrations
+- **Database Integration** - Database manager with connection pooling and migrations
 
-🎯 **CLI Support** - Built-in command-line interface framework integration
+- **CLI Support** - Built-in command-line interface framework integration
 
-🛡️ **Production Ready** - Error handling, logging, graceful shutdown, and profiling support
+- **Production Ready** - Error handling, logging, graceful shutdown, and profiling support
 
 ## Table of Contents
 
@@ -74,7 +74,7 @@ api:
 go run main.go daemon -c config.yaml
 ```
 
-📖 **For a complete tutorial**, see the [Building Your First Application](#building-your-first-application) section below.
+**For a complete tutorial**, see the [Building Your First Application](#building-your-first-application) section below.
 
 ## Architecture
 
@@ -426,16 +426,16 @@ The `example/` directory contains a complete, production-ready application demon
 
 ```
 example/
-├── components/
-│   ├── cmd/example/        # CLI with Cobra
-│   └── server/example/     # Server orchestration
-├── services/example/       # Business service
-├── routers/example/        # HTTP routes
-├── middlewares/example/    # Custom middleware
-├── types/                  # Type definitions
-│   └── entity/             # Business entities
-└── utils/                  # Utility modules
-    └── infra/              # Infrastructure utilities
++-- components/
+|   +-- cmd/example/        # CLI with Cobra
+|   +-- server/example/     # Server orchestration
++-- services/example/       # Business service
++-- routers/example/        # HTTP routes
++-- middlewares/example/    # Custom middleware
++-- types/                  # Type definitions
+|   +-- entity/             # Business entities
++-- utils/                  # Utility modules
+    +-- infra/              # Infrastructure utilities
 ```
 
 ### Running the Example
@@ -504,7 +504,7 @@ func (s *myService) Dependencies() []common.Service {
     return []common.Service{s.database, s.cache}
 }
 
-// Controller automatically starts: database → cache → myService
+// Controller automatically starts: database -> cache -> myService
 ```
 
 ### Router Configuration
@@ -529,7 +529,7 @@ handlers:
 Middlewares process requests in order:
 
 ```
-Request → Recover → Info → Throttle → Logger → Custom → Handler → Response
+Request -> Recover -> Info -> Throttle -> Logger -> Custom -> Handler -> Response
 ```
 
 ## Configuration
@@ -659,9 +659,9 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Support
 
-- 📖 [Full Documentation](example/README.md)
-- 🐛 [Issue Tracker](https://github.com/xhanio/framingo/issues)
-- 💬 [Discussions](https://github.com/xhanio/framingo/discussions)
+- [Full Documentation](example/README.md)
+- [Issue Tracker](https://github.com/xhanio/framingo/issues)
+- [Discussions](https://github.com/xhanio/framingo/discussions)
 
 ## Acknowledgments
 
@@ -673,4 +673,4 @@ Built with:
 
 ---
 
-**Start building with Framingo today! 🚀**
+**Start building with Framingo today!**
