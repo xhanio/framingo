@@ -17,10 +17,10 @@ example/
 
 ## Files
 
-### [manager.go](example/manager.go)
+### [manager.go](manager.go)
 
 Contains the main service manager implementation (`manager` struct) and implements:
-- `Manager` interface from [model.go](example/model.go)
+- `Manager` interface from [model.go](model.go)
 - Service lifecycle methods: `Init()`, `Start()`, `Stop()`
 - Core functionality: `HelloWorld()` method
 
@@ -35,7 +35,7 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 }
 ```
 
-### [model.go](example/model.go)
+### [model.go](model.go)
 
 Defines the `Manager` interface which extends:
 - `common.Service` - Basic service interface
@@ -46,14 +46,14 @@ Defines the `Manager` interface which extends:
 Custom methods:
 - `HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error)` - Example business logic that accepts a message string and returns a Helloworld entity
 
-### [option.go](example/option.go)
+### [option.go](option.go)
 
 Provides functional options for service configuration:
 - `WithLogger(logger log.Logger)` - Configure custom logger
 
 ## Entity Types
 
-The service uses entity types from [example/types/entity](../../types/entity/example.go):
+The service uses entity types from [pkg/types/entity](../types/entity/example.go):
 
 ### Helloworld Entity
 ```go
@@ -69,7 +69,7 @@ This entity is returned by the `HelloWorld` method and can be used for API respo
 ### Creating a Service Instance
 
 ```go
-import "github.com/xhanio/framingo/example/services/example"
+import "github.com/xhanio/framingo/example/pkg/services/example"
 
 // Create with default settings
 svc := example.New()
@@ -150,13 +150,13 @@ The service properly handles shutdown by:
 To create a new service based on this example:
 
 1. Copy the `example` directory to a new service name
-2. Update package name and interface methods in [model.go](example/model.go)
-3. Implement business logic in [manager.go](example/manager.go)
-4. Add configuration options in [option.go](example/option.go)
+2. Update package name and interface methods in [model.go](model.go)
+3. Implement business logic in [manager.go](manager.go)
+4. Add configuration options in [option.go](option.go)
 5. Add dependencies in `Dependencies()` method if needed
 6. Implement actual work in the `Start()` goroutine
 
 ## See Also
 
-- [Framingo Service Architecture](../../pkg/types/common/)
-- [Common Service Interfaces](../../pkg/types/common/)
+- [Framingo Service Architecture](../../../pkg/types/common/)
+- [Common Service Interfaces](../../../pkg/types/common/)

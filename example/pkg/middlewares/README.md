@@ -15,7 +15,7 @@ example/
 
 ## Files
 
-### [middleware.go](example/middleware.go)
+### [middleware.go](middleware.go)
 
 Contains the middleware implementation with:
 - `middleware` struct that implements `api.Middleware` interface
@@ -32,7 +32,7 @@ Key methods:
 ### Creating a Middleware
 
 ```go
-import "github.com/xhanio/framingo/example/middlewares/example"
+import "github.com/xhanio/framingo/example/pkg/middlewares/example"
 
 // Create middleware instance
 mw := example.New()
@@ -43,7 +43,7 @@ mw := example.New()
 ```go
 import (
     "github.com/xhanio/framingo/pkg/services/api/server"
-    "github.com/xhanio/framingo/example/middlewares/example"
+    "github.com/xhanio/framingo/example/pkg/middlewares/example"
 )
 
 // Create server manager
@@ -115,7 +115,7 @@ All middlewares must implement:
 
 ## Built-in Server Middlewares
 
-The API server ([pkg/services/api/server](../../pkg/services/api/server/middleware.go)) provides several built-in middlewares:
+The API server ([pkg/services/api/server](../../../pkg/services/api/server/middleware.go)) provides several built-in middlewares:
 
 ### Error Middleware
 Wraps and handles errors from handlers:
@@ -302,8 +302,8 @@ Each middleware can:
 
 ## See Also
 
-- [API Server Middleware](../../pkg/services/api/server/middleware.go)
-- [API Server Manager](../../pkg/services/api/server/manager.go)
-- [API Types](../../pkg/types/api/model.go)
+- [API Server Middleware](../../../pkg/services/api/server/middleware.go)
+- [API Server Manager](../../../pkg/services/api/server/manager.go)
+- [API Types](../../../pkg/types/api/model.go)
 - [Example Router](../routers/example/)
 - [Echo Middleware Guide](https://echo.labstack.com/middleware/)

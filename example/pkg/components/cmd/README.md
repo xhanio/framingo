@@ -17,7 +17,7 @@ example/
 
 ## Files
 
-### [root.go](example/root.go)
+### [root.go](root.go)
 
 Defines the root command and global persistent flags:
 - Root command configuration
@@ -25,14 +25,14 @@ Defines the root command and global persistent flags:
 - Subcommand registration
 - Pre-run hooks
 
-### [daemon.go](example/daemon.go)
+### [daemon.go](daemon.go)
 
 Implements the daemon command to start the server:
 - Configuration file path flag (`--config`, `-c`)
 - Server initialization and startup
-- Integration with [example/components/server](../server/example/)
+- Integration with [pkg/components/server](../server/example/)
 
-### [common.go](example/common.go)
+### [common.go](common.go)
 
 Provides common utility commands:
 - `version` command - displays build information
@@ -51,7 +51,7 @@ import (
     "fmt"
     "os"
 
-    "github.com/xhanio/framingo/example/components/cmd/example"
+    "github.com/xhanio/framingo/example/pkg/components/cmd/example"
 )
 
 func main() {
@@ -106,7 +106,7 @@ myapp daemon [flags]
 
 **What it does:**
 1. Loads configuration from specified file
-2. Creates server instance ([example/components/server](../server/example/))
+2. Creates server instance ([pkg/components/server](../server/example/))
 3. Initializes all services, routers, and middlewares
 4. Starts HTTP API server(s)
 5. Blocks until SIGINT (Ctrl+C)
@@ -133,7 +133,7 @@ myapp version
 ```
 
 **What it does:**
-- Retrieves build information from [pkg/types/info](../../../pkg/types/info/)
+- Retrieves build information from [pkg/types/info](../../../../pkg/types/info/)
 - Formats as JSON with indentation
 - Prints to stdout
 
@@ -171,14 +171,14 @@ Daemon Command (RunE)
   - Parse --config flag
   - Create server with config path
     
-Server Initialization (example/components/server)
+Server Initialization (pkg/components/server)
   - Load YAML config via Viper
   - Initialize logger
   - Initialize database
   - Initialize services
   - Initialize API server(s)
-  - Register middlewares (example/middlewares)
-  - Register routers (example/routers)
+  - Register middlewares (pkg/middlewares)
+  - Register routers (pkg/routers)
     
 Server Start
   - Start all services
@@ -249,7 +249,7 @@ func runMigrate(cmd *cobra.Command, args []string) error {
 
 ### 2. Register in Root Command
 
-Add to [root.go](example/root.go):
+Add to [root.go](root.go):
 
 ```go
 root.AddCommand(NewDaemonCmd())
@@ -357,7 +357,7 @@ The daemon command integrates directly with the server component:
 
 ```go
 func runDaemon(cmd *cobra.Command, args []string) error {
-    // Create server from example/components/server
+    // Create server from pkg/components/server
     m := example.New(example.Config{
         Path: configPath,
     })
@@ -378,7 +378,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 This connects:
 - CLI layer (this package)
-- Server component ([example/components/server](../server/example/))
+- Server component ([pkg/components/server](../server/example/))
 - All registered services, routers, and middlewares
 
 ## Development Workflow
@@ -465,4 +465,4 @@ CMD ["myapp", "daemon", "-c", "/etc/myapp/config.yaml"]
 - [Example Services](../../services/example/)
 - [Example Routers](../../routers/example/)
 - [Example Middlewares](../../middlewares/example/)
-- [Build Info Types](../../../pkg/types/info/)
+- [Build Info Types](../../../../pkg/types/info/)

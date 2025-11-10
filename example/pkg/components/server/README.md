@@ -25,7 +25,7 @@ example/
 
 ## Files
 
-### [model.go](example/model.go)
+### [model.go](model.go)
 
 Defines the server interface and configuration:
 
@@ -41,7 +41,7 @@ type Server interface {
 }
 ```
 
-### [manager.go](example/manager.go)
+### [manager.go](manager.go)
 
 Contains the main server implementation with:
 - Configuration loading via Viper
@@ -53,13 +53,13 @@ Contains the main server implementation with:
 - Signal handling (SIGINT, SIGUSR1, SIGUSR2)
 - pprof profiling support
 
-### [api.go](example/api.go)
+### [api.go](api.go)
 
 Handles API-specific initialization:
 - Middleware registration
 - Router registration
-- Integration with [example/middlewares](../../middlewares/example/)
-- Integration with [example/routers](../../routers/example/)
+- Integration with [pkg/middlewares](../../middlewares/example/)
+- Integration with [pkg/routers](../../routers/example/)
 
 ## Usage
 
@@ -72,7 +72,7 @@ import (
     "context"
     "log"
 
-    "github.com/xhanio/framingo/example/components/server/example"
+    "github.com/xhanio/framingo/example/pkg/components/server/example"
 )
 
 func main() {
@@ -166,7 +166,7 @@ The `Init()` method performs the following steps:
    - Handle service dependencies
 
 5. **Initialize Business Services**
-   - Create example service (see [example/services](../../services/example/))
+   - Create example service (see [pkg/services](../../services/example/))
 
 6. **Initialize API Server**
    - Configure multiple API servers from config
@@ -176,9 +176,9 @@ The `Init()` method performs the following steps:
    - Register all services with controller
    - Perform topological sort for dependency resolution
 
-8. **Initialize API Components** (via [api.go](example/api.go:10))
-   - Register middlewares (see [example/middlewares](../../middlewares/example/))
-   - Register routers (see [example/routers](../../routers/example/))
+8. **Initialize API Components** (via [api.go](api.go:10))
+   - Register middlewares (see [pkg/middlewares](../../middlewares/example/))
+   - Register routers (see [pkg/routers](../../routers/example/))
 
 9. **Pre/Post Initialization Hooks**
    - Call `Init()` on all services
@@ -221,12 +221,12 @@ The server component manages several layers of services:
 - **Database Manager**: Connection pool and migrations
 
 ### Business Services
-- **Example Service**: Custom business logic (see [example/services/example](../../services/example/))
+- **Example Service**: Custom business logic (see [pkg/services/example](../../services/example/))
 
 ### API Services
-- **Server Manager**: HTTP API server ([pkg/services/api/server](../../../pkg/services/api/server/))
-- **Routers**: HTTP route handlers (see [example/routers/example](../../routers/example/))
-- **Middlewares**: Request processing pipeline (see [example/middlewares/example](../../middlewares/example/))
+- **Server Manager**: HTTP API server ([pkg/services/api/server](../../../../pkg/services/api/server/))
+- **Routers**: HTTP route handlers (see [pkg/routers/example](../../routers/example/))
+- **Middlewares**: Request processing pipeline (see [pkg/middlewares/example](../../middlewares/example/))
 
 ### Service Controller
 - **Controller Manager**: Orchestrates service lifecycle ([pkg/services/controller](../../../pkg/services/controller/))
@@ -251,19 +251,19 @@ m.services.Register(m.api)
 
 ## API Initialization
 
-The [api.go](example/api.go) file demonstrates how to wire up API components:
+The [api.go](api.go) file demonstrates how to wire up API components:
 
 ```go
 func (m *manager) initAPI() error {
     // Register middlewares
     middlewares := []api.Middleware{
-        mwexample.New(),  // example/middlewares/example
+        mwexample.New(),  // pkg/middlewares/example
     }
     m.api.RegisterMiddlewares(middlewares...)
 
     // Register routers
     routers := []api.Router{
-        example.New(m.example, m.log),  // example/routers/example
+        example.New(m.example, m.log),  // pkg/routers/example
     }
     err := m.api.RegisterRouters(routers...)
     if err != nil {
@@ -275,9 +275,9 @@ func (m *manager) initAPI() error {
 ```
 
 This connects:
-- Middlewares from [example/middlewares/example](../../middlewares/example/)
-- Routers from [example/routers/example](../../routers/example/)
-- Services from [example/services/example](../../services/example/)
+- Middlewares from [pkg/middlewares/example](../../middlewares/example/)
+- Routers from [pkg/routers/example](../../routers/example/)
+- Services from [pkg/services/example](../../services/example/)
 
 ## Signal Handling
 
@@ -298,7 +298,7 @@ kill -USR1 <pid>
 
 Example output:
 ```
-Service: example/services/example
+Service: example/pkg/services/example
 Status: running
 Uptime: 1h23m45s
 ...
@@ -431,7 +431,7 @@ ca:
 
 ### Adding a New Service
 
-1. **Create the service** (see [example/services](../../services/example/))
+1. **Create the service** (see [pkg/services](../../services/example/))
 2. **Add to manager struct**:
    ```go
    type manager struct {
@@ -452,8 +452,8 @@ ca:
 
 ### Adding a New Router
 
-1. **Create the router** (see [example/routers](../../routers/example/))
-2. **Register in [api.go](example/api.go)**:
+1. **Create the router** (see [pkg/routers](../../routers/example/))
+2. **Register in [api.go](api.go)**:
    ```go
    routers := []api.Router{
        example.New(m.example, m.log),
@@ -463,8 +463,8 @@ ca:
 
 ### Adding a New Middleware
 
-1. **Create the middleware** (see [example/middlewares](../../middlewares/example/))
-2. **Register in [api.go](example/api.go)**:
+1. **Create the middleware** (see [pkg/middlewares](../../middlewares/example/))
+2. **Register in [api.go](api.go)**:
    ```go
    middlewares := []api.Middleware{
        mwexample.New(),
@@ -477,7 +477,7 @@ ca:
 - [Example Services](../../services/example/)
 - [Example Routers](../../routers/example/)
 - [Example Middlewares](../../middlewares/example/)
-- [API Server Manager](../../../pkg/services/api/server/)
-- [Service Controller](../../../pkg/services/controller/)
-- [Database Manager](../../../pkg/services/db/)
+- [API Server Manager](../../../../pkg/services/api/server/)
+- [Service Controller](../../../../pkg/services/controller/)
+- [Database Manager](../../../../pkg/services/db/)
 - [Viper Configuration](https://github.com/spf13/viper)

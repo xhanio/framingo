@@ -17,7 +17,7 @@ example/
 
 ## Files
 
-### [router.go](example/router.go)
+### [router.go](router.go)
 
 Contains the router implementation with:
 - `router` struct that implements `api.Router` interface
@@ -30,7 +30,7 @@ Key methods:
 - `Dependencies()` - Lists required services
 - `Config()` - Returns embedded YAML configuration
 
-### [handler.go](example/handler.go)
+### [handler.go](handler.go)
 
 Implements HTTP request handlers and handler discovery:
 - `Example()` - Sample HTTP handler that returns "Good"
@@ -38,7 +38,7 @@ Implements HTTP request handlers and handler discovery:
 
 The `Handlers()` method uses reflection to automatically discover all methods with the signature `func(echo.Context) error` and registers them as handlers.
 
-### [router.yaml](example/router.yaml)
+### [router.yaml](router.yaml)
 
 YAML configuration defining routes:
 ```yaml
@@ -57,8 +57,8 @@ handlers:
 
 ```go
 import (
-    "github.com/xhanio/framingo/example/routers/example"
-    exampleSvc "github.com/xhanio/framingo/example/services/example"
+    "github.com/xhanio/framingo/example/pkg/routers/example"
+    exampleSvc "github.com/xhanio/framingo/example/pkg/services/example"
 )
 
 // Create service instance
@@ -70,7 +70,7 @@ router := example.New(svc, logger)
 
 ### Router Configuration
 
-The router is configured via the embedded [router.yaml](example/router.yaml):
+The router is configured via the embedded [router.yaml](router.yaml):
 - **server**: Name of the API server to mount on
 - **prefix**: Base path for all routes in this router
 - **handlers**: List of route definitions
@@ -80,12 +80,12 @@ The router is configured via the embedded [router.yaml](example/router.yaml):
 Each handler in the YAML config includes:
 - `method` - HTTP method (GET, POST, PUT, DELETE, etc.)
 - `path` - Route path (combined with prefix)
-- `func` - Handler function name (must match method in [handler.go](example/handler.go))
+- `func` - Handler function name (must match method in [handler.go](handler.go))
 - `middleware` - Optional middleware name
 
 ### Adding New Handlers
 
-1. **Define the handler method in [handler.go](example/handler.go)**:
+1. **Define the handler method in [handler.go](handler.go)**:
 ```go
 func (r *router) MyNewHandler(c echo.Context) error {
     // Your logic here
@@ -95,7 +95,7 @@ func (r *router) MyNewHandler(c echo.Context) error {
 }
 ```
 
-2. **Add route configuration in [router.yaml](example/router.yaml)**:
+2. **Add route configuration in [router.yaml](router.yaml)**:
 ```yaml
 handlers:
   - method: POST
@@ -159,7 +159,7 @@ This approach:
 ## Dependencies
 
 The example router depends on:
-- `example.Manager` service ([../services/example/](../services/example/))
+- `example.Manager` service ([pkg/services/example/](../services/example/))
 - Echo web framework for HTTP handling
 
 Dependencies are declared in the `Dependencies()` method and used for service orchestration.
@@ -182,7 +182,7 @@ Dependencies are declared in the `Dependencies()` method and used for service or
 
 ## See Also
 
-- [Framingo API Types](../../pkg/types/api/)
-- [API Server Implementation](../../pkg/services/api/server/)
+- [Framingo API Types](../../../pkg/types/api/)
+- [API Server Implementation](../../../pkg/services/api/server/)
 - [Example Service](../services/example/)
 - [Echo Framework Documentation](https://echo.labstack.com/)

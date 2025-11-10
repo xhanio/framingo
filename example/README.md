@@ -27,21 +27,22 @@ The Framingo framework provides a modular, service-oriented architecture for bui
 
 ```
 example/
-+-- components/          # Application components
-|   +-- cmd/            # CLI interface (Cobra)
-|   |   +-- example/    # Command implementations
-|   +-- server/         # Server component
-|       +-- example/    # Server orchestration
-+-- services/           # Business logic services
-|   +-- example/        # Example service implementation
-+-- routers/            # HTTP route handlers
-|   +-- example/        # Example router with handlers
-+-- middlewares/        # HTTP middleware
-|   +-- example/        # Example middleware (deflate compression)
-+-- types/              # Type definitions
-|   +-- entity/         # Business entities
-+-- utils/              # Utility modules
-|   +-- infra/          # Infrastructure utilities
++-- pkg/                # Application packages
+|   +-- components/     # Application components
+|   |   +-- cmd/        # CLI interface (Cobra)
+|   |   |   +-- example/    # Command implementations
+|   |   +-- server/     # Server component
+|   |       +-- example/    # Server orchestration
+|   +-- services/       # Business logic services
+|   |   +-- example/    # Example service implementation
+|   +-- routers/        # HTTP route handlers
+|   |   +-- example/    # Example router with handlers
+|   +-- middlewares/    # HTTP middleware
+|   |   +-- example/    # Example middleware (deflate compression)
+|   +-- types/          # Type definitions
+|   |   +-- entity/     # Business entities
+|   +-- utils/          # Utility modules
+|       +-- infra/      # Infrastructure utilities
 +-- README.md           # This file
 ```
 
@@ -57,7 +58,7 @@ import (
     "fmt"
     "os"
 
-    "github.com/xhanio/framingo/example/components/cmd/example"
+    "github.com/xhanio/framingo/example/pkg/components/cmd/example"
 )
 
 func main() {
@@ -218,7 +219,7 @@ type User struct {
 }
 ```
 
-See [types/entity/](types/entity/example.go) for examples.
+See [pkg/types/entity/](pkg/types/entity/example.go) for examples.
 
 ### Step 2: Create a Service
 
@@ -231,7 +232,7 @@ package user
 import (
     "context"
     "github.com/xhanio/framingo/pkg/types/common"
-    "github.com/xhanio/framingo/example/types/entity"
+    "github.com/xhanio/framingo/example/pkg/types/entity"
 )
 
 type Manager interface {
@@ -265,7 +266,7 @@ func (m *manager) GetUser(ctx context.Context, id string) (*entity.User, error) 
 }
 ```
 
-**Learn more:** [Service Documentation](services/README.md)
+**Learn more:** [Service Documentation](pkg/services/README.md)
 
 ### Step 3: Create a Router
 
@@ -290,7 +291,7 @@ package user
 
 import (
     "github.com/labstack/echo/v4"
-    "github.com/xhanio/framingo/example/services/user"
+    "github.com/xhanio/framingo/example/pkg/services/user"
 )
 
 type router struct {
@@ -307,7 +308,7 @@ func (r *router) GetUser(c echo.Context) error {
 }
 ```
 
-**Learn more:** [Router Documentation](routers/README.md)
+**Learn more:** [Router Documentation](pkg/routers/README.md)
 
 ### Step 4: Create Middleware (Optional)
 
@@ -328,7 +329,7 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 }
 ```
 
-**Learn more:** [Middleware Documentation](middlewares/README.md)
+**Learn more:** [Middleware Documentation](pkg/middlewares/README.md)
 
 ### Step 5: Wire Everything Together
 
@@ -382,7 +383,7 @@ func (m *manager) Init() error {
 }
 ```
 
-**Learn more:** [Server Component Documentation](components/server/README.md)
+**Learn more:** [Server Component Documentation](pkg/components/server/README.md)
 
 ### Step 6: Build and Deploy
 
@@ -395,7 +396,7 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 ./myapp daemon -c config.yaml
 ```
 
-**Learn more:** [CLI Documentation](components/cmd/README.md)
+**Learn more:** [CLI Documentation](pkg/components/cmd/README.md)
 
 ## Component Reference
 
@@ -409,9 +410,9 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 - Context-aware operations
 - Automatic dependency resolution
 
-**Documentation**: [services/README.md](services/README.md)
+**Documentation**: [pkg/services/README.md](pkg/services/README.md)
 
-**Example**: [services/example/](services/example/)
+**Example**: [pkg/services/example/](pkg/services/example/)
 
 ### Routers Layer
 
@@ -423,9 +424,9 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 - Service dependency injection
 - Echo framework integration
 
-**Documentation**: [routers/README.md](routers/README.md)
+**Documentation**: [pkg/routers/README.md](pkg/routers/README.md)
 
-**Example**: [routers/example/](routers/example/)
+**Example**: [pkg/routers/example/](pkg/routers/example/)
 
 ### Middlewares Layer
 
@@ -437,9 +438,9 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 - Rate limiting (built-in)
 - Error handling (built-in)
 
-**Documentation**: [middlewares/README.md](middlewares/README.md)
+**Documentation**: [pkg/middlewares/README.md](pkg/middlewares/README.md)
 
-**Example**: [middlewares/example/](middlewares/example/)
+**Example**: [pkg/middlewares/example/](pkg/middlewares/example/)
 
 ### Server Component
 
@@ -453,9 +454,9 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 - Signal handling
 - pprof profiling
 
-**Documentation**: [components/server/README.md](components/server/README.md)
+**Documentation**: [pkg/components/server/README.md](pkg/components/server/README.md)
 
-**Example**: [components/server/example/](components/server/example/)
+**Example**: [pkg/components/server/example/](pkg/components/server/example/)
 
 ### CMD Component
 
@@ -467,9 +468,9 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 - Help generation
 - Version information
 
-**Documentation**: [components/cmd/README.md](components/cmd/README.md)
+**Documentation**: [pkg/components/cmd/README.md](pkg/components/cmd/README.md)
 
-**Example**: [components/cmd/example/](components/cmd/example/)
+**Example**: [pkg/components/cmd/example/](pkg/components/cmd/example/)
 
 ## Development Workflow
 
@@ -477,7 +478,7 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 
 1. **Clone or create your project structure**:
 ```bash
-mkdir -p myapp/{cmd/myapp,services,routers,middlewares,types/entity,components/{cmd,server}}
+mkdir -p myapp/{cmd/myapp,pkg/{services,routers,middlewares,types/entity,components/{cmd,server}}}
 ```
 
 2. **Initialize Go module**:
@@ -490,17 +491,17 @@ go get github.com/xhanio/framingo
 3. **Copy example files as templates**:
 ```bash
 # Use example files as starting point
-cp -r $FRAMINGO_PATH/example/services/example myapp/services/myservice
+cp -r $FRAMINGO_PATH/example/pkg/services/example myapp/pkg/services/myservice
 # Modify as needed
 ```
 
 ### Development Cycle
 
-1. **Define your entities** (types/entity/)
-2. **Implement services** (services/)
-3. **Create routers** (routers/)
-4. **Add middlewares** if needed (middlewares/)
-5. **Wire in server component** (components/server/)
+1. **Define your entities** (pkg/types/entity/)
+2. **Implement services** (pkg/services/)
+3. **Create routers** (pkg/routers/)
+4. **Add middlewares** if needed (pkg/middlewares/)
+5. **Wire in server component** (pkg/components/server/)
 6. **Test locally**:
 ```bash
 go run cmd/myapp/main.go daemon -c config.yaml
@@ -516,7 +517,7 @@ go test ./...
 go test -cover ./...
 
 # Run specific service tests
-go test ./services/myservice/...
+go test ./pkg/services/myservice/...
 ```
 
 ### Debugging
@@ -825,11 +826,11 @@ server: admin   # Target admin server
 
 ### Example Components
 
-- [Services](services/README.md) - Business logic layer
-- [Routers](routers/README.md) - HTTP routing layer
-- [Middlewares](middlewares/README.md) - Request processing
-- [Server Component](components/server/README.md) - Orchestration
-- [CMD Component](components/cmd/README.md) - CLI interface
+- [Services](pkg/services/README.md) - Business logic layer
+- [Routers](pkg/routers/README.md) - HTTP routing layer
+- [Middlewares](pkg/middlewares/README.md) - Request processing
+- [Server Component](pkg/components/server/README.md) - Orchestration
+- [CMD Component](pkg/components/cmd/README.md) - CLI interface
 
 ## Next Steps
 
