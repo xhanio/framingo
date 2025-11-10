@@ -6,6 +6,7 @@ This directory contains a complete example application demonstrating how to buil
 
 - [Overview](#overview)
 - [Project Structure](#project-structure)
+- [Framework Modules](#framework-modules)
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
 - [Building Your Application](#building-your-application)
@@ -25,26 +26,93 @@ The Framingo framework provides a modular, service-oriented architecture for bui
 
 ## Project Structure
 
+When building a new Framingo application, organize your code into these key directories:
+
 ```
 example/
 +-- pkg/                # Application packages
-|   +-- components/     # Application components
-|   |   +-- cmd/        # CLI interface (Cobra)
-|   |   |   +-- example/    # Command implementations
-|   |   +-- server/     # Server component
-|   |       +-- example/    # Server orchestration
-|   +-- services/       # Business logic services
-|   |   +-- example/    # Example service implementation
-|   +-- routers/        # HTTP route handlers
-|   |   +-- example/    # Example router with handlers
-|   +-- middlewares/    # HTTP middleware
-|   |   +-- example/    # Example middleware (deflate compression)
-|   +-- types/          # Type definitions
-|   |   +-- entity/     # Business entities
-|   +-- utils/          # Utility modules
-|       +-- infra/      # Infrastructure utilities
+|   +-- components/     # Application components (CLI & server orchestration)
+|   |   +-- cmd/        # CLI interface using Cobra - entry point and command definitions
+|   |   |   +-- example/    # Command implementations (daemon, version, etc.)
+|   |   +-- server/     # Server component - wires services, routers, and middlewares together
+|   |       +-- example/    # Server orchestration and lifecycle management
+|   +-- services/       # Business logic layer - core application functionality
+|   |   +-- example/    # Example: domain services with Init/Start/Stop lifecycle
+|   +-- routers/        # HTTP routing layer - API endpoint handlers
+|   |   +-- example/    # Example: request handlers mapped to routes via YAML config
+|   +-- middlewares/    # HTTP middleware layer - request/response processing
+|   |   +-- example/    # Example: authentication, compression, validation, etc.
+|   +-- types/          # Type definitions - data models and interfaces
+|   |   +-- entity/     # Business entities and domain models
+|   +-- utils/          # Utility modules - helper functions and infrastructure
+|       +-- infra/      # Infrastructure utilities (signals, profiling, etc.)
 +-- README.md           # This file
 ```
+
+**Key Directory Purposes:**
+
+- **`components/`** - Application entry points and orchestration. The `cmd/` provides CLI interface, while `server/` initializes and manages all services.
+- **`services/`** - Your business logic lives here. Services have lifecycle management (Init/Start/Stop) and dependency injection.
+- **`routers/`** - Define HTTP endpoints and handlers. Each router maps routes to handler functions via YAML configuration.
+- **`middlewares/`** - Process requests before they reach handlers (auth, validation, logging, compression, etc.).
+- **`types/`** - Shared data structures, entities, and interfaces used across your application.
+- **`utils/`** - Reusable helper functions and infrastructure code that doesn't fit in services.
+
+## Framework Modules
+
+The Framingo framework is organized into four core module categories under the [pkg/](../pkg/) directory:
+
+### Services (`pkg/services/`)
+
+Production-ready service implementations that provide core functionality:
+
+- **[api/server](../pkg/services/api/server/)** - HTTP API server with Echo framework integration, middleware support, and route management
+- **[api/client](../pkg/services/api/client/)** - HTTP client utilities for making API requests
+- **[controller](../pkg/services/controller/)** - Service lifecycle management with dependency resolution and topological sorting
+- **[db](../pkg/services/db/)** - Database manager with GORM integration, connection pooling, and migration support
+- **[planner](../pkg/services/planner/)** - Task scheduling and planning service
+- **[pubsub](../pkg/services/pubsub/)** - Publish-subscribe messaging pattern implementation
+
+### Data Structures (`pkg/structs/`)
+
+Efficient, generic data structures for common algorithms:
+
+- **[buffer](../pkg/structs/buffer/)** - Ring buffer implementation with fixed capacity
+- **[graph](../pkg/structs/graph/)** - Generic graph structure with topological sort support
+- **[lease](../pkg/structs/lease/)** - Time-based lease management for resource allocation
+- **[queue](../pkg/structs/queue/)** - FIFO queue implementation
+- **[staque](../pkg/structs/staque/)** - Hybrid stack/queue data structure
+- **[trie](../pkg/structs/trie/)** - Prefix tree for efficient string matching
+
+### Type Definitions (`pkg/types/`)
+
+Core interfaces and type definitions used throughout the framework:
+
+- **[common](../pkg/types/common/)** - Common interfaces (`Service`, `Daemon`, `Initializable`, `Named`, etc.)
+- **[api](../pkg/types/api/)** - API-related types (middleware, router, handler interfaces)
+- **[info](../pkg/types/info/)** - Application metadata (version, build info)
+
+### Utilities (`pkg/utils/`)
+
+Helper packages for common tasks:
+
+- **[certutil](../pkg/utils/certutil/)** - Certificate and TLS utilities
+- **[cmdutil](../pkg/utils/cmdutil/)** - Command-line utilities
+- **[infra](../pkg/utils/infra/)** - Infrastructure helpers (signals, profiling)
+- **[ioutil](../pkg/utils/ioutil/)** - I/O utilities
+- **[job](../pkg/utils/job/)** - Background job management
+- **[log](../pkg/utils/log/)** - Structured logging with zap integration
+- **[maputil](../pkg/utils/maputil/)** - Map and set utilities
+- **[netutil](../pkg/utils/netutil/)** - Network utilities
+- **[pathutil](../pkg/utils/pathutil/)** - Path manipulation helpers
+- **[printutil](../pkg/utils/printutil/)** - Pretty printing utilities
+- **[reflectutil](../pkg/utils/reflectutil/)** - Reflection helpers
+- **[sliceutil](../pkg/utils/sliceutil/)** - Slice manipulation utilities
+- **[strutil](../pkg/utils/strutil/)** - String utilities
+- **[task](../pkg/utils/task/)** - Task management utilities
+- **[timeutil](../pkg/utils/timeutil/)** - Time-related utilities
+
+These modules provide the foundation for building robust, scalable applications with Framingo. Most applications will primarily use the **services** layer while the other modules provide supporting functionality.
 
 ## Quick Start
 
