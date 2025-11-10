@@ -2,8 +2,8 @@ package example
 
 import (
 	"github.com/xhanio/errors"
-	mwexample "github.com/xhanio/framingo/example/middlewares/example"
-	"github.com/xhanio/framingo/example/routers/example"
+	mwexample "github.com/xhanio/framingo/example/pkg/middlewares/example"
+	"github.com/xhanio/framingo/example/pkg/routers/example"
 	"github.com/xhanio/framingo/pkg/types/api"
 )
 

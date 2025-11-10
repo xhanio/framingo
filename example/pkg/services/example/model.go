@@ -3,7 +3,7 @@ package example
 import (
 	"context"
 
-	"github.com/xhanio/framingo/example/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 

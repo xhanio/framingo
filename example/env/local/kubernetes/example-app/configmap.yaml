@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: framingo-example-config
+  labels:
+    app: framingo-example
+data:
+  db_host: "postgres"
+  db_port: "5432"
+  db_name: "framingo_example"
+  config.yaml: |
+    log:
+      level: 1  # Info level for production
+      file: /var/log/framingo-example/app.log
+      rotation:
+        max_size: 100
+        max_backups: 3
+        max_age: 7
+
+    db:
+      type: postgres
+      connection:
+        max_open: 10
+        max_idle: 5
+        max_lifetime: 1h
+        exec_timeout: 30s
+
+    api:
+      http:
+        host: 0.0.0.0
+        port: 8080
+        prefix: /api/v1
+        throttle:
+          rps: 100.0
+          burst_size: 200
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: framingo-example-secret
+  labels:
+    app: framingo-example
+type: Opaque
+stringData:
+  db_user: "framingo"
+  db_password: "framingo_dev"

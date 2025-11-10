@@ -1,0 +1,93 @@
+# GoPro Configuration for Framingo Example
+# Format: github.com/xhanio/gopro/pkg/types/config.go
+
+product: framingo-example
+version: v1.0.0
+project: github.com/xhanio/framingo/example
+
+default:
+  binary_src: build/binary
+  binary_tgt: bin/
+  binary_build_env:
+    - CGO_ENABLED=1
+  binary_build_args:
+    - -v
+    - -gcflags
+    - '-N -l'
+  image_build_src: build/image
+  image_prefix: localhost:5000
+  config_src: env/default/config
+  config_tgt: dist/default/config
+  kubernetes_src: env/default/kubernetes
+  kubernetes_tgt: dist/default/kubernetes
+
+  binaries:
+    - example-app
+  images:
+    - postgres
+    - example-app
+  configs:
+    - example-app
+  kubernetes_templates:
+    - example-app
+    - postgres
+
+env:
+  local:
+    binary_build_env:
+      - CGO_ENABLED=1
+
+    config_src: env/local/config
+    config_tgt: dist/local/config
+
+    kubernetes_src: env/local/kubernetes
+    kubernetes_tgt: dist/local/kubernetes
+
+  prod:
+    binary_build_env:
+      - CGO_ENABLED=0
+      - GOOS=linux
+      - GOARCH=amd64
+    binary_build_args:
+      - -v
+      - -ldflags
+      - '-s -w'
+      - -ldflags
+      - '-extldflags "-static"'
+
+    config_src: env/prod/config
+    config_tgt: dist/prod/config
+
+    kubernetes_src: env/prod/kubernetes
+    kubernetes_tgt: dist/prod/kubernetes
+
+build:
+  binaries:
+    - name: example-app
+      config_dir: /etc/framingo-example
+
+  images:
+    - name: postgres
+      build_from: postgres:16-alpine
+    - name: example-app
+      base: ubuntu:22.04
+
+generate:
+  configs:
+    - name: example-app
+      files:
+        - config.yaml
+        - secret.env
+        - migrations/*.sql
+
+  kubernetes:
+    - name: example-app
+      files:
+        - deployment.yaml
+        - service.yaml
+        - configmap.yaml
+    - name: postgres
+      files:
+        - statefulset.yaml
+        - service.yaml
+        - configmap.yaml

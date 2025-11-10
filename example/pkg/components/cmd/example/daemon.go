@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/xhanio/errors"
 
-	"github.com/xhanio/framingo/example/components/server/example"
+	"github.com/xhanio/framingo/example/pkg/components/server/example"
 )
 
 var (

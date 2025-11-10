@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: framingo-example
+  labels:
+    app: framingo-example
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: framingo-example
+  template:
+    metadata:
+      labels:
+        app: framingo-example
+    spec:
+      containers:
+      - name: framingo-example
+        image: localhost:5000/example-app:latest
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 6060
+          name: pprof
+          protocol: TCP
+        env:
+        - name: FRAMINGO_DB_SOURCE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: framingo-example-config
+              key: db_host
+        - name: FRAMINGO_DB_SOURCE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: framingo-example-config
+              key: db_port
+        - name: FRAMINGO_DB_SOURCE_DBNAME
+          valueFrom:
+            configMapKeyRef:
+              name: framingo-example-config
+              key: db_name
+        - name: FRAMINGO_DB_SOURCE_USER
+          valueFrom:
+            secretKeyRef:
+              name: framingo-example-secret
+              key: db_user
+        - name: FRAMINGO_DB_SOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: framingo-example-secret
+              key: db_password
+        volumeMounts:
+        - name: config
+          mountPath: /etc/framingo-example
+          readOnly: true
+        - name: logs
+          mountPath: /var/log/framingo-example
+        livenessProbe:
+          httpGet:
+            path: /api/v1/demo/example
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v1/demo/example
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: framingo-example-config
+      - name: logs
+        emptyDir: {}

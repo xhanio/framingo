@@ -27,8 +27,8 @@ import (
 
 	// "github.com/xhanio/framingo/pkg/services/common/eventbus"
 
-	"github.com/xhanio/framingo/example/services/example"
-	"github.com/xhanio/framingo/example/utils/infra"
+	"github.com/xhanio/framingo/example/pkg/services/example"
+	"github.com/xhanio/framingo/example/pkg/utils/infra"
 )
 
 type manager struct {
@@ -135,9 +135,10 @@ func (m *manager) Init() error {
 
 	/* init business level components */
 
-	// m.example = example.New(
-	// 	example.WithLogger(m.log),
-	// )
+	m.example = example.New(
+		example.WithLogger(m.log),
+		example.WithDB(m.db),
+	)
 
 	/* init api level components and register all routers and grpc services */
 

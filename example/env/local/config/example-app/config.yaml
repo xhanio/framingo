@@ -1,0 +1,42 @@
+# Framingo Example Application Configuration (Local Environment)
+
+# Logging configuration
+log:
+  level: 0  # 0=Debug, 1=Info, 2=Warn, 3=Error
+  file: /var/log/framingo-example/app.log
+  rotation:
+    max_size: 100      # MB
+    max_backups: 3
+    max_age: 7         # days
+
+# Database configuration
+db:
+  type: postgres
+  source:
+    host: localhost
+    port: 5432
+    user: framingo
+    password: framingo_dev
+    dbname: framingo_example
+  migration:
+    dir: ./migrations
+    version: 1
+  connection:
+    max_open: 10
+    max_idle: 5
+    max_lifetime: 1h
+    exec_timeout: 30s
+
+# API server configuration
+api:
+  http:
+    host: 0.0.0.0
+    port: 8080
+    prefix: /api/v1
+    throttle:
+      rps: 100.0
+      burst_size: 200
+
+# Optional: pprof profiling (enabled for local development)
+pprof:
+  port: 6060

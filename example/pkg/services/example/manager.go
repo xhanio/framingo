@@ -6,16 +6,19 @@ import (
 	"path"
 	"sync"
 
-	"github.com/xhanio/framingo/example/types/entity"
+	"github.com/xhanio/errors"
+	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/pkg/services/db"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 type manager struct {
-	log log.Logger
-
+	log  log.Logger
 	name string
+
+	db db.Manager
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -47,7 +50,7 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	return []common.Service{}
+	return []common.Service{m.db}
 }
 
 func (m *manager) Init() error {
@@ -94,8 +97,18 @@ func (m *manager) Info(w io.Writer, debug bool) {
 
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error) {
 	m.log.Info("hello world!")
+
+	// Create the helloworld entity
 	result := &entity.Helloworld{
 		Message: message,
 	}
+
+	// Save to database
+	if err := m.db.FromContext(ctx).Create(result).Error; err != nil {
+		m.log.Errorf("failed to save helloworld message to database: %v", err)
+		return nil, errors.Wrap(err)
+	}
+	m.log.Infof("saved helloworld message to database with ID: %d", result.ID)
+
 	return result, nil
 }

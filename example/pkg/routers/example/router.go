@@ -9,7 +9,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 
-	"github.com/xhanio/framingo/example/services/example"
+	"github.com/xhanio/framingo/example/pkg/services/example"
 )
 
 var _ api.Router = (*router)(nil)
