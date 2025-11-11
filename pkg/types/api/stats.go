@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"path"
 	"strings"
 	"time"
 )
@@ -20,8 +21,9 @@ type RequestInfo struct {
 }
 
 func (s *RequestInfo) Key(prefix string) string {
-	path := strings.TrimPrefix(s.RawPath, prefix)
-	return fmt.Sprintf("%s<%s>%s", s.Server, s.Method, path)
+	p := strings.TrimPrefix(s.RawPath, prefix)
+	p = path.Join("/", p)
+	return fmt.Sprintf("%s<%s>%s", s.Server, s.Method, p)
 }
 
 type ResponseInfo struct {

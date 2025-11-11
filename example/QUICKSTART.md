@@ -55,10 +55,21 @@ export $(cat env/local/config/example-app/secret.env | xargs)
 Once the application is running:
 
 ```bash
-# Test the example endpoint
-curl http://localhost:8080/api/v1/demo/example
+# Test the example endpoint with query parameter
+curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello%20World"
 
-# Expected response: Good
+# Or with JSON body
+curl -X POST http://localhost:8080/api/v1/demo/example \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Hello World"}'
+
+# Expected response:
+# {
+#   "id": 1,
+#   "message": "Hello World",
+#   "created_at": "2024-01-15T10:30:00Z",
+#   "updated_at": "2024-01-15T10:30:00Z"
+# }
 ```
 
 ### Check Version
@@ -87,7 +98,7 @@ gopro build binary -e local
 
 ```bash
 ./bin/example-app daemon -c env/local/config/example-app/config.yaml
-curl http://localhost:8080/api/v1/demo/example
+curl -X GET "http://localhost:8080/api/v1/demo/example?message=Test"
 ```
 
 ## Docker Deployment
@@ -146,7 +157,7 @@ kubectl logs -l app=framingo-example -f
 kubectl port-forward svc/framingo-example 8080:8080
 
 # Test the API
-curl http://localhost:8080/api/v1/demo/example
+curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello"
 ```
 
 ## Configuration Management
@@ -260,10 +271,10 @@ psql -h localhost -U framingo -d framingo_example
 
 ### API Returns 404
 
-Verify the correct endpoint:
+Verify the correct endpoint with required parameters:
 ```bash
-# Correct endpoint
-curl http://localhost:8080/api/v1/demo/example
+# Correct endpoint with message parameter
+curl -X GET "http://localhost:8080/api/v1/demo/example?message=Test"
 
 # Check registered routes in logs
 grep "Registering route" /var/log/framingo-example/app.log

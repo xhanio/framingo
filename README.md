@@ -84,8 +84,8 @@ go build -o myapp cmd/myapp/main.go
 ./myapp daemon -c config.yaml
 
 # Test the API
-curl http://localhost:8080/api/v1/demo/example
-# Response: Good
+curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello"
+# Response: {"id":1,"message":"Hello","created_at":"...","updated_at":"..."}
 ```
 
 **For a complete tutorial**, see the [Building Your First Application](#building-your-first-application) section and [Complete Application Guide](example/README.md).
@@ -236,7 +236,7 @@ Helper packages for common tasks:
 
 ```bash
 # Create your project structure
-mkdir -p myapp/{cmd/myapp,pkg/{services,routers,middlewares,types/entity,components/{cmd,server},utils}}
+mkdir -p myapp/{cmd/myapp,pkg/{services,routers,middlewares,types/{api,entity,orm},components/{cmd,server},utils}}
 cd myapp
 
 # Initialize Go module
@@ -257,6 +257,9 @@ go get github.com/xhanio/framingo
 # │   ├── routers/         # HTTP handlers
 # │   ├── middlewares/     # HTTP middleware
 # │   ├── types/           # Type definitions
+# │   │   ├── api/         # API request/response types with validation
+# │   │   ├── entity/      # Business entities (pure domain models)
+# │   │   └── orm/         # ORM models for database operations
 # │   └── utils/           # Utilities
 # └── config.yaml          # Configuration
 ```
@@ -297,8 +300,22 @@ type manager struct {
     log log.Logger
 }
 
-func New(logger log.Logger) Manager {
-    return &manager{log: logger}
+// Option pattern for optional dependencies
+type Option func(*manager)
+
+func WithLogger(logger log.Logger) Option {
+    return func(m *manager) { m.log = logger }
+}
+
+func New(opts ...Option) Manager {
+    m := &manager{}
+    for _, opt := range opts {
+        opt(m)
+    }
+    if m.log == nil {
+        m.log = log.Default
+    }
+    return m
 }
 
 func (m *manager) Name() string { return "hello-service" }
@@ -444,8 +461,8 @@ func (m *manager) Init() error {
         )
     }
 
-    // Initialize your service
-    m.helloSvc = hello.New(m.log)
+    // Initialize your service (with optional logger)
+    m.helloSvc = hello.New(hello.WithLogger(m.log))
 
     // Register services
     m.services.Register(m.helloSvc)
@@ -550,6 +567,7 @@ curl http://localhost:8080/api/v1/hello?name=Framingo
 ### Comprehensive Guides
 
 - **[Complete Application Guide](example/README.md)** - Full tutorial with all components and production deployment
+- **[Type Separation Guide](example/pkg/types/README.md)** - Understanding API, Entity, and ORM type separation
 - **[Service Layer](example/pkg/services/README.md)** - Building business logic services with lifecycle management
 - **[HTTP Routers](example/pkg/routers/README.md)** - Creating API endpoints with YAML-based configuration
 - **[Middleware](example/pkg/middlewares/README.md)** - Request processing pipeline and custom middleware
@@ -589,8 +607,10 @@ example/
     +-- services/example/       # Business service with lifecycle methods
     +-- routers/example/        # HTTP routes with YAML configuration
     +-- middlewares/example/    # Custom middleware (deflate compression)
-    +-- types/                  # Type definitions
-    |   +-- entity/             # Business entities and domain models
+    +-- types/                  # Type definitions (separated by purpose)
+    |   +-- api/                # API request/response types with validation
+    |   +-- entity/             # Business entities (pure domain models)
+    |   +-- orm/                # ORM models for database operations
     +-- utils/                  # Utility modules
         +-- infra/              # Infrastructure utilities
 +-- README.md                   # Complete application guide
@@ -638,26 +658,61 @@ go build -o myapp cmd/example/main.go
 ./myapp daemon -c config.yaml
 
 # Test the API
-curl http://localhost:8080/api/v1/demo/example
-# Response: Good
+curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello%20World"
+# Response: {"id":1,"message":"Hello World","created_at":"...","updated_at":"..."}
 ```
 
 **For detailed setup and configuration**, see [example/README.md](example/README.md)
 
 ### Example Features Demonstrated
 
-- ✅ Service lifecycle management
-- ✅ HTTP API with routing
+- ✅ Service lifecycle management with dependency injection
+- ✅ HTTP API with routing and request validation
+- ✅ Type separation (API/Entity/ORM) for clean architecture
+- ✅ Database integration with ORM models
 - ✅ Custom middleware (deflate compression)
-- ✅ YAML-based configuration
-- ✅ CLI with multiple commands
-- ✅ Graceful shutdown
-- ✅ Signal handling
-- ✅ Structured logging
-- ✅ Service dependencies
-- ✅ Multiple API servers
+- ✅ YAML-based configuration with environment overrides
+- ✅ CLI with multiple commands (daemon, version)
+- ✅ Graceful shutdown and signal handling
+- ✅ Structured logging with file rotation
+- ✅ Service dependencies with automatic resolution
+- ✅ Multiple API servers support
 
 ## Key Concepts
+
+### Type Separation
+
+Framingo promotes clean architecture through type separation:
+
+```go
+// API Types - Request/response with validation
+type CreateUserRequest struct {
+    Username string `json:"username" validate:"required"`
+    Email    string `json:"email" validate:"required,email"`
+}
+
+// Entity Types - Pure business models
+type User struct {
+    ID       int64  `json:"id"`
+    Username string `json:"username"`
+    Email    string `json:"email"`
+}
+
+// ORM Types - Database models
+type User struct {
+    ID       int64  `gorm:"primaryKey"`
+    Username string `gorm:"type:varchar(100);not null"`
+    Email    string `gorm:"type:varchar(255);not null"`
+}
+
+func (User) TableName() string { return "users" }
+```
+
+**Benefits:**
+- API contracts independent of storage
+- Business logic isolated from infrastructure
+- Easy to test and maintain
+- Flexibility to change database without affecting API
 
 ### Service Lifecycle
 
@@ -681,14 +736,24 @@ type Daemon interface {
 
 ### Dependency Management
 
-Services declare their dependencies, and the controller automatically resolves the startup order:
+Services declare their dependencies via constructor arguments (required) and options (optional):
 
 ```go
-func (s *myService) Dependencies() []common.Service {
-    return []common.Service{s.database, s.cache}
+// Required dependencies as constructor arguments
+func New(database db.Manager, opts ...Option) Manager {
+    m := &manager{db: database}
+    for _, opt := range opts {
+        opt(m)
+    }
+    return m
 }
 
-// Controller automatically starts: database -> cache -> myService
+// Service declares dependencies for lifecycle management
+func (s *myService) Dependencies() []common.Service {
+    return []common.Service{s.database}
+}
+
+// Controller automatically starts: database -> myService
 ```
 
 ### Router Configuration
@@ -802,30 +867,41 @@ WantedBy=multi-user.target
 
 ## Best Practices
 
-1. **Service Design**
+1. **Architecture & Types**
+   - Separate types by purpose: `api/` for requests, `entity/` for business, `orm/` for database
+   - Pass required dependencies as constructor arguments, not options
+   - Keep business logic independent of infrastructure concerns
+   - Use interfaces for testability and flexibility
+
+2. **Service Design**
    - Keep services focused and single-purpose
-   - Declare dependencies explicitly
-   - Use interfaces for testability
+   - Declare dependencies explicitly in `Dependencies()` method
+   - Implement standard lifecycle methods (`Init`, `Start`, `Stop`)
+   - Convert between ORM and entity types in service layer
 
-2. **Error Handling**
-   - Use error wrapping for context
-   - Return appropriate HTTP status codes
+3. **Error Handling**
+   - Use error wrapping for context (`errors.Wrap`)
+   - Return appropriate HTTP status codes (BadRequest, NotFound, etc.)
    - Log errors at service boundaries
+   - Validate requests using API types with validation tags
 
-3. **Configuration**
-   - Use YAML for structure
-   - Use env vars for secrets
-   - Validate on startup
+4. **Configuration**
+   - Use YAML for structure and hierarchy
+   - Use env vars for secrets and environment-specific values
+   - Validate configuration on startup
+   - Follow configuration priority: flags > env vars > file > defaults
 
-4. **Testing**
-   - Test services independently
-   - Mock dependencies
-   - Integration tests for full flow
+5. **Testing**
+   - Test services independently with mocked dependencies
+   - Test handlers with API type validation
+   - Integration tests for full request flow
+   - Test ORM to entity conversions
 
-5. **Performance**
-   - Enable connection pooling
-   - Configure rate limiting
-   - Use pprof for profiling
+6. **Performance**
+   - Enable database connection pooling
+   - Configure rate limiting per endpoint or server-wide
+   - Use pprof for profiling bottlenecks
+   - Cache frequently accessed data when appropriate
 
 ## Contributing
 

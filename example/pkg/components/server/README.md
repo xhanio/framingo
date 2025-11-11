@@ -166,7 +166,13 @@ The `Init()` method performs the following steps:
    - Handle service dependencies
 
 5. **Initialize Business Services**
-   - Create example service (see [pkg/services](../../services/example/))
+   - Create example service with database dependency (see [pkg/services](../../services/example/))
+   ```go
+   m.example = example.New(
+       m.db,
+       example.WithLogger(m.log),
+   )
+   ```
 
 6. **Initialize API Server**
    - Configure multiple API servers from config
@@ -439,10 +445,11 @@ ca:
        myService myservice.Manager
    }
    ```
-3. **Initialize in Init()**:
+3. **Initialize in Init()** (pass required dependencies as constructor arguments):
    ```go
    m.myService = myservice.New(
-       myservice.WithLogger(m.log),
+       m.db,  // Required dependencies first
+       myservice.WithLogger(m.log),  // Optional configs
    )
    ```
 4. **Register with controller**:

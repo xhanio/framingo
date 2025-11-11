@@ -33,8 +33,32 @@ Key methods:
 ### [handler.go](handler.go)
 
 Implements HTTP request handlers and handler discovery:
-- `Example()` - Sample HTTP handler that returns "Good"
+- `Example()` - Sample HTTP handler that accepts a message and creates a Helloworld entity
 - `Handlers()` - Automatic handler discovery using reflection
+
+The `Example` handler demonstrates:
+- Request binding from API types ([pkg/types/api](../types/api/))
+- Request validation
+- Service integration
+- JSON response with entity types
+
+**Current Implementation**:
+```go
+func (r *router) Example(c echo.Context) error {
+    var req api.CreateHelloworldMessage
+    if err := c.Bind(&req); err != nil {
+        return errors.BadRequest.Newf("invalid request: %v", err)
+    }
+    if err := c.Validate(&req); err != nil {
+        return errors.Wrap(err)
+    }
+    body, err := r.em.HelloWorld(c.Request().Context(), req.Message)
+    if err != nil {
+        return errors.Wrap(err)
+    }
+    return c.JSON(http.StatusOK, body)
+}
+```
 
 The `Handlers()` method uses reflection to automatically discover all methods with the signature `func(echo.Context) error` and registers them as handlers.
 
@@ -88,10 +112,23 @@ Each handler in the YAML config includes:
 1. **Define the handler method in [handler.go](handler.go)**:
 ```go
 func (r *router) MyNewHandler(c echo.Context) error {
-    // Your logic here
-    return c.JSON(200, map[string]string{
-        "message": "Success",
-    })
+    // Parse and validate request
+    var req api.MyRequest
+    if err := c.Bind(&req); err != nil {
+        return errors.BadRequest.Newf("invalid request: %v", err)
+    }
+    if err := c.Validate(&req); err != nil {
+        return errors.Wrap(err)
+    }
+
+    // Call service
+    result, err := r.em.MyBusinessLogic(c.Request().Context(), req)
+    if err != nil {
+        return errors.Wrap(err)
+    }
+
+    // Return response
+    return c.JSON(http.StatusOK, result)
 }
 ```
 
@@ -111,13 +148,25 @@ The handler will be automatically discovered by the `Handlers()` method through 
 ### Request
 
 ```bash
-curl http://localhost:8080/demo/example
+curl -X GET "http://localhost:8080/demo/example?message=Hello%20World"
+```
+
+Or with JSON body:
+```bash
+curl -X POST http://localhost:8080/demo/example \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Hello World"}'
 ```
 
 ### Response
 
-```
-Good
+```json
+{
+  "id": 1,
+  "message": "Hello World",
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
 ```
 
 The full URL is constructed as:

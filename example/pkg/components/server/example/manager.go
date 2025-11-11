@@ -136,8 +136,8 @@ func (m *manager) Init() error {
 	/* init business level components */
 
 	m.example = example.New(
+		m.db,
 		example.WithLogger(m.log),
-		example.WithDB(m.db),
 	)
 
 	/* init api level components and register all routers and grpc services */

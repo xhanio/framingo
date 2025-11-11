@@ -43,7 +43,9 @@ example/
 |   +-- middlewares/    # HTTP middleware layer - request/response processing
 |   |   +-- example/    # Example: authentication, compression, validation, etc.
 |   +-- types/          # Type definitions - data models and interfaces
-|   |   +-- entity/     # Business entities and domain models
+|   |   +-- api/        # API request/response types with validation
+|   |   +-- entity/     # Business entities (pure domain models)
+|   |   +-- orm/        # ORM models for database operations
 |   +-- utils/          # Utility modules - helper functions and infrastructure
 |       +-- infra/      # Infrastructure utilities (signals, profiling, etc.)
 +-- README.md           # This file
@@ -55,7 +57,7 @@ example/
 - **`services/`** - Your business logic lives here. Services have lifecycle management (Init/Start/Stop) and dependency injection.
 - **`routers/`** - Define HTTP endpoints and handlers. Each router maps routes to handler functions via YAML configuration.
 - **`middlewares/`** - Process requests before they reach handlers (auth, validation, logging, compression, etc.).
-- **`types/`** - Shared data structures, entities, and interfaces used across your application.
+- **`types/`** - Shared data structures separated by purpose: `api/` for request/response types, `entity/` for business models, `orm/` for database models.
 - **`utils/`** - Reusable helper functions and infrastructure code that doesn't fit in services.
 
 ## Framework Modules
@@ -190,8 +192,15 @@ go build -o myapp cmd/myapp/main.go
 
 ```bash
 # Test the example endpoint
-curl http://localhost:8080/api/v1/demo/example
-# Response: Good
+curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello%20World"
+
+# Response:
+# {
+#   "id": 1,
+#   "message": "Hello World",
+#   "created_at": "2024-01-15T10:30:00Z",
+#   "updated_at": "2024-01-15T10:30:00Z"
+# }
 ```
 
 ## Architecture
@@ -272,26 +281,54 @@ flowchart TD
 
 ## Building Your Application
 
-### Step 1: Define Your Entities
+### Step 1: Define Your Types
 
-Create entity types for your domain models:
+Framingo separates types by purpose for better architecture:
 
+**API Types** (request/response with validation):
+```go
+// types/api/user.go
+package api
+
+type CreateUserRequest struct {
+    Username string `json:"username" validate:"required"`
+    Email    string `json:"email" validate:"required,email"`
+}
+```
+
+**Entity Types** (pure business models):
 ```go
 // types/entity/user.go
 package entity
 
 type User struct {
-    ID       string `json:"id"`
+    ID       int64  `json:"id"`
     Username string `json:"username"`
     Email    string `json:"email"`
 }
 ```
 
-See [pkg/types/entity/](pkg/types/entity/example.go) for examples.
+**ORM Types** (database models):
+```go
+// types/orm/user.go
+package orm
+
+type User struct {
+    ID       int64  `gorm:"primaryKey"`
+    Username string `gorm:"type:varchar(100);not null;unique"`
+    Email    string `gorm:"type:varchar(255);not null"`
+}
+
+func (User) TableName() string {
+    return "users"
+}
+```
+
+See [pkg/types/README.md](pkg/types/README.md) for detailed explanation of type separation.
 
 ### Step 2: Create a Service
 
-Services contain your business logic and implement lifecycle management.
+Services contain your business logic and implement lifecycle management. **Important**: Pass required dependencies as constructor arguments, not as options.
 
 ```go
 // services/user/model.go
@@ -307,8 +344,8 @@ type Manager interface {
     common.Service
     common.Initializable
     common.Daemon
-    GetUser(ctx context.Context, id string) (*entity.User, error)
-    CreateUser(ctx context.Context, user *entity.User) error
+    GetUser(ctx context.Context, id int64) (*entity.User, error)
+    CreateUser(ctx context.Context, username, email string) (*entity.User, error)
 }
 ```
 
@@ -316,21 +353,44 @@ type Manager interface {
 // services/user/manager.go
 package user
 
+import (
+    "github.com/xhanio/framingo/example/pkg/types/entity"
+    "github.com/xhanio/framingo/example/pkg/types/orm"
+    "github.com/xhanio/framingo/pkg/services/db"
+)
+
 type manager struct {
     log log.Logger
     db  db.Manager
 }
 
-func New(db db.Manager, logger log.Logger) Manager {
-    return &manager{
-        log: logger,
-        db:  db,
+// Required dependencies as constructor arguments
+func New(database db.Manager, opts ...Option) Manager {
+    m := &manager{db: database}
+    for _, opt := range opts {
+        opt(m)
     }
+    return m
 }
 
-func (m *manager) GetUser(ctx context.Context, id string) (*entity.User, error) {
-    // Business logic here
-    return &entity.User{ID: id}, nil
+func (m *manager) CreateUser(ctx context.Context, username, email string) (*entity.User, error) {
+    // Create ORM model for database
+    ormUser := &orm.User{
+        Username: username,
+        Email:    email,
+    }
+
+    // Save to database
+    if err := m.db.FromContext(ctx).Create(ormUser).Error; err != nil {
+        return nil, errors.Wrap(err)
+    }
+
+    // Convert to entity for return
+    return &entity.User{
+        ID:       ormUser.ID,
+        Username: ormUser.Username,
+        Email:    ormUser.Email,
+    }, nil
 }
 ```
 
@@ -358,8 +418,13 @@ handlers:
 package user
 
 import (
+    "net/http"
+    "strconv"
+
     "github.com/labstack/echo/v4"
+    "github.com/xhanio/errors"
     "github.com/xhanio/framingo/example/pkg/services/user"
+    "github.com/xhanio/framingo/example/pkg/types/api"
 )
 
 type router struct {
@@ -367,12 +432,35 @@ type router struct {
 }
 
 func (r *router) GetUser(c echo.Context) error {
-    id := c.Param("id")
+    id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+    if err != nil {
+        return errors.BadRequest.Newf("invalid user id: %v", err)
+    }
+
     user, err := r.userService.GetUser(c.Request().Context(), id)
     if err != nil {
-        return err
+        return errors.Wrap(err)
     }
-    return c.JSON(200, user)
+    return c.JSON(http.StatusOK, user)
+}
+
+func (r *router) CreateUser(c echo.Context) error {
+    // Parse and validate API request
+    var req api.CreateUserRequest
+    if err := c.Bind(&req); err != nil {
+        return errors.BadRequest.Newf("invalid request: %v", err)
+    }
+    if err := c.Validate(&req); err != nil {
+        return errors.Wrap(err)
+    }
+
+    // Call service (returns entity)
+    user, err := r.userService.CreateUser(c.Request().Context(), req.Username, req.Email)
+    if err != nil {
+        return errors.Wrap(err)
+    }
+
+    return c.JSON(http.StatusCreated, user)
 }
 ```
 
@@ -424,8 +512,11 @@ func (m *manager) initAPI() error {
 func (m *manager) Init() error {
     // ... (logger, db setup)
 
-    // Initialize your services
-    m.userService = user.New(m.db, m.log)
+    // Initialize your services (required dependencies as constructor args)
+    m.userService = user.New(
+        m.db,  // Required dependency
+        user.WithLogger(m.log),  // Optional configuration
+    )
 
     // Register services
     m.services.Register(
@@ -433,7 +524,7 @@ func (m *manager) Init() error {
         m.userService,
     )
 
-    // Resolve dependencies
+    // Resolve dependencies via topological sort
     if err := m.services.TopoSort(); err != nil {
         return errors.Wrap(err)
     }
@@ -446,7 +537,7 @@ func (m *manager) Init() error {
         return err
     }
 
-    // Initialize API components
+    // Initialize API components (register routers and middlewares)
     return m.initAPI()
 }
 ```
@@ -565,9 +656,12 @@ cp -r $FRAMINGO_PATH/example/pkg/services/example myapp/pkg/services/myservice
 
 ### Development Cycle
 
-1. **Define your entities** (pkg/types/entity/)
-2. **Implement services** (pkg/services/)
-3. **Create routers** (pkg/routers/)
+1. **Define your types**:
+   - API types (pkg/types/api/) - Request/response with validation
+   - Entity types (pkg/types/entity/) - Business models
+   - ORM types (pkg/types/orm/) - Database models
+2. **Implement services** (pkg/services/) - Pass dependencies as constructor args
+3. **Create routers** (pkg/routers/) - Bind API types, call services, return entities
 4. **Add middlewares** if needed (pkg/middlewares/)
 5. **Wire in server component** (pkg/components/server/)
 6. **Test locally**:
@@ -748,8 +842,8 @@ export FRAMINGO_API_HTTP_PORT=8080
 ### Project Organization
 
 1. **Separate concerns**: Keep services, routers, and middlewares in separate packages
-2. **Use entity types**: Define clear data structures in types/entity
-3. **Dependency injection**: Pass dependencies explicitly, don't use globals
+2. **Type separation**: Use `api/` for requests, `entity/` for business logic, `orm/` for database
+3. **Dependency injection**: Pass required dependencies as constructor arguments, not options
 4. **Interface-based design**: Define interfaces in model.go files
 
 ### Configuration
@@ -784,19 +878,30 @@ export FRAMINGO_API_HTTP_PORT=8080
 
 ### Adding Database Support
 
+Use ORM types for database operations and convert to entities:
+
 ```go
 // In service
 type manager struct {
     db db.Manager
 }
 
-func (m *manager) GetUser(ctx context.Context, id string) (*entity.User, error) {
-    var user entity.User
-    err := m.db.DB().WithContext(ctx).
-        Table("users").
+func (m *manager) GetUser(ctx context.Context, id int64) (*entity.User, error) {
+    // Query using ORM type
+    var ormUser orm.User
+    err := m.db.FromContext(ctx).
         Where("id = ?", id).
-        First(&user).Error
-    return &user, errors.Wrap(err)
+        First(&ormUser).Error
+    if err != nil {
+        return nil, errors.Wrap(err)
+    }
+
+    // Convert ORM to entity
+    return &entity.User{
+        ID:       ormUser.ID,
+        Username: ormUser.Username,
+        Email:    ormUser.Email,
+    }, nil
 }
 ```
 

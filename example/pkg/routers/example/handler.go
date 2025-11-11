@@ -6,14 +6,18 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/xhanio/errors"
+	"github.com/xhanio/framingo/example/pkg/types/api"
 )
 
 func (r *router) Example(c echo.Context) error {
-	message := c.QueryParam("message")
-	if message == "" {
-		return errors.BadRequest.Newf("helloworld message cannot be empty!")
+	var req api.CreateHelloworldMessage
+	if err := c.Bind(&req); err != nil {
+		return errors.BadRequest.Newf("invalid request: %v", err)
 	}
-	body, err := r.em.HelloWorld(c.Request().Context(), message)
+	if err := c.Validate(&req); err != nil {
+		return errors.Wrap(err)
+	}
+	body, err := r.em.HelloWorld(c.Request().Context(), req.Message)
 	if err != nil {
 		return errors.Wrap(err)
 	}

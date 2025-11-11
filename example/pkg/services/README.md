@@ -24,13 +24,29 @@ Contains the main service manager implementation (`manager` struct) and implemen
 - Service lifecycle methods: `Init()`, `Start()`, `Stop()`
 - Core functionality: `HelloWorld()` method
 
-The `HelloWorld` method demonstrates a simple business operation:
+The `HelloWorld` method demonstrates a simple business operation that saves data to the database:
 ```go
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error) {
     m.log.Info("hello world!")
-    result := &entity.Helloworld{
+
+    // Create ORM model for database operation
+    ormModel := &orm.Helloworld{
         Message: message,
     }
+
+    // Save to database
+    if err := m.db.FromContext(ctx).Create(ormModel).Error; err != nil {
+        return nil, errors.Wrap(err)
+    }
+
+    // Convert ORM to entity for return
+    result := &entity.Helloworld{
+        ID:        ormModel.ID,
+        Message:   ormModel.Message,
+        CreatedAt: ormModel.CreatedAt,
+        UpdatedAt: ormModel.UpdatedAt,
+    }
+
     return result, nil
 }
 ```
@@ -51,31 +67,55 @@ Custom methods:
 Provides functional options for service configuration:
 - `WithLogger(logger log.Logger)` - Configure custom logger
 
-## Entity Types
+**Note**: The database dependency is now a required parameter in the `New()` function rather than an optional configuration.
 
-The service uses entity types from [pkg/types/entity](../types/entity/example.go):
+## Type Separation
 
-### Helloworld Entity
+The service uses different type structures for different purposes:
+
+### Entity Type ([pkg/types/entity](../types/entity/example.go))
+Used for business logic and API responses:
 ```go
 type Helloworld struct {
-    Message string `json:"message"`
+    ID        int64     `json:"id"`
+    Message   string    `json:"message"`
+    CreatedAt time.Time `json:"created_at"`
+    UpdatedAt time.Time `json:"updated_at"`
 }
 ```
 
-This entity is returned by the `HelloWorld` method and can be used for API responses or further processing.
+### ORM Type ([pkg/types/orm](../types/orm/example.go))
+Used for database operations:
+```go
+type Helloworld struct {
+    ID        int64     `gorm:"primaryKey"`
+    Message   string    `gorm:"type:text;not null"`
+    CreatedAt time.Time `gorm:"autoCreateTime"`
+    UpdatedAt time.Time `gorm:"autoUpdateTime"`
+}
+```
+
+See [pkg/types/README.md](../types/README.md) for more details on type separation.
 
 ## Usage
 
 ### Creating a Service Instance
 
 ```go
-import "github.com/xhanio/framingo/example/pkg/services/example"
+import (
+    "github.com/xhanio/framingo/example/pkg/services/example"
+    "github.com/xhanio/framingo/pkg/services/db"
+)
 
-// Create with default settings
-svc := example.New()
+// Database is a required dependency
+dbManager := db.New(/* db options */)
+
+// Create with default logger
+svc := example.New(dbManager)
 
 // Create with custom logger
 svc := example.New(
+    dbManager,
     example.WithLogger(customLogger),
 )
 ```
@@ -131,12 +171,14 @@ func (m *manager) Name() string {
 
 ### Dependencies
 
-The example service has no dependencies:
+The example service depends on the database manager:
 ```go
 func (m *manager) Dependencies() []common.Service {
-    return []common.Service{}
+    return []common.Service{m.db}
 }
 ```
+
+The database dependency is injected through the constructor to ensure it's always available.
 
 ### Graceful Shutdown
 

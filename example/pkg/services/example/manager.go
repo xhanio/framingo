@@ -8,6 +8,7 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/orm"
 	"github.com/xhanio/framingo/pkg/services/db"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
@@ -25,8 +26,9 @@ type manager struct {
 	wg     *sync.WaitGroup
 }
 
-func New(opts ...Option) Manager {
+func New(database db.Manager, opts ...Option) Manager {
 	m := &manager{
+		db: database,
 		wg: &sync.WaitGroup{},
 	}
 	for _, opt := range opts {
@@ -98,17 +100,25 @@ func (m *manager) Info(w io.Writer, debug bool) {
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error) {
 	m.log.Info("hello world!")
 
-	// Create the helloworld entity
-	result := &entity.Helloworld{
+	// Create the helloworld ORM model
+	ormModel := &orm.Helloworld{
 		Message: message,
 	}
 
 	// Save to database
-	if err := m.db.FromContext(ctx).Create(result).Error; err != nil {
+	if err := m.db.FromContext(ctx).Create(ormModel).Error; err != nil {
 		m.log.Errorf("failed to save helloworld message to database: %v", err)
 		return nil, errors.Wrap(err)
 	}
-	m.log.Infof("saved helloworld message to database with ID: %d", result.ID)
+	m.log.Infof("saved helloworld message to database with ID: %d", ormModel.ID)
+
+	// Convert ORM model to entity
+	result := &entity.Helloworld{
+		ID:        ormModel.ID,
+		Message:   ormModel.Message,
+		CreatedAt: ormModel.CreatedAt,
+		UpdatedAt: ormModel.UpdatedAt,
+	}
 
 	return result, nil
 }

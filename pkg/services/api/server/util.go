@@ -31,10 +31,18 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 		StartedAt: time.Now(),
 	}
 	c.Echo().Router().Find(r.Method, r.URL.EscapedPath(), c)
+	s.log.Debugf("current call (endpoint %s) %s - %s", s.endpoint.Path, r.URL.Path, r.URL.EscapedPath())
 	// find the handler and group from this server instance
 	key := req.Key(s.endpoint.Path)
-	req.Handler = s.handlers[key]
-	req.HandlerGroup = s.groups[key]
+	s.log.Debugf("looking for key %s", key)
+	h, hok := s.handlers[key]
+	g, gok := s.groups[key]
+	if gok && hok {
+		req.Handler = h
+		req.HandlerGroup = g
+	} else {
+		s.log.Debugf("unable to locate api %s for req %s %s", key, req.Method, req.RawPath)
+	}
 	return req
 }
 

@@ -199,16 +199,15 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 			if err != nil {
 				return err
 			}
-
 			// Register route with Echo
-			if hf, ok := m.handlerFuncs[api.HandlerKey(g, h)]; ok {
-				group.Add(h.Method, h.Path, hf, mwfuncs...)
-			}
-
-			// Store handler metadata for request lookup in the server instance
 			key := api.HandlerKey(g, h)
-			s.groups[key] = g
-			s.handlers[key] = h
+			if hf, ok := m.handlerFuncs[key]; ok {
+				m.log.Infof("register handler %s %s by key %s", h.Method, h.Path, key)
+				group.Add(h.Method, h.Path, hf, mwfuncs...)
+				// Store handler metadata for request lookup in the server instance
+				s.groups[key] = g
+				s.handlers[key] = h
+			}
 		}
 	}
 	return nil
