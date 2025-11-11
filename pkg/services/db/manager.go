@@ -121,6 +121,17 @@ func (m *manager) Init() error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
+	// set up connection pool
+	m.sqlDB.SetMaxOpenConns(m.connection.MaxOpen)
+	m.sqlDB.SetMaxIdleConns(m.connection.MaxIdle)
+	m.sqlDB.SetConnMaxLifetime(m.connection.MaxLifetime)
+	// migration
+	if m.migration.Directory != "" {
+		err = m.migrate(fmt.Sprintf("file://%s", m.migration.Directory), m.migration.Version)
+		if err != nil {
+			return errors.Wrap(err)
+		}
+	}
 	return nil
 }
 
