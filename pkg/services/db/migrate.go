@@ -9,10 +9,11 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/mysql"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/xhanio/errors"
 )
 
-func (m *manager) migrate(dir string, version uint) error {
+func (m *manager) migrate(url string, version uint) error {
 	var driver database.Driver
 	var err error
 	switch m.dbtype {
@@ -28,7 +29,7 @@ func (m *manager) migrate(dir string, version uint) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	migrator, err := migrate.NewWithDatabaseInstance(dir, m.source.DBName, driver)
+	migrator, err := migrate.NewWithDatabaseInstance(url, m.source.DBName, driver)
 	if err != nil {
 		return errors.Wrap(err)
 	}
