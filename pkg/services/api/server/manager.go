@@ -19,8 +19,9 @@ import (
 
 // manager implements the Manager interface
 type manager struct {
-	name string
-	log  log.Logger
+	name  string
+	log   log.Logger
+	debug bool
 
 	servers map[string]*server // map of server name to server instance
 
@@ -95,13 +96,19 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	mw := newMiddleware(s)
 	e := m.newEcho()
 	e.HTTPErrorHandler = s.errorHandler
-	e.Use(
+	var middlewares []echo.MiddlewareFunc
+	// Apply CORS middleware in debug mode
+	if m.debug {
+		middlewares = append(middlewares, mw.CORS())
+	}
+	middlewares = append(middlewares,
 		mw.Recover,
 		mw.Logger,
 		mw.Info,
 		mw.Error,
 		mw.Throttle,
 	)
+	e.Use(middlewares...)
 	s.echo = e
 	m.servers[name] = s
 	return nil

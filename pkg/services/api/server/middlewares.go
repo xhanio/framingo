@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/xhanio/errors"
 	"golang.org/x/time/rate"
 
@@ -13,24 +14,24 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
-// middleware holds the middleware functions for a specific server
-type middleware struct {
+// middlewares holds the middlewares functions for a specific server
+type middlewares struct {
 	server *server
 
 	sync.RWMutex // lock for rate limiters
 	limits       map[string]*rate.Limiter
 }
 
-// newMiddleware creates a new middleware instance for the given server
-func newMiddleware(srv *server) *middleware {
-	return &middleware{
+// newMiddleware creates a new middlewares instance for the given server
+func newMiddleware(srv *server) *middlewares {
+	return &middlewares{
 		server: srv,
 		limits: make(map[string]*rate.Limiter),
 	}
 }
 
-// Error middleware wraps and handles errors from handlers
-func (mw *middleware) Error(next echo.HandlerFunc) echo.HandlerFunc {
+// Error middlewares wraps and handles errors from handlers
+func (mw *middlewares) Error(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		err := next(c)
 		if err != nil {
@@ -42,8 +43,8 @@ func (mw *middleware) Error(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// Info middleware extracts request information and injects it into context
-func (mw *middleware) Info(next echo.HandlerFunc) echo.HandlerFunc {
+// Info middlewares extracts request information and injects it into context
+func (mw *middlewares) Info(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		req := mw.server.requestInfo(c)
 		if req == nil || req.Handler == nil {
@@ -58,8 +59,8 @@ func (mw *middleware) Info(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// Logger middleware logs request and response information
-func (mw *middleware) Logger(next echo.HandlerFunc) echo.HandlerFunc {
+// Logger middlewares logs request and response information
+func (mw *middlewares) Logger(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		err := next(c)
 		req, ok := c.Get(common.ContextKeyAPIRequestInfo).(*api.RequestInfo)
@@ -79,8 +80,8 @@ func (mw *middleware) Logger(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// Recover middleware recovers from panics and converts them to errors
-func (mw *middleware) Recover(next echo.HandlerFunc) echo.HandlerFunc {
+// Recover middlewares recovers from panics and converts them to errors
+func (mw *middlewares) Recover(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		defer func() {
 			if r := recover(); r != nil {
@@ -101,8 +102,8 @@ func (mw *middleware) Recover(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// Throttle middleware implements rate limiting per IP and path
-func (mw *middleware) Throttle(next echo.HandlerFunc) echo.HandlerFunc {
+// Throttle middlewares implements rate limiting per IP and path
+func (mw *middlewares) Throttle(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		req, ok := c.Get(common.ContextKeyAPIRequestInfo).(*api.RequestInfo)
 		if !ok || req == nil {
@@ -147,4 +148,14 @@ func (mw *middleware) Throttle(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		return next(c)
 	}
+}
+
+// CORS returns a CORS middleware with permissive settings for development
+func (mw *middlewares) CORS() echo.MiddlewareFunc {
+	// middleware.CORSConfig{
+	// 	AllowOrigins: []string{"*"},
+	// 	AllowMethods: []string{echo.GET, echo.HEAD, echo.PUT, echo.PATCH, echo.POST, echo.DELETE},
+	// 	AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+	// }
+	return middleware.CORS()
 }

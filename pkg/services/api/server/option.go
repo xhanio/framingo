@@ -16,6 +16,12 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
+func WithDebug(enabled bool) Option {
+	return func(m *manager) {
+		m.debug = enabled
+	}
+}
+
 // ServerOption configures a server (echo server instance)
 type ServerOption func(*server)
 
