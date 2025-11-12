@@ -22,8 +22,8 @@ type BaseModel struct {
 	ID        int32     `gorm:"primaryKey;autoIncrement;column:id;type:integer;not null"`
 	Erased    bool      `gorm:"column:erased;type:boolean;not null;default false"`
 	Hidden    bool      `gorm:"column:hidden;type:boolean"`
-	CreatedAt time.Time `gorm:"column:created_at;type:timestamp"`
-	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamp"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamp with time zone;not null;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamp with time zone;not null;autoUpdateTime"`
 	Version   int64     `gorm:"column:version;type:bigint"`
 }
 
