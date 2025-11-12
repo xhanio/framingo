@@ -209,7 +209,7 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 			// Register route with Echo
 			key := api.HandlerKey(g, h)
 			if hf, ok := m.handlerFuncs[key]; ok {
-				m.log.Infof("register handler %s %s by key %s", h.Method, h.Path, key)
+				m.log.Infof("register handler %s %s", h.Method, h.Path)
 				group.Add(h.Method, h.Path, hf, mwfuncs...)
 				// Store handler metadata for request lookup in the server instance
 				s.groups[key] = g
