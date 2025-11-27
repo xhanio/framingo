@@ -12,7 +12,6 @@ type node[T any] struct {
 	term      bool
 	depth     int
 	value     T
-	mask      uint64
 	parent    *node[T]
 	children  map[rune]*node[T]
 	termCount int
@@ -48,22 +47,18 @@ func (t *Trie[T]) Add(key string, value T) Node[T] {
 
 	t.size++
 	runes := []rune(key)
-	bitmask := maskruneslice(runes)
 	nd := t.root
-	nd.mask |= bitmask
 	nd.termCount++
 	for i := range runes {
 		r := runes[i]
-		bitmask = maskruneslice(runes[i:])
 		if n, ok := nd.children[r]; ok {
 			nd = n
-			nd.mask |= bitmask
 		} else {
-			nd = nd.newEmptyChild(r, "", bitmask)
+			nd = nd.newEmptyChild(r, "")
 		}
 		nd.termCount++
 	}
-	nd = nd.newChild(nul, key, 0, value, true)
+	nd = nd.newChild(nul, key, value, true)
 
 	return nd
 }
@@ -160,11 +155,10 @@ func (t *Trie[T]) PrefixSearch(pre string) []string {
 }
 
 // newChild creates and returns a pointer to a new child for the node.
-func (n *node[T]) newChild(val rune, path string, bitmask uint64, value T, term bool) *node[T] {
+func (n *node[T]) newChild(val rune, path string, value T, term bool) *node[T] {
 	node := &node[T]{
 		val:      val,
 		path:     path,
-		mask:     bitmask,
 		term:     term,
 		value:    value,
 		parent:   n,
@@ -172,34 +166,24 @@ func (n *node[T]) newChild(val rune, path string, bitmask uint64, value T, term 
 		depth:    n.depth + 1,
 	}
 	n.children[node.val] = node
-	n.mask |= bitmask
 	return node
 }
 
 // newEmptyChild creates and returns a pointer to a new child for the node.
-func (n *node[T]) newEmptyChild(val rune, path string, bitmask uint64) *node[T] {
+func (n *node[T]) newEmptyChild(val rune, path string) *node[T] {
 	node := &node[T]{
 		val:      val,
 		path:     path,
-		mask:     bitmask,
 		parent:   n,
 		children: make(map[rune]*node[T]),
 		depth:    n.depth + 1,
 	}
 	n.children[node.val] = node
-	n.mask |= bitmask
 	return node
 }
 
 func (n *node[T]) removeChild(r rune) {
 	delete(n.children, r)
-	for nd := n.parent; nd != nil; nd = nd.parent {
-		nd.mask ^= nd.mask
-		nd.mask |= uint64(1) << uint64(nd.val-'a')
-		for _, c := range nd.children {
-			nd.mask |= c.mask
-		}
-	}
 }
 
 // Val returns the value of the node.
@@ -229,14 +213,6 @@ func findNode[T any](nd *node[T], runes []rune) *node[T] {
 	}
 
 	return findNode(n, nrunes)
-}
-
-func maskruneslice(rs []rune) uint64 {
-	var m uint64
-	for _, r := range rs {
-		m |= uint64(1) << uint64(r-'a')
-	}
-	return m
 }
 
 func collect[T any](nd *node[T]) []string {
@@ -273,11 +249,6 @@ func fuzzycollect[T any](nd *node[T], partial []rune) (keys []string) {
 		i := len(potential) - 1
 		p := potential[i]
 		potential = potential[:i]
-		// TODO(derekparker): This should be cachable.
-		m := maskruneslice(partial[p.idx:])
-		if (p.node.mask & m) != m {
-			continue
-		}
 
 		if p.node.val == partial[p.idx] {
 			p.idx++

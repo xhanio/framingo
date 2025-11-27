@@ -75,6 +75,9 @@ func (s *simple[T]) Pop() (T, error) {
 	} else {
 		last := len(s.data) - 1
 		element := (s.data)[last]
+		// zero out the element to avoid memory leak
+		var zero T
+		s.data[last] = zero
 		s.data = (s.data)[:last]
 		return element, nil
 	}
@@ -101,6 +104,13 @@ func (s *simple[T]) PopN(n int) ([]T, error) {
 		}
 		elements := make([]T, n)
 		copy(elements, (s.data)[last:])
+
+		// zero out removed elements
+		var zero T
+		for i := last; i < l; i++ {
+			s.data[i] = zero
+		}
+
 		s.data = (s.data)[:last]
 		return elements, nil
 	}
@@ -113,7 +123,19 @@ func (s *simple[T]) Shift() (T, error) {
 		return *new(T), errors.Newf("failed to shift element: simple is empty")
 	} else {
 		element := s.data[0]
+		// zero out the element
+		var zero T
+		s.data[0] = zero
 		s.data = s.data[1:]
+
+		// Compact if we have too much wasted space at the beginning
+		// If capacity is more than 2x length and length is small enough, or if we've shifted a lot
+		if cap(s.data) > 2*len(s.data) && len(s.data) > 0 {
+			newData := make([]T, len(s.data))
+			copy(newData, s.data)
+			s.data = newData
+		}
+
 		return element, nil
 	}
 }
@@ -138,7 +160,22 @@ func (s *simple[T]) ShiftN(n int) ([]T, error) {
 		}
 		elements := make([]T, n)
 		copy(elements, s.data[:n])
+
+		// zero out removed elements
+		var zero T
+		for i := 0; i < n; i++ {
+			s.data[i] = zero
+		}
+
 		s.data = s.data[n:]
+
+		// Compact if needed
+		if cap(s.data) > 2*len(s.data) && len(s.data) > 0 {
+			newData := make([]T, len(s.data))
+			copy(newData, s.data)
+			s.data = newData
+		}
+
 		return elements, nil
 	}
 }
@@ -164,7 +201,7 @@ func toQueue[T any](data any) (*simple[T], error) {
 		}
 		return &r, nil
 	default:
-		return nil, errors.Newf("failed to convert into slice: unknown type %T", d)
+		return nil, errors.Newf("failed to convert into slice: unknown type %T", data)
 	}
 }
 

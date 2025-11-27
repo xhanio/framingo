@@ -37,6 +37,7 @@ func TestQueue(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
 	restoredA, err := toQueue[*A](restored["A"])
 	if err != nil {
 		t.Error(err)

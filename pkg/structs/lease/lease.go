@@ -36,6 +36,7 @@ type lease struct {
 	ticker    *time.Ticker
 	actionCh  chan action
 	cancelCh  chan struct{}
+	done      chan struct{} // signal that the loop has exited
 
 	onCancel  []func()
 	onExpire  []func()
@@ -75,6 +76,7 @@ func (l *lease) initialize() {
 	l.expiresAt = time.Now().Add(l.duration)
 	l.actionCh = make(chan action, 1)
 	l.cancelCh = make(chan struct{}, 1)
+	l.done = make(chan struct{})
 	l.ticker = time.NewTicker(100 * time.Millisecond)
 }
 
@@ -102,6 +104,13 @@ func (l *lease) Start() {
 	l.Lock()
 	l.initialize()
 	l.Unlock()
+
+	// ensure done is closed when loop exits
+	defer func() {
+		l.Lock()
+		close(l.done)
+		l.Unlock()
+	}()
 
 	for {
 		select {
@@ -149,8 +158,7 @@ func (l *lease) Start() {
 				}
 				// l.log.Debugf("%s expired at %s", l.id, l.expiresAt.Local().Format("15:04:05.00"))
 				l.Unlock()
-				close(l.actionCh)
-				close(l.cancelCh)
+				// Do not close channels here to avoid race with writers
 				return
 			}
 			l.Unlock()
@@ -160,53 +168,76 @@ func (l *lease) Start() {
 
 func (l *lease) Refresh(duraton time.Duration) bool {
 	l.RLock()
-	defer l.RUnlock()
-	if !l.expired {
-		go func() {
-			l.actionCh <- action{
-				Type:     ActionTypeRefresh,
-				Duration: duraton,
-			}
-		}()
+	if l.expired {
+		l.RUnlock()
+		return false
 	}
-	return !l.expired
+	l.RUnlock()
+
+	select {
+	case l.actionCh <- action{
+		Type:     ActionTypeRefresh,
+		Duration: duraton,
+	}:
+		return true
+	case <-l.done:
+		// l.log.Debugf("%s refresh failed: lease closed", l.id)
+		return false
+	}
 }
 
 func (l *lease) Extend(duraton time.Duration) bool {
 	l.RLock()
-	defer l.RUnlock()
-	if !l.expired {
-		go func() {
-			l.actionCh <- action{
-				Type:     ActionTypeExtend,
-				Duration: duraton,
-			}
-		}()
+	if l.expired {
+		l.RUnlock()
+		return false
 	}
-	return !l.expired
+	l.RUnlock()
+
+	select {
+	case l.actionCh <- action{
+		Type:     ActionTypeExtend,
+		Duration: duraton,
+	}:
+		return true
+	case <-l.done:
+		// l.log.Debugf("%s extend failed: lease closed", l.id)
+		return false
+	}
 }
 
 func (l *lease) Renew(expiresAt time.Time) bool {
 	l.RLock()
-	defer l.RUnlock()
-	if !l.expired {
-		go func() {
-			l.actionCh <- action{
-				Type:      ActionTypeRenew,
-				ExpiresAt: expiresAt,
-			}
-		}()
+	if l.expired {
+		l.RUnlock()
+		return false
 	}
-	return !l.expired
+	l.RUnlock()
+
+	select {
+	case l.actionCh <- action{
+		Type:      ActionTypeRenew,
+		ExpiresAt: expiresAt,
+	}:
+		return true
+	case <-l.done:
+		// l.log.Debugf("%s renew failed: lease closed", l.id)
+		return false
+	}
 }
 
 func (l *lease) Cancel() {
 	l.RLock()
-	defer l.RUnlock()
-	if !l.expired {
-		go func() {
-			l.cancelCh <- struct{}{}
-		}()
+	if l.expired {
+		l.RUnlock()
+		return
+	}
+	l.RUnlock()
+
+	select {
+	case l.cancelCh <- struct{}{}:
+	case <-l.done:
+		// l.log.Debugf("%s cancel failed: lease closed", l.id)
 	}
 }
 

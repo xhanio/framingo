@@ -398,6 +398,55 @@ func TestSupportChinese(t *testing.T) {
 	}
 }
 
+func TestUTF8Extended(t *testing.T) {
+	trie := New[any]()
+	inputs := []string{
+		"Hello world",
+		"Hello 世界",
+		"Hello 🌏",
+		"café",
+		"caffè",
+		"über",
+		"💩",
+		"💩💩",
+	}
+
+	for _, key := range inputs {
+		trie.Add(key, nil)
+	}
+
+	tests := []struct {
+		pre      string
+		expected []string
+	}{
+		{"Hello", []string{"Hello world", "Hello 世界", "Hello 🌏"}},
+		{"Hello 世", []string{"Hello 世界"}},
+		{"Hello 🌏", []string{"Hello 🌏"}},
+		{"caf", []string{"café", "caffè"}},
+		{"café", []string{"café"}},
+		{"ü", []string{"über"}},
+		{"💩", []string{"💩", "💩💩"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.pre, func(t *testing.T) {
+			actual := trie.PrefixSearch(test.pre)
+			sort.Strings(actual)
+			sort.Strings(test.expected)
+
+			if len(actual) != len(test.expected) {
+				t.Errorf("Expected %d results, got %d for prefix %q", len(test.expected), len(actual), test.pre)
+			}
+
+			for i, key := range actual {
+				if key != test.expected[i] {
+					t.Errorf("Expected %q, got %q", test.expected[i], key)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkAdd(b *testing.B) {
 	f, err := os.Open("/usr/share/dict/words")
 	if err != nil {
