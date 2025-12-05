@@ -39,6 +39,7 @@ func New(opts ...Option) Manager {
 
 func newManager(opts ...Option) *manager {
 	m := &manager{
+		log:             log.Default,
 		servers:         make(map[string]*server),
 		handlerFuncs:    make(map[string]echo.HandlerFunc),
 		middlewareFuncs: make(map[string]echo.MiddlewareFunc),
@@ -46,9 +47,6 @@ func newManager(opts ...Option) *manager {
 	}
 	for _, opt := range opts {
 		opt(m)
-	}
-	if m.log == nil {
-		m.log = log.Default
 	}
 	return m
 }

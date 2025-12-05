@@ -37,12 +37,11 @@ type manager struct {
 }
 
 func New(opts ...Option) Manager {
-	m := &manager{}
+	m := &manager{
+		log: log.Default,
+	}
 	for _, opt := range opts {
 		opt(m)
-	}
-	if m.log == nil {
-		m.log = log.Default
 	}
 	m.log = m.log.By(m)
 	return m

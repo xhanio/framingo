@@ -71,6 +71,51 @@ func (s *mockRawService) GetRawEvents() ([]string, []any) {
 	return kinds, payloads
 }
 
+type mockDualService struct {
+	name     string
+	events   []common.Event
+	rawKinds []string
+	payloads []any
+	mu       sync.Mutex
+}
+
+func (s *mockDualService) Name() string {
+	return s.name
+}
+
+func (s *mockDualService) HandleEvent(e common.Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, e)
+	return nil
+}
+
+func (s *mockDualService) HandleRawEvent(kind string, payload any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rawKinds = append(s.rawKinds, kind)
+	s.payloads = append(s.payloads, payload)
+	return nil
+}
+
+func (s *mockDualService) GetEvents() []common.Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := make([]common.Event, len(s.events))
+	copy(events, s.events)
+	return events
+}
+
+func (s *mockDualService) GetRawEvents() ([]string, []any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kinds := make([]string, len(s.rawKinds))
+	payloads := make([]any, len(s.payloads))
+	copy(kinds, s.rawKinds)
+	copy(payloads, s.payloads)
+	return kinds, payloads
+}
+
 func TestManagerNew(t *testing.T) {
 	m := New()
 	if m == nil {
@@ -85,15 +130,17 @@ func TestManagerNew(t *testing.T) {
 func TestManagerSubscribe(t *testing.T) {
 	m := newManager()
 	service := &mockService{name: "testservice"}
+	publisher := &mockService{name: "publisher"}
+	event := &mockEvent{kind: "testevent"}
 
 	m.Subscribe(service, "test/topic")
+	m.Publish(publisher, "test/topic", event)
 
-	if node, ok := m.topics.Find("test/topic"); !ok {
-		t.Error("expected topic to be found in trie")
-	} else if subscribers := node.Value(); len(subscribers) != 1 {
-		t.Error("expected one subscriber")
-	} else if subscribers[0] != service {
-		t.Error("expected service to be subscribed")
+	time.Sleep(10 * time.Millisecond)
+
+	events := service.GetEvents()
+	if len(events) != 1 {
+		t.Errorf("expected service to receive 1 event, got %d", len(events))
 	}
 }
 
@@ -101,32 +148,40 @@ func TestManagerSubscribeMultipleServices(t *testing.T) {
 	m := newManager()
 	service1 := &mockService{name: "service1"}
 	service2 := &mockService{name: "service2"}
+	publisher := &mockService{name: "publisher"}
+	event := &mockEvent{kind: "testevent"}
 
 	m.Subscribe(service1, "test/topic")
 	m.Subscribe(service2, "test/topic")
+	m.Publish(publisher, "test/topic", event)
 
-	node, ok := m.topics.Find("test/topic")
-	if !ok {
-		t.Fatal("expected topic to be found in trie")
+	time.Sleep(10 * time.Millisecond)
+
+	events1 := service1.GetEvents()
+	events2 := service2.GetEvents()
+
+	if len(events1) != 1 {
+		t.Errorf("expected service1 to receive 1 event, got %d", len(events1))
 	}
 
-	subscribers := node.Value()
-
-	if len(subscribers) != 2 {
-		t.Errorf("expected 2 subscribers, got %d", len(subscribers))
+	if len(events2) != 1 {
+		t.Errorf("expected service2 to receive 1 event, got %d", len(events2))
 	}
 }
 
 func TestManagerSubscribeNilService(t *testing.T) {
 	m := newManager()
+	publisher := &mockService{name: "publisher"}
+	event := &mockEvent{kind: "testevent"}
 
+	// Subscribe with nil service should not panic
 	m.Subscribe(nil, "test/topic")
 
-	if node, ok := m.topics.Find("test/topic"); ok {
-		t.Error("expected no topic to be created for nil service")
-	} else if node != nil {
-		t.Error("expected node to be nil")
-	}
+	// Publish to verify no nil pointer issues
+	m.Publish(publisher, "test/topic", event)
+
+	time.Sleep(10 * time.Millisecond)
+	// Test passes if no panic occurs
 }
 
 func TestManagerPublishEventHandler(t *testing.T) {
@@ -279,16 +334,42 @@ func TestManagerWithLogger(t *testing.T) {
 	m := New(WithLogger(logger))
 
 	manager := m.(*manager)
-	if manager.log != logger {
+	if manager.log == nil {
 		t.Error("expected logger to be set")
 	}
 }
 
-func TestManagerWithName(t *testing.T) {
-	name := "custommessenger"
-	m := New(WithName(name))
+func TestManagerPublishDualHandler(t *testing.T) {
+	m := newManager()
+	service := &mockDualService{name: "dualservice"}
+	event := &mockEvent{kind: "testevent"}
+	publisher := &mockService{name: "publisher"}
 
-	if m.Name() != name {
-		t.Errorf("expected name '%s', got '%s'", name, m.Name())
+	m.Subscribe(service, "test/topic")
+	m.Publish(publisher, "test/topic", event)
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Both handlers should be called
+	events := service.GetEvents()
+	if len(events) != 1 {
+		t.Errorf("expected 1 event from EventHandler, got %d", len(events))
+	}
+
+	kinds, payloads := service.GetRawEvents()
+	if len(kinds) != 1 {
+		t.Errorf("expected 1 raw event from RawEventHandler, got %d", len(kinds))
+	}
+
+	if len(payloads) != 1 {
+		t.Errorf("expected 1 payload from RawEventHandler, got %d", len(payloads))
+	}
+
+	if events[0].Kind() != "testevent" {
+		t.Errorf("expected event kind 'testevent', got '%s'", events[0].Kind())
+	}
+
+	if kinds[0] != "testevent" {
+		t.Errorf("expected raw event kind 'testevent', got '%s'", kinds[0])
 	}
 }

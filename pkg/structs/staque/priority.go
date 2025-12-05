@@ -23,6 +23,7 @@ type priority[T PriorityItem] struct {
 // New initializes an empty priority queue.
 func NewPriority[T PriorityItem](opts ...Option[T]) Priority[T] {
 	p := &priority[T]{
+		log:   log.Default,
 		items: make(map[string]T),
 		lf:    DefaultLessFunc[T],
 	}
@@ -31,9 +32,6 @@ func NewPriority[T PriorityItem](opts ...Option[T]) Priority[T] {
 	}
 	p.empty = sync.NewCond(&p.RWMutex)
 	p.tree = btree.NewG(2, p.lf)
-	if p.log == nil {
-		p.log = log.Default
-	}
 	return p
 }
 

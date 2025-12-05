@@ -2,21 +2,16 @@ package pubsub
 
 import (
 	"path"
-	"strings"
-	"sync"
 
-	"github.com/xhanio/framingo/pkg/structs/trie"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 type manager struct {
-	name string
-	log  log.Logger
-
-	sync.RWMutex
-	topics *trie.Trie[[]common.Named]
+	name    string
+	log     log.Logger
+	backend Backend
 }
 
 func New(opts ...Option) Manager {
@@ -25,15 +20,21 @@ func New(opts ...Option) Manager {
 
 func newManager(opts ...Option) *manager {
 	m := &manager{
-		topics: trie.New[[]common.Named](),
+		log: log.Default,
 	}
 	for _, opt := range opts {
 		opt(m)
 	}
-	if m.log == nil {
-		m.log = log.Default
-	}
 	m.log = m.log.By(m)
+
+	// Initialize backend if not provided
+	if m.backend == nil {
+		m.backend = NewMemoryBackend(m.log)
+	}
+
+	// Set the dispatcher for the backend so it can delegate event delivery to the manager
+	m.backend.SetDispatcher(m.dispatch)
+
 	return m
 }
 
@@ -49,44 +50,48 @@ func (m *manager) Publish(svc common.Named, topic string, e common.Event) {
 		return
 	}
 
-	m.RLock()
-	var subscribers []common.Named
+	// Get all subscribers for this topic from the backend
+	subscribers := m.backend.GetSubscribers(topic)
 
-	sections := strings.Split(topic, "/")
-	for i := range sections {
-		prefix := strings.Join(sections[:i+1], "/")
-		if node, ok := m.topics.Find(prefix); ok {
-			subscribers = append(subscribers, node.Value()...)
+	// Dispatch to all local subscribers
+	m.dispatch(subscribers, topic, e)
+
+	// If using Redis backend, also publish to Redis for distribution to other instances
+	if rb, ok := m.backend.(interface {
+		PublishToRedis(svc common.Named, topic string, e common.Event) error
+	}); ok {
+		if err := rb.PublishToRedis(svc, topic, e); err != nil {
+			m.log.Error("failed to publish to Redis", "topic", topic, "error", err)
 		}
 	}
-	m.RUnlock()
+}
 
+// dispatch sends an event to all subscribers asynchronously.
+// It handles both EventHandler and RawEventHandler interfaces independently.
+func (m *manager) dispatch(subscribers []common.Named, topic string, e common.Event) {
 	for _, subscriber := range subscribers {
-		go func(sub common.Named) {
-			if eh, ok := sub.(common.EventHandler); ok {
-				if err := eh.HandleEvent(e); err != nil {
-					m.log.Error("error handling event", "topic", topic, "subscriber", sub.Name(), "error", err)
+		// Handle EventHandler interface
+		if eh, ok := subscriber.(common.EventHandler); ok {
+			go func(sub common.EventHandler, name string) {
+				if err := sub.HandleEvent(e); err != nil {
+					m.log.Error("error handling event", "topic", topic, "subscriber", name, "error", err)
 				}
-			} else if reh, ok := sub.(common.RawEventHandler); ok {
-				if err := reh.HandleRawEvent(e.Kind(), e); err != nil {
-					m.log.Error("error handling raw event", "topic", topic, "subscriber", sub.Name(), "error", err)
+			}(eh, subscriber.Name())
+		}
+
+		// Handle RawEventHandler interface (independently of EventHandler)
+		if reh, ok := subscriber.(common.RawEventHandler); ok {
+			go func(sub common.RawEventHandler, name string) {
+				if err := sub.HandleRawEvent(e.Kind(), e); err != nil {
+					m.log.Error("error handling raw event", "topic", topic, "subscriber", name, "error", err)
 				}
-			}
-		}(subscriber)
+			}(reh, subscriber.Name())
+		}
 	}
 }
 
 func (m *manager) Subscribe(svc common.Named, topic string) {
-	if svc == nil {
-		return
-	}
-	m.Lock()
-	defer m.Unlock()
-	if node, ok := m.topics.Find(topic); ok {
-		subscribers := append(node.Value(), svc)
-		m.topics.Remove(topic)
-		m.topics.Add(topic, subscribers)
-	} else {
-		m.topics.Add(topic, []common.Named{svc})
+	if err := m.backend.Subscribe(svc, topic); err != nil {
+		m.log.Error("failed to subscribe", "topic", topic, "service", svc.Name(), "error", err)
 	}
 }

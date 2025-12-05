@@ -28,14 +28,12 @@ type manager struct {
 
 func New(database db.Manager, opts ...Option) Manager {
 	m := &manager{
-		db: database,
-		wg: &sync.WaitGroup{},
+		log: log.Default,
+		db:  database,
+		wg:  &sync.WaitGroup{},
 	}
 	for _, opt := range opts {
 		opt(m)
-	}
-	if m.log == nil {
-		m.log = log.Default
 	}
 	m.log = m.log.By(m)
 	if m.ctx == nil {

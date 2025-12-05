@@ -34,15 +34,13 @@ func New(opts ...Option) Manager {
 
 func newService(opts ...Option) *manager {
 	m := &manager{
+		log:   log.Default,
 		wg:    &sync.WaitGroup{},
 		sg:    graph.New[common.Service](),
 		stats: make(map[string]*Stats),
 	}
 	for _, opt := range opts {
 		opt(m)
-	}
-	if m.log == nil {
-		m.log = log.Default
 	}
 	m.log = m.log.By(m)
 	return m

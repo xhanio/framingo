@@ -38,6 +38,7 @@ func New(endpoint string, opts ...Option) Client {
 
 func newClient(endpoint string, opts ...Option) *client {
 	c := &client{
+		log: log.Default,
 		endpoint: &api.Endpoint{
 			Host: endpoint,
 		},
@@ -46,9 +47,6 @@ func newClient(endpoint string, opts ...Option) *client {
 	}
 	for _, opt := range opts {
 		opt(c)
-	}
-	if c.log == nil {
-		c.log = log.Default
 	}
 	return c
 }

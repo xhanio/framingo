@@ -43,14 +43,12 @@ func New(es common.EventSender, opts ...Option) Manager {
 
 func newManager(es common.EventSender, opts ...Option) *manager {
 	m := &manager{
+		log:   log.Default,
 		es:    es,
 		todos: make(map[string]*TODO),
 	}
 	for _, opt := range opts {
 		opt(m)
-	}
-	if m.log == nil {
-		m.log = log.Default
 	}
 	m.log = m.log.By(m)
 	m.tm = task.New(

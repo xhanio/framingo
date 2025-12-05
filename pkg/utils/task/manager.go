@@ -49,6 +49,7 @@ func New(opts ...Option) Manager {
 
 func newScheduler(opts ...Option) *manager {
 	m := &manager{
+		log:       log.Default,
 		cl:        &sync.RWMutex{},
 		crons:     make(map[string]cron.EntryID),
 		el:        &sync.RWMutex{},
@@ -58,9 +59,6 @@ func newScheduler(opts ...Option) *manager {
 	}
 	for _, opt := range opts {
 		opt(m)
-	}
-	if m.log == nil {
-		m.log = log.Default
 	}
 	if m.cm == nil {
 		m.cm = cron.New(

@@ -49,6 +49,7 @@ func newJob(id string, fn Func, opts ...Option) *job {
 	j := &job{
 		id:        id,
 		fn:        fn,
+		log:       log.Default,
 		labels:    make(labels.Set),
 		state:     StateCreated,
 		createdAt: time.Now(),
@@ -57,9 +58,6 @@ func newJob(id string, fn Func, opts ...Option) *job {
 	}
 	for _, opt := range opts {
 		opt(j)
-	}
-	if j.log == nil {
-		j.log = log.Default
 	}
 	j.log = j.log.With(zap.String("job", id))
 	return j
