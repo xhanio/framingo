@@ -10,11 +10,11 @@ type PaginationParams struct {
 
 // Pagination response structure
 type Pagination[T any] struct {
-	Items      []T `json:"items"`
-	TotalCount int `json:"total_count"`
-	Page       int `json:"page"`        // Current page (0 for unpaginated)
-	PageSize   int `json:"page_size"`   // Items per page (0 for unpaginated)
-	TotalPages int `json:"total_pages"` // Total number of pages
+	Items      []T   `json:"items"`
+	TotalCount int64 `json:"total_count"`
+	Page       int   `json:"page"`        // Current page (0 for unpaginated)
+	PageSize   int   `json:"page_size"`   // Items per page (0 for unpaginated)
+	TotalPages int   `json:"total_pages"` // Total number of pages
 }
 
 // IsPaginated returns true if pagination is requested
@@ -39,10 +39,13 @@ func (p *PaginationParams) Limit() int {
 }
 
 // NewPagination creates a pagination response
-func NewPagination[T any](items []T, total int, params PaginationParams) *Pagination[T] {
+func NewPagination[T any](items []T, total int64, params PaginationParams) *Pagination[T] {
 	totalPages := 0
 	if params.IsPaginated() && params.PageSize > 0 {
-		totalPages = (total + params.PageSize - 1) / params.PageSize
+		totalPages = int((total + int64(params.PageSize) - 1) / int64(params.PageSize))
+	}
+	if items == nil {
+		items = make([]T, 0)
 	}
 	return &Pagination[T]{
 		Items:      items,
