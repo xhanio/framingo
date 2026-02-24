@@ -16,10 +16,11 @@ import (
 	"github.com/spf13/viper"
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/api/server"
-	"github.com/xhanio/framingo/pkg/services/controller"
+	"github.com/xhanio/framingo/pkg/services/app"
 	"github.com/xhanio/framingo/pkg/services/db"
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/info"
+	"github.com/xhanio/framingo/pkg/utils/envutil"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
@@ -47,7 +48,7 @@ type manager struct {
 	api server.Manager
 
 	// service controller
-	services controller.Manager
+	services app.Manager
 }
 
 func New(config Config) Server {
@@ -64,7 +65,7 @@ func (m *manager) Init() error {
 		return errors.Wrap(err)
 	}
 
-	infra.EnvPrefix = info.EnvPrefix(info.ProductName)
+	infra.EnvPrefix = envutil.EnvPrefix(info.ProductName)
 
 	viper.SetConfigFile(confPath)
 	viper.AutomaticEnv()
@@ -127,7 +128,7 @@ func (m *manager) Init() error {
 	)
 
 	// init service manager
-	m.services = controller.New(controller.WithLogger(m.log))
+	m.services = app.New(app.WithLogger(m.log))
 
 	/* init utility level components */
 

@@ -1,7 +1,7 @@
 # Framingo
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8.svg)](https://go.dev/)
 
 **Framingo** is a modular, service-oriented Go framework for building production-ready HTTP API applications. It provides a comprehensive set of tools, utilities, and architectural patterns to help you quickly develop scalable, maintainable backend services.
 
@@ -12,6 +12,8 @@
 - **HTTP API Server** - Production-ready API server with routing, middleware, and rate limiting
 
 - **Rich Utilities** - Extensive collection of utility packages for common operations
+
+- **Pub/Sub Messaging** - Event-driven messaging with multiple backends (Memory, Redis, Kafka)
 
 - **Modular Design** - Pick and choose components based on your needs
 
@@ -102,7 +104,7 @@ graph TB
     end
 
     subgraph "Service Orchestration"
-        Controller[Service Controller<br/>Lifecycle & Dependencies]
+        App[App Controller<br/>Lifecycle & Dependencies]
     end
 
     subgraph "Core Components"
@@ -111,15 +113,15 @@ graph TB
         Utils[Utilities<br/>Helper Functions]
     end
 
-    CLI --> Controller
-    Config --> Controller
-    Controller --> Services
-    Controller --> API
-    Controller --> Utils
+    CLI --> App
+    Config --> App
+    App --> Services
+    App --> API
+    App --> Utils
 
     style CLI fill:#e1f5ff
     style Config fill:#e1f5ff
-    style Controller fill:#fff4e1
+    style App fill:#fff4e1
     style Services fill:#f0f0f0
     style API fill:#f0f0f0
     style Utils fill:#f0f0f0
@@ -166,7 +168,7 @@ Production-ready service implementations that provide core functionality:
 
 - **[api/client](pkg/services/api/client/)** - HTTP client utilities for making API requests
 
-- **[controller](pkg/services/controller/)** - Service lifecycle orchestration
+- **[app](pkg/services/app/)** - Service lifecycle orchestration
   - Automatic dependency resolution via topological sort
   - Service registration and initialization
   - Graceful startup and shutdown
@@ -180,7 +182,12 @@ Production-ready service implementations that provide core functionality:
 
 - **[planner](pkg/services/planner/)** - Task scheduling and planning service
 
-- **[pubsub](pkg/services/pubsub/)** - Publish-subscribe messaging pattern implementation
+- **[pubsub](pkg/services/pubsub/)** - Publish-subscribe messaging
+  - Hierarchical topic-based subscriptions
+  - Multiple driver backends: Memory, Redis, Kafka
+  - Non-self-delivery (publishers don't receive own messages)
+  - `MessageHandler` and `RawMessageHandler` dispatch
+  - Thread-safe with goroutine-based listeners
 
 ### Types (`pkg/types/`)
 
@@ -190,12 +197,19 @@ Core interfaces and type definitions used throughout the framework:
   - `Service` - Base service interface with name and dependencies
   - `Daemon` - Start/Stop lifecycle methods
   - `Initializable` - Initialization interface
+  - `Debuggable` - Debug info output interface
   - `Named`, `Unique`, `Weighted` - Utility interfaces
+  - `Message`, `MessageSender`, `RawMessageSender` - Messaging interfaces
+  - `MessageHandler`, `RawMessageHandler` - Message consumption interfaces
 
 - **[api](pkg/types/api/)** - HTTP API related types
-  - `Router`, `Middleware`, `Handler` interfaces
-  - Request/Response types
-  - Error categories
+  - `Router`, `Middleware` interfaces
+  - `Handler`, `HandlerGroup` route configuration types
+  - `ThrottleConfig` for rate limiting
+
+- **[orm](pkg/types/orm/)** - ORM base types
+  - `Record[T]` - Generic record interface with ID, versioning, and soft delete
+  - `Referenced[T]` - Cross-table reference support
 
 - **[info](pkg/types/info/)** - Application metadata (version, build info, commit hash)
 
@@ -204,7 +218,7 @@ Core interfaces and type definitions used throughout the framework:
 Efficient, generic data structures for common algorithms:
 
 - **[buffer](pkg/structs/buffer/)** - Ring buffer implementation with fixed capacity
-- **[graph](pkg/structs/graph/)** - Generic graph structure with topological sort (used by controller)
+- **[graph](pkg/structs/graph/)** - Generic graph structure with topological sort (used by app)
 - **[lease](pkg/structs/lease/)** - Time-based lease management for resource allocation
 - **[queue](pkg/structs/queue/)** - FIFO queue implementation
 - **[staque](pkg/structs/staque/)** - Hybrid stack/queue data structure
@@ -216,18 +230,20 @@ Helper packages for common tasks:
 
 - **[certutil](pkg/utils/certutil/)** - Certificate and TLS utilities
 - **[cmdutil](pkg/utils/cmdutil/)** - Command execution helpers
+- **[envutil](pkg/utils/envutil/)** - Environment variable helpers
 - **[infra](pkg/utils/infra/)** - Infrastructure helpers (signals, profiling, pprof)
 - **[ioutil](pkg/utils/ioutil/)** - I/O operations and file utilities
 - **[job](pkg/utils/job/)** - Background job execution framework
 - **[log](pkg/utils/log/)** - Structured logging with zap integration and file rotation
 - **[maputil](pkg/utils/maputil/)** - Map and set utilities
 - **[netutil](pkg/utils/netutil/)** - Network utilities
+- **[pageutil](pkg/utils/pageutil/)** - Pagination utilities
 - **[pathutil](pkg/utils/pathutil/)** - Path manipulation helpers
-- **[printutil](pkg/utils/printutil/)** - Pretty printing utilities
+- **[printutil](pkg/utils/printutil/)** - Pretty printing and table formatting
 - **[reflectutil](pkg/utils/reflectutil/)** - Reflection helpers
 - **[sliceutil](pkg/utils/sliceutil/)** - Slice manipulation utilities
 - **[strutil](pkg/utils/strutil/)** - String utilities
-- **[task](pkg/utils/task/)** - Task management utilities
+- **[task](pkg/utils/task/)** - Task management with concurrency control
 - **[timeutil](pkg/utils/timeutil/)** - Time-related utilities
 
 ## Building Your First Application
@@ -417,7 +433,7 @@ import (
 
     "github.com/spf13/viper"
     "github.com/xhanio/framingo/pkg/services/api/server"
-    "github.com/xhanio/framingo/pkg/services/controller"
+    "github.com/xhanio/framingo/pkg/services/app"
     "github.com/xhanio/framingo/pkg/types/common"
     "github.com/xhanio/framingo/pkg/utils/infra"
     "github.com/xhanio/framingo/pkg/utils/log"
@@ -432,7 +448,7 @@ type Manager interface {
 
 type manager struct {
     log      log.Logger
-    services *controller.Manager
+    services *app.Manager
     api      server.Manager
     helloSvc hello.Manager
 }
@@ -446,7 +462,7 @@ func (m *manager) Init() error {
     m.log = log.New(log.WithLevel(viper.GetInt("log.level")))
 
     // Initialize service controller
-    m.services = controller.New(controller.WithLogger(m.log))
+    m.services = app.New(app.WithLogger(m.log))
 
     // Create API server
     m.api = server.New(server.WithLogger(m.log))
@@ -578,7 +594,7 @@ curl http://localhost:8080/api/v1/hello?name=Framingo
 
 Browse the framework source code:
 
-- **[Services API](pkg/services/)** - API server, controller, database, pubsub
+- **[Services API](pkg/services/)** - API server, app controller, database, planner, pubsub
 - **[Types](pkg/types/)** - Common interfaces and API types
 - **[Utilities](pkg/utils/)** - Logger, infrastructure, and helper packages
 - **[Data Structures](pkg/structs/)** - Graph, queue, buffer, trie implementations
@@ -590,7 +606,7 @@ View package documentation using go doc:
 ```bash
 # View package documentation
 go doc github.com/xhanio/framingo/pkg/services/api/server
-go doc github.com/xhanio/framingo/pkg/services/controller
+go doc github.com/xhanio/framingo/pkg/services/app
 go doc github.com/xhanio/framingo/pkg/utils/log
 ```
 
@@ -732,6 +748,10 @@ type Daemon interface {
     Start(context.Context) error
     Stop(wait bool) error
 }
+
+type Debuggable interface {
+    Info(w io.Writer, debug bool)
+}
 ```
 
 ### Dependency Management
@@ -753,7 +773,7 @@ func (s *myService) Dependencies() []common.Service {
     return []common.Service{s.database}
 }
 
-// Controller automatically starts: database -> myService
+// App controller automatically starts: database -> myService
 ```
 
 ### Router Configuration
@@ -822,7 +842,7 @@ export FRAMINGO_API_HTTP_PORT=9090
 ### Docker
 
 ```dockerfile
-FROM golang:1.21 AS builder
+FROM golang:1.24 AS builder
 WORKDIR /app
 COPY . .
 RUN go build -o app cmd/app/main.go

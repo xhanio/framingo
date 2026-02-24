@@ -235,7 +235,7 @@ The server component manages several layers of services:
 - **Middlewares**: Request processing pipeline (see [pkg/middlewares/example](../../middlewares/example/))
 
 ### Service Controller
-- **Controller Manager**: Orchestrates service lifecycle ([pkg/services/controller](../../../pkg/services/controller/))
+- **Controller Manager**: Orchestrates service lifecycle ([pkg/services/app](../../../pkg/services/app/))
 
 The controller automatically resolves dependencies using topological sorting:
 
@@ -485,6 +485,6 @@ ca:
 - [Example Routers](../../routers/example/)
 - [Example Middlewares](../../middlewares/example/)
 - [API Server Manager](../../../../pkg/services/api/server/)
-- [Service Controller](../../../../pkg/services/controller/)
+- [Service Controller](../../../../pkg/services/app/)
 - [Database Manager](../../../../pkg/services/db/)
 - [Viper Configuration](https://github.com/spf13/viper)

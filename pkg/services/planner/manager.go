@@ -29,7 +29,7 @@ type manager struct {
 	name string
 	log  log.Logger
 
-	es common.EventSender
+	es common.MessageSender
 
 	tm task.Manager
 
@@ -37,11 +37,11 @@ type manager struct {
 	todos map[string]*TODO
 }
 
-func New(es common.EventSender, opts ...Option) Manager {
+func New(es common.MessageSender, opts ...Option) Manager {
 	return newManager(es, opts...)
 }
 
-func newManager(es common.EventSender, opts ...Option) *manager {
+func newManager(es common.MessageSender, opts ...Option) *manager {
 	m := &manager{
 		log:   log.Default,
 		es:    es,

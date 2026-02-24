@@ -8,8 +8,11 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/xhanio/errors v1.0.2
 	github.com/xhanio/framingo v0.2.1
-	go.uber.org/zap v1.27.0
 )
+
+replace github.com/xhanio/framingo => ../
+
+require go.uber.org/zap v1.27.0
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect

@@ -70,7 +70,7 @@ Production-ready service implementations that provide core functionality:
 
 - **[api/server](../pkg/services/api/server/)** - HTTP API server with Echo framework integration, middleware support, and route management
 - **[api/client](../pkg/services/api/client/)** - HTTP client utilities for making API requests
-- **[controller](../pkg/services/controller/)** - Service lifecycle management with dependency resolution and topological sorting
+- **[app](../pkg/services/app/)** - Service lifecycle management with dependency resolution and topological sorting
 - **[db](../pkg/services/db/)** - Database manager with GORM integration, connection pooling, and migration support
 - **[planner](../pkg/services/planner/)** - Task scheduling and planning service
 - **[pubsub](../pkg/services/pubsub/)** - Publish-subscribe messaging pattern implementation
@@ -987,7 +987,7 @@ server: admin   # Target admin server
 
 - [Framingo Core](../pkg/)
 - [API Server](../pkg/services/api/server/)
-- [Service Controller](../pkg/services/controller/)
+- [Service Controller](../pkg/services/app/)
 - [Database Manager](../pkg/services/db/)
 
 ### External Libraries

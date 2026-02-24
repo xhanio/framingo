@@ -187,8 +187,6 @@ github.com/xdg-go/scram v1.1.1/go.mod h1:RaEWvsqvNKKvBPvcKeFjrG2cJqOkHTiyTpzz23n
 github.com/xdg-go/stringprep v1.0.3/go.mod h1:W3f5j4i+9rC0kuIEJL0ky1VpHXQU3ocBgklLGvcBnW8=
 github.com/xhanio/errors v1.0.2 h1:TMS79uJAUG3OAkvv97U2QcW42n5EOv0XT+9YQdWJ5/c=
 github.com/xhanio/errors v1.0.2/go.mod h1:OZkI2qrOk7T3VuOWjtOBXLJSrGpln0GBmDEhvnN9hgw=
-github.com/xhanio/framingo v0.2.1 h1:vY6V2SxMgAwarUhhHPjV+RVatsX2H1gkSJ/0EugdPQ0=
-github.com/xhanio/framingo v0.2.1/go.mod h1:h0AXMlL3DleExWo2iiWQZhZLwoVhJDI/iYp3qgo6vMQ=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
 github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d h1:splanxYIlg+5LfHAM6xpdFEAYOk8iySO56hMFq6uLyA=
