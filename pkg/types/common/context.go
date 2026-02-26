@@ -12,4 +12,5 @@ const (
 	ContextKeyTX         = "_tx"
 	ContextKeyLogger     = "_logger"
 	ContextKeyTrace      = "_trace"
+	ContextKeyConfig     = "_config"
 )

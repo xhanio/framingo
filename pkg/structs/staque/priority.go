@@ -27,9 +27,7 @@ func NewPriority[T PriorityItem](opts ...Option[T]) Priority[T] {
 		items: make(map[string]T),
 		lf:    DefaultLessFunc[T],
 	}
-	for _, opt := range opts {
-		opt(p)
-	}
+	p.apply(opts...)
 	p.empty = sync.NewCond(&p.RWMutex)
 	p.tree = btree.NewG(2, p.lf)
 	return p

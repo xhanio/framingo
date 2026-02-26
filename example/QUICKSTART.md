@@ -9,7 +9,7 @@ This guide shows how to quickly build and run the Framingo example application u
    go install github.com/xhanio/gopro@latest
    ```
 
-2. Ensure you have Go 1.21+ installed
+2. Ensure you have Go 1.24+ installed
 
 ## Building the Application
 

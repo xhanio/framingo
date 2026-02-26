@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
@@ -40,9 +42,7 @@ func New(opts ...Option) Manager {
 	m := &manager{
 		log: log.Default,
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
+	m.apply(opts...)
 	m.log = m.log.By(m)
 	return m
 }
@@ -114,7 +114,17 @@ func (m *manager) DB() *sql.DB {
 	return m.sqlDB
 }
 
-func (m *manager) Init() error {
+func (m *manager) Init(ctx context.Context) error {
+	// dynamic configs
+	config := confutil.FromContext(ctx)
+	m.apply(
+		WithConnection(
+			config.GetInt("db.connection.max_open"),
+			config.GetInt("db.connection.max_idle"),
+			config.GetDuration("db.connection.max_lifetime"),
+			config.GetDuration("db.connection.exec_timeout"),
+		),
+	)
 	// connect to database
 	err := m.connect(m.dbtype, m.source)
 	if err != nil {

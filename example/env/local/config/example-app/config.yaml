@@ -37,6 +37,10 @@ api:
       rps: 100.0
       burst_size: 200
 
+# Example service configuration
+example:
+  greeting: hello world!
+
 # Optional: pprof profiling (enabled for local development)
 pprof:
   port: 6060

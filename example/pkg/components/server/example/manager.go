@@ -6,10 +6,8 @@ import (
 	"io"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -20,8 +18,8 @@ import (
 	"github.com/xhanio/framingo/pkg/services/db"
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/info"
-	"github.com/xhanio/framingo/pkg/utils/envutil"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
+	"github.com/xhanio/framingo/pkg/utils/envutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 	"go.uber.org/zap/zapcore"
@@ -33,7 +31,7 @@ import (
 )
 
 type manager struct {
-	config Config
+	config *viper.Viper
 	// util services
 	log log.Logger
 	db  db.Manager
@@ -52,83 +50,85 @@ type manager struct {
 }
 
 func New(config Config) Server {
+	conf := viper.New()
+	conf.SetConfigFile(config.Path)
+	infra.EnvPrefix = envutil.EnvPrefix(info.ProductName)
+	conf.SetEnvPrefix(infra.EnvPrefix)
+	conf.AutomaticEnv()
 	return &manager{
-		config: config,
+		config: conf,
 	}
 }
 
-func (m *manager) Init() error {
+func (m *manager) Init(ctx context.Context) error {
 	infra.StartTime = time.Now()
-
-	confPath, err := filepath.Abs(m.config.Path)
+	configFile := m.config.ConfigFileUsed()
+	if err := m.config.ReadInConfig(); err != nil {
+		return errors.Wrapf(err, "failed to read config file %s", configFile)
+	}
+	m.config.WatchConfig()
+	configPath, err := filepath.Abs(configFile)
 	if err != nil {
-		return errors.Wrap(err)
+		return errors.Wrapf(err, "failed to resolve config path %s", configFile)
 	}
-
-	infra.EnvPrefix = envutil.EnvPrefix(info.ProductName)
-
-	viper.SetConfigFile(confPath)
-	viper.AutomaticEnv()
-	viper.SetEnvPrefix(infra.EnvPrefix)
-	if err := viper.ReadInConfig(); err != nil {
-		return errors.Wrapf(err, "failed to read config file %s", confPath)
-	}
-	infra.ConfigDir = filepath.Dir(confPath)
+	infra.ConfigDir = filepath.Dir(configPath)
 
 	// init logger
 	m.log = log.New(
-		log.WithLevel(viper.GetInt("log.level")),
+		log.WithLevel(m.config.GetInt("log.level")),
 		log.WithFileWriter(
-			viper.GetString("log.file"),
-			viper.GetInt("log.rotation.max_size"),
-			viper.GetInt("log.rotation.max_backups"),
-			viper.GetInt("log.rotation.max_age"),
+			m.config.GetString("log.file"),
+			m.config.GetInt("log.rotation.max_size"),
+			m.config.GetInt("log.rotation.max_backups"),
+			m.config.GetInt("log.rotation.max_age"),
 		),
 	)
 	infra.Debug = (m.log.Level() == zapcore.DebugLevel)
 
 	// init db manager
 	m.db = db.New(
-		db.WithType(viper.GetString("db.type")),
+		db.WithType(m.config.GetString("db.type")),
 		db.WithDataSource(db.Source{
 			Host: sliceutil.First(
-				viper.GetString("db.source.host"),
-				viper.GetString("DB_HOST"),
+				m.config.GetString("db.source.host"),
+				m.config.GetString("DB_HOST"),
 				"127.0.0.1",
 			),
 			Port: sliceutil.First(
-				viper.GetUint("db.source.port"),
-				viper.GetUint("DB_PORT"),
+				m.config.GetUint("db.source.port"),
+				m.config.GetUint("DB_PORT"),
 				5432,
 			),
 			User: sliceutil.First(
-				viper.GetString("db.source.user"),
-				viper.GetString("DB_USER"),
+				m.config.GetString("db.source.user"),
+				m.config.GetString("DB_USER"),
 			),
 			Password: sliceutil.First(
-				viper.GetString("db.source.password"),
-				viper.GetString("DB_PASSWORD"),
+				m.config.GetString("db.source.password"),
+				m.config.GetString("DB_PASSWORD"),
 			),
 			DBName: sliceutil.First(
-				viper.GetString("db.source.dbname"),
-				viper.GetString("DB_DBNAME"),
+				m.config.GetString("db.source.dbname"),
+				m.config.GetString("DB_DBNAME"),
 			),
 		}),
 		db.WithMigration(
-			viper.GetString("db.migration.dir"),
-			viper.GetUint("db.migration.version"),
+			m.config.GetString("db.migration.dir"),
+			m.config.GetUint("db.migration.version"),
 		),
 		db.WithConnection(
-			viper.GetInt("db.connection.max_open"),
-			viper.GetInt("db.connection.max_idle"),
-			viper.GetDuration("db.connection.max_lifetime"),
-			viper.GetDuration("db.connection.exec_timeout"),
+			m.config.GetInt("db.connection.max_open"),
+			m.config.GetInt("db.connection.max_idle"),
+			m.config.GetDuration("db.connection.max_lifetime"),
+			m.config.GetDuration("db.connection.exec_timeout"),
 		),
 		db.WithLogger(m.log),
 	)
 
 	// init service manager
-	m.services = app.New(app.WithLogger(m.log))
+	m.services = app.New(m.config,
+		app.WithLogger(m.log),
+	)
 
 	/* init utility level components */
 
@@ -149,29 +149,29 @@ func (m *manager) Init() error {
 	)
 
 	// iterate over api configurations
-	servers := viper.GetStringMap("api")
+	servers := m.config.GetStringMap("api")
 	for name := range servers {
 		opts := []server.ServerOption{
 			server.WithEndpoint(
-				viper.GetString(fmt.Sprintf("api.%s.host", name)),
-				viper.GetUint(fmt.Sprintf("api.%s.port", name)),
-				viper.GetString(fmt.Sprintf("api.%s.prefix", name)),
+				m.config.GetString(fmt.Sprintf("api.%s.host", name)),
+				m.config.GetUint(fmt.Sprintf("api.%s.port", name)),
+				m.config.GetString(fmt.Sprintf("api.%s.prefix", name)),
 			),
 		}
 		// add throttle if configured
-		if viper.IsSet(fmt.Sprintf("api.%s.throttle", name)) {
+		if m.config.IsSet(fmt.Sprintf("api.%s.throttle", name)) {
 			opts = append(opts, server.WithThrottle(
-				viper.GetFloat64(fmt.Sprintf("api.%s.throttle.rps", name)),
-				viper.GetInt(fmt.Sprintf("api.%s.throttle.burst_size", name)),
+				m.config.GetFloat64(fmt.Sprintf("api.%s.throttle.rps", name)),
+				m.config.GetInt(fmt.Sprintf("api.%s.throttle.burst_size", name)),
 			))
 		}
 		// add TLS if configured
-		if viper.IsSet(fmt.Sprintf("api.%s.cert", name)) {
+		if m.config.IsSet(fmt.Sprintf("api.%s.cert", name)) {
 			opts = append(opts, server.WithTLS(
 				certutil.MustCAFromFile(
-					viper.GetString("ca.cert"),
-					viper.GetString(fmt.Sprintf("api.%s.cert", name)),
-					viper.GetString(fmt.Sprintf("api.%s.key", name)),
+					m.config.GetString("ca.cert"),
+					m.config.GetString(fmt.Sprintf("api.%s.cert", name)),
+					m.config.GetString(fmt.Sprintf("api.%s.key", name)),
 				),
 				true,
 			))
@@ -216,7 +216,7 @@ func (m *manager) Init() error {
 	/* pre initialization */
 
 	// init all services
-	if err := m.services.Init(); err != nil {
+	if err := m.services.Init(ctx); err != nil {
 		m.log.Error(err)
 	}
 
@@ -230,22 +230,8 @@ func (m *manager) Init() error {
 }
 
 func (m *manager) Start(ctx context.Context) error {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if e, ok := r.(error); ok {
-					m.log.Errorf("recover from panic: %s", e.Error())
-				} else {
-					m.log.Error(r)
-				}
-			}
-		}()
-		if err := m.services.Start(ctx); err != nil {
-			m.log.Error(err)
-		}
-	}()
 	// enable pprof
-	pport := viper.GetUint("pprof.port")
+	pport := m.config.GetUint("pprof.port")
 	if pport != 0 {
 		go func() {
 			m.log.Infof("enable pprof on port %d", pport)
@@ -255,27 +241,15 @@ func (m *manager) Start(ctx context.Context) error {
 			}
 		}()
 	}
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGUSR1, syscall.SIGUSR2)
-	for sig := range signalCh {
-		switch sig {
-		case syscall.SIGUSR1:
-			m.services.Info(os.Stdout, true)
-		case syscall.SIGUSR2:
-			buf := make([]byte, 1<<20)
-			n := runtime.Stack(buf, true)
-			fmt.Printf("========== stack trace ==========\n\n%s\n=================================\n", buf[:n])
-		case os.Interrupt:
-			m.log.Infof("gracefully shutdown manager")
-			if err := m.services.Stop(true); err != nil {
-				m.log.Error(err)
-			}
-			return nil
-		default:
-			m.log.Warnf("unknown signal %s", sig.String())
-		}
+	if err := m.services.Start(ctx); err != nil {
+		return err
 	}
-	return nil
+	// block until interrupted — SIGUSR1/SIGUSR2 are handled by the app manager
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	<-ctx.Done()
+	m.log.Info("gracefully shutdown manager")
+	return m.services.Stop(true)
 }
 
 func (m *manager) Stop(wait bool) error {

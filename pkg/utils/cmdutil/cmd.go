@@ -37,9 +37,7 @@ func newCMD(bin string, args []string, opts ...Option) *cmd {
 		bin:  bin,
 		args: args,
 	}
-	for _, opt := range opts {
-		opt(c)
-	}
+	c.apply(opts...)
 	if c.ctx == nil {
 		c.ctx = context.Background()
 	}

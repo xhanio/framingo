@@ -7,6 +7,12 @@ import (
 
 type Option func(*logger)
 
+func (l *logger) apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(l)
+	}
+}
+
 func WithLevel(level int) Option {
 	return func(l *logger) {
 		l.level = zapcore.Level(level)

@@ -32,7 +32,7 @@ func (s *mockService) Name() string {
 	return s.name
 }
 
-func (s *mockService) HandleMessage(e common.Message) error {
+func (s *mockService) HandleMessage(ctx context.Context, e common.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, e)
@@ -58,7 +58,7 @@ func (s *mockRawService) Name() string {
 	return s.name
 }
 
-func (s *mockRawService) HandleRawMessage(kind string, payload any) error {
+func (s *mockRawService) HandleRawMessage(ctx context.Context, kind string, payload any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rawKinds = append(s.rawKinds, kind)
@@ -88,14 +88,14 @@ func (s *mockDualService) Name() string {
 	return s.name
 }
 
-func (s *mockDualService) HandleMessage(e common.Message) error {
+func (s *mockDualService) HandleMessage(ctx context.Context, e common.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, e)
 	return nil
 }
 
-func (s *mockDualService) HandleRawMessage(kind string, payload any) error {
+func (s *mockDualService) HandleRawMessage(ctx context.Context, kind string, payload any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rawKinds = append(s.rawKinds, kind)
@@ -106,14 +106,14 @@ func (s *mockDualService) HandleRawMessage(kind string, payload any) error {
 func newTestManager() *manager {
 	b := driver.NewMemory(log.Default)
 	m := newManager(b, WithLogger(log.Default), WithName("test-pubsub"))
-	_ = m.Init()
+	_ = m.Init(context.Background())
 	return m
 }
 
 func TestManagerInit(t *testing.T) {
 	b := driver.NewMemory(log.Default)
 	m := newManager(b, WithName("test"))
-	err := m.Init()
+	err := m.Init(context.Background())
 	require.NoError(t, err)
 	assert.NotNil(t, m.bus)
 }

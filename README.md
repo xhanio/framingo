@@ -9,6 +9,8 @@
 
 - **Service-Oriented Architecture** - Built-in service lifecycle management with automatic dependency resolution
 
+- **Health Monitoring** - Kubernetes-style liveness/readiness probes with automatic restart on failure
+
 - **HTTP API Server** - Production-ready API server with routing, middleware, and rate limiting
 
 - **Rich Utilities** - Extensive collection of utility packages for common operations
@@ -17,11 +19,13 @@
 
 - **Modular Design** - Pick and choose components based on your needs
 
-- **Configuration Management** - YAML-based configuration with environment variable overrides
+- **Configuration Management** - Instance-based Viper configuration with context propagation and hot-reload support
 
 - **Database Integration** - Database manager with connection pooling and migrations
 
 - **CLI Support** - Built-in command-line interface framework integration
+
+- **Signal Handling** - Built-in OS signal management with customizable handlers (SIGINT, SIGUSR1, SIGUSR2)
 
 - **Production Ready** - Error handling, logging, graceful shutdown, and profiling support
 
@@ -170,9 +174,12 @@ Production-ready service implementations that provide core functionality:
 
 - **[app](pkg/services/app/)** - Service lifecycle orchestration
   - Automatic dependency resolution via topological sort
-  - Service registration and initialization
-  - Graceful startup and shutdown
-  - Signal handling
+  - Service registration and initialization with context-based configuration
+  - Graceful startup and shutdown with configurable timeout
+  - Built-in OS signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+  - Health monitoring with Kubernetes-style liveness/readiness probes
+  - Automatic service restart on liveness failure with configurable retry policy
+  - Per-service lifecycle operations (init, start, stop, restart)
 
 - **[db](pkg/services/db/)** - Database manager with GORM integration
   - Connection pooling with configurable limits
@@ -187,7 +194,7 @@ Production-ready service implementations that provide core functionality:
   - Multiple driver backends: Memory, Redis, Kafka
   - Non-self-delivery (publishers don't receive own messages)
   - `MessageHandler` and `RawMessageHandler` dispatch
-  - Thread-safe with goroutine-based listeners
+  - Synchronous message handling with ordering guarantees and backpressure
 
 ### Types (`pkg/types/`)
 
@@ -196,7 +203,9 @@ Core interfaces and type definitions used throughout the framework:
 - **[common](pkg/types/common/)** - Common interfaces
   - `Service` - Base service interface with name and dependencies
   - `Daemon` - Start/Stop lifecycle methods
-  - `Initializable` - Initialization interface
+  - `Initializable` - Context-aware initialization interface (`Init(ctx context.Context) error`)
+  - `Liveness` - Health probe interface (`Alive() error`) for automatic restart
+  - `Readiness` - Readiness probe interface (`Ready() error`) for traffic gating
   - `Debuggable` - Debug info output interface
   - `Named`, `Unique`, `Weighted` - Utility interfaces
   - `Message`, `MessageSender`, `RawMessageSender` - Messaging interfaces
@@ -230,6 +239,7 @@ Helper packages for common tasks:
 
 - **[certutil](pkg/utils/certutil/)** - Certificate and TLS utilities
 - **[cmdutil](pkg/utils/cmdutil/)** - Command execution helpers
+- **[confutil](pkg/utils/confutil/)** - Configuration context utilities (pass `*viper.Viper` via `context.Context`)
 - **[envutil](pkg/utils/envutil/)** - Environment variable helpers
 - **[infra](pkg/utils/infra/)** - Infrastructure helpers (signals, profiling, pprof)
 - **[ioutil](pkg/utils/ioutil/)** - I/O operations and file utilities
@@ -336,7 +346,7 @@ func New(opts ...Option) Manager {
 
 func (m *manager) Name() string { return "hello-service" }
 func (m *manager) Dependencies() []common.Service { return nil }
-func (m *manager) Init() error {
+func (m *manager) Init(ctx context.Context) error {
     m.log.Info("Initializing hello service")
     return nil
 }
@@ -435,7 +445,6 @@ import (
     "github.com/xhanio/framingo/pkg/services/api/server"
     "github.com/xhanio/framingo/pkg/services/app"
     "github.com/xhanio/framingo/pkg/types/common"
-    "github.com/xhanio/framingo/pkg/utils/infra"
     "github.com/xhanio/framingo/pkg/utils/log"
 
     "myapp/pkg/services/hello"
@@ -447,26 +456,27 @@ type Manager interface {
 }
 
 type manager struct {
+    config   *viper.Viper
     log      log.Logger
-    services *app.Manager
+    services app.Manager
     api      server.Manager
     helloSvc hello.Manager
 }
 
-func New() Manager {
-    return &manager{}
+func New(config *viper.Viper) Manager {
+    return &manager{config: config}
 }
 
-func (m *manager) Init() error {
+func (m *manager) Init(ctx context.Context) error {
     // Initialize logger
-    m.log = log.New(log.WithLevel(viper.GetInt("log.level")))
+    m.log = log.New(log.WithLevel(m.config.GetInt("log.level")))
 
-    // Initialize service controller
-    m.services = app.New(app.WithLogger(m.log))
+    // Initialize service controller (requires *viper.Viper for config propagation)
+    m.services = app.New(m.config, app.WithLogger(m.log))
 
     // Create API server
     m.api = server.New(server.WithLogger(m.log))
-    httpConfig := viper.Sub("api.http")
+    httpConfig := m.config.Sub("api.http")
     if httpConfig != nil {
         m.api.Add("http",
             server.WithEndpoint(
@@ -491,8 +501,8 @@ func (m *manager) Init() error {
     // Add API server (must be last)
     m.services.Register(m.api)
 
-    // Initialize all services
-    if err := m.services.Init(); err != nil {
+    // Initialize all services (config is propagated to services via context)
+    if err := m.services.Init(ctx); err != nil {
         return err
     }
 
@@ -501,10 +511,7 @@ func (m *manager) Init() error {
 }
 
 func (m *manager) Start(ctx context.Context) error {
-    // Handle signals
-    go infra.HandleSignals(m.log, m.services)
-
-    // Start all services
+    // Start all services (signal handling is built into the app manager)
     return m.services.Start(ctx)
 }
 
@@ -535,18 +542,20 @@ func main() {
     daemonCmd := &cobra.Command{
         Use: "daemon",
         RunE: func(cmd *cobra.Command, args []string) error {
-            // Load configuration
-            viper.SetConfigFile(configFile)
-            viper.SetEnvPrefix("MYAPP")
-            viper.AutomaticEnv()
+            // Load configuration (instance-based, not global)
+            config := viper.New()
+            config.SetConfigFile(configFile)
+            config.SetEnvPrefix("MYAPP")
+            config.AutomaticEnv()
 
-            if err := viper.ReadInConfig(); err != nil {
+            if err := config.ReadInConfig(); err != nil {
                 return fmt.Errorf("failed to read config: %w", err)
             }
+            config.WatchConfig() // Enable hot-reload
 
             // Initialize and start server
-            mgr := myapp.New()
-            if err := mgr.Init(); err != nil {
+            mgr := myapp.New(config)
+            if err := mgr.Init(cmd.Context()); err != nil {
                 return err
             }
             return mgr.Start(cmd.Context())
@@ -687,12 +696,15 @@ curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello%20World"
 - ✅ Type separation (API/Entity/ORM) for clean architecture
 - ✅ Database integration with ORM models
 - ✅ Custom middleware (deflate compression)
-- ✅ YAML-based configuration with environment overrides
+- ✅ Instance-based Viper configuration with hot-reload and context propagation
 - ✅ CLI with multiple commands (daemon, version)
-- ✅ Graceful shutdown and signal handling
+- ✅ Built-in signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+- ✅ Health monitoring with liveness/readiness probes
+- ✅ Automatic service restart on liveness failure
 - ✅ Structured logging with file rotation
 - ✅ Service dependencies with automatic resolution
 - ✅ Multiple API servers support
+- ✅ Configurable shutdown timeout
 
 ## Key Concepts
 
@@ -741,7 +753,7 @@ type Service interface {
 }
 
 type Initializable interface {
-    Init() error
+    Init(ctx context.Context) error  // Called on startup and on every restart
 }
 
 type Daemon interface {
@@ -751,6 +763,20 @@ type Daemon interface {
 
 type Debuggable interface {
     Info(w io.Writer, debug bool)
+}
+```
+
+### Health Probes
+
+Services can optionally implement health probe interfaces for automatic monitoring:
+
+```go
+type Liveness interface {
+    Alive() error  // Liveness failure triggers automatic restart
+}
+
+type Readiness interface {
+    Ready() error  // Readiness failure is reported but does not trigger restart
 }
 ```
 
@@ -803,7 +829,9 @@ Request -> Recover -> Info -> Throttle -> Logger -> Custom -> Handler -> Respons
 
 ## Configuration
 
-Framingo uses Viper for configuration management with priority:
+Framingo uses instance-based Viper (not the global singleton) for configuration management, with support for hot-reload via `WatchConfig()`. Configuration is propagated to services through `context.Context` during initialization, enabling dynamic configuration at restart time.
+
+Configuration priority:
 
 1. **Command-line flags** (highest)
 2. **Environment variables**

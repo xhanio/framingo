@@ -19,8 +19,11 @@ type Daemon interface {
 	Stop(wait bool) error
 }
 
+// Initializable is implemented by services that require initialization.
+// Init is called on first startup and on every restart, making it the
+// appropriate place to load dynamic configuration that may change between runs.
 type Initializable interface {
-	Init() error
+	Init(ctx context.Context) error
 }
 
 type Debuggable interface {
@@ -29,6 +32,14 @@ type Debuggable interface {
 
 type Unique interface {
 	Key() string
+}
+
+type Liveness interface {
+	Alive() error
+}
+
+type Readiness interface {
+	Ready() error
 }
 
 type Weighted interface {

@@ -8,6 +8,12 @@ import (
 
 type Option[T PriorityItem] func(*priority[T])
 
+func (p *priority[T]) apply(opts ...Option[T]) {
+	for _, opt := range opts {
+		opt(p)
+	}
+}
+
 func WithLessFunc[T PriorityItem](lf btree.LessFunc[T]) Option[T] {
 	return func(p *priority[T]) {
 		if lf != nil {

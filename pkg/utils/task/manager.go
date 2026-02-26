@@ -57,9 +57,7 @@ func newScheduler(opts ...Option) *manager {
 		executing: make(map[string]executor.Executor),
 		wg:        &sync.WaitGroup{},
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
+	m.apply(opts...)
 	if m.cm == nil {
 		m.cm = cron.New(
 			cron.WithLocation(infra.Timezone),

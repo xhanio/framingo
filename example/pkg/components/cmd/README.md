@@ -105,12 +105,13 @@ myapp daemon [flags]
 ```
 
 **What it does:**
-1. Loads configuration from specified file
+1. Loads configuration from specified file (instance-based Viper)
 2. Creates server instance ([pkg/components/server](../server/example/))
-3. Initializes all services, routers, and middlewares
-4. Starts HTTP API server(s)
-5. Blocks until SIGINT (Ctrl+C)
-6. Gracefully shuts down
+3. Initializes all services with context-based config propagation
+4. Starts HTTP API server(s) with health monitoring
+5. Starts signal listeners (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+6. Blocks until SIGINT/SIGTERM
+7. Gracefully shuts down with configurable timeout
 
 ### version
 
@@ -172,23 +173,27 @@ Daemon Command (RunE)
   - Create server with config path
     
 Server Initialization (pkg/components/server)
-  - Load YAML config via Viper
+  - Load YAML config via instance-based Viper
+  - Enable config hot-reload (WatchConfig)
   - Initialize logger
   - Initialize database
-  - Initialize services
+  - Create app manager with *viper.Viper config
+  - Initialize services (config propagated via context)
   - Initialize API server(s)
   - Register middlewares (pkg/middlewares)
   - Register routers (pkg/routers)
-    
+
 Server Start
-  - Start all services
+  - Start all services in dependency order
   - Start HTTP API server(s)
+  - Start signal listeners (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+  - Start health monitor (if configured)
   - Enable pprof (if configured)
-  - Set up signal handlers
-  - Block until SIGINT
-    
+  - Block until SIGINT/SIGTERM
+
 Graceful Shutdown
-  - Stop all services
+  - Stop all services in reverse dependency order
+  - Configurable shutdown timeout
   - Close connections
   - Exit
 ```
@@ -363,12 +368,12 @@ func runDaemon(cmd *cobra.Command, args []string) error {
     })
 
     // Initialize (loads config, sets up services)
-    if err := m.Init(); err != nil {
+    if err := m.Init(cmd.Context()); err != nil {
         return errors.Wrap(err)
     }
 
-    // Start (blocks until SIGINT)
-    if err := m.Start(context.Background()); err != nil {
+    // Start (blocks until SIGINT/SIGTERM)
+    if err := m.Start(cmd.Context()); err != nil {
         return errors.Wrap(err)
     }
 
@@ -447,7 +452,7 @@ sudo systemctl status myapp
 ### Docker Container
 
 ```dockerfile
-FROM golang:1.21 AS builder
+FROM golang:1.24 AS builder
 WORKDIR /app
 COPY . .
 RUN go build -o myapp cmd/myapp/main.go

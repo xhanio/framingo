@@ -2,6 +2,12 @@ package certutil
 
 type Option func(m *manager)
 
+func (m *manager) apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(m)
+	}
+}
+
 func WithCertFile(certFile, caFile, keyFile string) Option {
 	return func(m *manager) {
 		m.certFile = certFile

@@ -4,6 +4,12 @@ import "github.com/xhanio/framingo/pkg/utils/log"
 
 type LeaseOption func(*lease)
 
+func (l *lease) apply(opts ...LeaseOption) {
+	for _, opt := range opts {
+		opt(l)
+	}
+}
+
 func Once() LeaseOption {
 	return func(l *lease) {
 		l.once = true

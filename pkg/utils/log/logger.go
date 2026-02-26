@@ -27,9 +27,7 @@ func newLogger(opts ...Option) *logger {
 	l := &logger{
 		timeFormat: "01/02/2006 15:04:05.00",
 	}
-	for _, opt := range opts {
-		opt(l)
-	}
+	l.apply(opts...)
 	var zopts []zap.Option
 	if zapcore.Level(l.level) == zapcore.DebugLevel {
 		zopts = append(zopts, zap.AddCaller(), zap.AddCallerSkip(1))

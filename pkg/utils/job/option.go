@@ -6,6 +6,12 @@ import (
 
 type Option func(*job)
 
+func (j *job) apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(j)
+	}
+}
+
 func WithLabel(key, val string) Option {
 	return func(t *job) {
 		t.labels[key] = val

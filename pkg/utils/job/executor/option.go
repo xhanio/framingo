@@ -7,6 +7,12 @@ import (
 
 type Option func(*executor)
 
+func (e *executor) apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(e)
+	}
+}
+
 type retryOptions struct {
 	Attempts int
 	Delay    time.Duration

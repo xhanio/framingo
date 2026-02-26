@@ -45,13 +45,11 @@ func newClient(endpoint string, opts ...Option) *client {
 		headers: make(map[string]string),
 		cookies: make(map[string]*http.Cookie),
 	}
-	for _, opt := range opts {
-		opt(c)
-	}
+	c.apply(opts...)
 	return c
 }
 
-func (c *client) Init() error {
+func (c *client) Init(ctx context.Context) error {
 	if c.endpoint == nil {
 		return errors.Newf("failed to init client: no endpoint specified")
 	}
@@ -174,9 +172,7 @@ func (c *client) Get(ctx context.Context, path string, opts ...RequestOption) (*
 		Method: http.MethodGet,
 		Path:   path,
 	}
-	for _, opt := range opts {
-		opt(r)
-	}
+	r.apply(opts...)
 	req, err := c.NewRequest(ctx, r)
 	if err != nil {
 		return nil, errors.Wrap(err)
@@ -195,9 +191,7 @@ func (c *client) PostJSON(ctx context.Context, path string, body any, opts ...Re
 		ContentType: echo.MIMEApplicationJSON,
 		Body:        body,
 	}
-	for _, opt := range opts {
-		opt(r)
-	}
+	r.apply(opts...)
 	req, err := c.NewRequest(ctx, r)
 	if err != nil {
 		return nil, errors.Wrap(err)

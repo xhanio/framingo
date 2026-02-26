@@ -8,6 +8,12 @@ import (
 
 type Option func(*cmd)
 
+func (c *cmd) apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(c)
+	}
+}
+
 func WithContext(ctx context.Context) Option {
 	return func(c *cmd) {
 		c.ctx = ctx

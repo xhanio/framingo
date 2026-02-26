@@ -47,9 +47,7 @@ func newManager(es common.MessageSender, opts ...Option) *manager {
 		es:    es,
 		todos: make(map[string]*TODO),
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
+	m.apply(opts...)
 	m.log = m.log.By(m)
 	m.tm = task.New(
 		task.MaxConcurrency(10),

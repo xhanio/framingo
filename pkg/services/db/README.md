@@ -44,10 +44,20 @@ manager := db.New(
     db.WithLogger(logger),
 )
 
-// Initialize the connection
-if err := manager.Init(); err != nil {
+// Initialize the connection (context carries dynamic config via confutil)
+if err := manager.Init(ctx); err != nil {
     log.Fatal(err)
 }
+```
+
+### Dynamic Configuration via Context
+
+When used with the app manager, the database service automatically reads connection parameters from context during `Init(ctx)`. This enables dynamic reconfiguration on restart:
+
+```go
+// Connection options can be overridden by Viper config at init time:
+// db.connection.max_open, db.connection.max_idle,
+// db.connection.max_lifetime, db.connection.exec_timeout
 ```
 
 ### Configuration Options
@@ -228,7 +238,7 @@ manager := db.New(
     }),
     db.WithMigration("./migrations", 0),
 )
-manager.Init()
+manager.Init(ctx)
 ```
 
 ### MySQL with Custom Connection Pool
@@ -245,7 +255,7 @@ manager := db.New(
     }),
     db.WithConnection(20, 10, time.Minute*10, time.Second*60),
 )
-manager.Init()
+manager.Init(ctx)
 ```
 
 ### SQLite for Testing
@@ -255,7 +265,7 @@ manager := db.New(
     db.WithType(db.SQLite),
     db.WithDataSource(db.Source{}), // Uses :memory: database
 )
-manager.Init()
+manager.Init(ctx)
 defer manager.Cleanup(true)
 ```
 

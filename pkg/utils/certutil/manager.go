@@ -25,9 +25,7 @@ func New(opts ...Option) (Manager, error) {
 	m := &manager{
 		cn: DefaultCommonName,
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
+	m.apply(opts...)
 	var b *bundle
 	var err error
 	if m.certFile != "" {

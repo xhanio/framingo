@@ -45,9 +45,7 @@ func newManager(opts ...Option) *manager {
 		middlewareFuncs: make(map[string]echo.MiddlewareFunc),
 		limits:          make(map[string]*rate.Limiter),
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
+	m.apply(opts...)
 	return m
 }
 
@@ -73,7 +71,7 @@ func (m *manager) Dependencies() []common.Service {
 	return nil
 }
 
-func (m *manager) Init() error {
+func (m *manager) Init(ctx context.Context) error {
 	return nil
 }
 
@@ -85,9 +83,7 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 		groups:   make(map[string]*api.HandlerGroup),
 		handlers: make(map[string]*api.Handler),
 	}
-	for _, opt := range opts {
-		opt(s)
-	}
+	s.apply(opts...)
 	if s.endpoint == nil {
 		return errors.Newf("server must have a valid endpoint")
 	}

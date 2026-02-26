@@ -61,9 +61,7 @@ func New(id string, duration time.Duration, opts ...LeaseOption) Lease {
 		onExtend:  make([]func(), 0),
 		onRenew:   make([]func(), 0),
 	}
-	for _, opt := range opts {
-		opt(l)
-	}
+	l.apply(opts...)
 	return l
 }
 

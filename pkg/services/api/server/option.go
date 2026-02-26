@@ -10,6 +10,12 @@ import (
 
 type Option func(*manager)
 
+func (m *manager) apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(m)
+	}
+}
+
 func WithLogger(logger log.Logger) Option {
 	return func(m *manager) {
 		m.log = logger
@@ -24,6 +30,12 @@ func WithDebug(enabled bool) Option {
 
 // ServerOption configures a server (echo server instance)
 type ServerOption func(*server)
+
+func (s *server) apply(opts ...ServerOption) {
+	for _, opt := range opts {
+		opt(s)
+	}
+}
 
 func WithEndpoint(host string, port uint, prefix string) ServerOption {
 	return func(s *server) {

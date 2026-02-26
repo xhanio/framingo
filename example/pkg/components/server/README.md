@@ -5,11 +5,12 @@ This directory contains a complete server component implementation demonstrating
 ## Overview
 
 The `example` server component is a comprehensive implementation that orchestrates all parts of a Framingo application, including:
-- Configuration management via Viper
+- Instance-based Viper configuration with hot-reload support
 - Database connectivity and migration
-- Service lifecycle management
+- Service lifecycle management with context-based config propagation
 - HTTP API server setup with routers and middlewares
-- Signal handling for graceful shutdown
+- Built-in signal handling via app manager (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+- Health monitoring with liveness/readiness probes and auto-restart
 - Profiling support (pprof)
 
 This component serves as the main entry point for your application and demonstrates best practices for assembling a complete server.
@@ -36,7 +37,7 @@ type Config struct {
 
 type Server interface {
     common.Daemon         // Start() and Stop()
-    common.Initializable  // Init()
+    common.Initializable  // Init(ctx context.Context)
     common.Debuggable     // Info()
 }
 ```
@@ -44,13 +45,13 @@ type Server interface {
 ### [manager.go](manager.go)
 
 Contains the main server implementation with:
-- Configuration loading via Viper
+- Instance-based Viper configuration loading with hot-reload
 - Logger initialization with file rotation
 - Database manager setup
-- Service controller initialization
+- Service controller initialization with `*viper.Viper` config
 - API server configuration from YAML
 - Service dependency resolution via topological sort
-- Signal handling (SIGINT, SIGUSR1, SIGUSR2)
+- Signal handling delegated to app manager (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
 - pprof profiling support
 
 ### [api.go](api.go)
@@ -147,11 +148,12 @@ pprof:
 
 ### Initialization Flow
 
-The `Init()` method performs the following steps:
+The `Init(ctx)` method performs the following steps:
 
 1. **Load Configuration**
-   - Read YAML config file via Viper
+   - Read YAML config file via instance-based Viper (not global singleton)
    - Support environment variable overrides
+   - Enable config watching with `WatchConfig()`
 
 2. **Initialize Logger**
    - Configure log level
@@ -162,7 +164,7 @@ The `Init()` method performs the following steps:
    - Set up migrations
 
 4. **Initialize Service Controller**
-   - Create service manager
+   - Create service manager with `*viper.Viper` config: `app.New(m.config, ...)`
    - Handle service dependencies
 
 5. **Initialize Business Services**
@@ -182,32 +184,36 @@ The `Init()` method performs the following steps:
    - Register all services with controller
    - Perform topological sort for dependency resolution
 
-8. **Initialize API Components** (via [api.go](api.go:10))
+8. **Initialize All Services**
+   - Call `Init(ctx)` on all services (config is propagated via context using `confutil`)
+
+9. **Initialize API Components** (via [api.go](api.go:10))
    - Register middlewares (see [pkg/middlewares](../../middlewares/example/))
    - Register routers (see [pkg/routers](../../routers/example/))
-
-9. **Pre/Post Initialization Hooks**
-   - Call `Init()` on all services
 
 ### Startup Flow
 
 The `Start()` method:
 
 1. **Start All Services**
-   - Launches services in dependency order
-   - Runs in goroutine with panic recovery
+   - Launches services in dependency order via the app manager
 
 2. **Enable pprof (if configured)**
    - Starts pprof HTTP server on configured port
 
-3. **Set Up Signal Handlers**
-   - SIGINT: Graceful shutdown
-   - SIGUSR1: Print service info
-   - SIGUSR2: Print stack traces
+3. **Signal Handling (via app manager)**
+   - SIGINT/SIGTERM: Graceful shutdown
+   - SIGUSR1: Print service info to stdout
+   - SIGUSR2: Print goroutine stack traces
+   - Custom handlers via `app.WithSignalHandler()`
 
-4. **Block Until Signal**
-   - Waits for signals
-   - Handles shutdown gracefully
+4. **Health Monitoring (if configured)**
+   - Periodic liveness/readiness checks on all services
+   - Automatic restart on liveness failure with configurable retry policy
+
+5. **Block Until Shutdown**
+   - Waits for SIGINT/SIGTERM via `signal.NotifyContext`
+   - Handles shutdown gracefully with configurable timeout
 
 ### Shutdown Flow
 
@@ -237,9 +243,18 @@ The server component manages several layers of services:
 ### Service Controller
 - **Controller Manager**: Orchestrates service lifecycle ([pkg/services/app](../../../pkg/services/app/))
 
-The controller automatically resolves dependencies using topological sorting:
+The controller automatically resolves dependencies using topological sorting, manages health monitoring, and handles signal dispatching:
 
 ```go
+// Create service controller with config for propagation to services
+m.services = app.New(m.config,
+    app.WithLogger(m.log),
+    app.WithShutdownTimeout(30*time.Second),     // Graceful shutdown timeout
+    app.WithMonitorInterval(10*time.Second),      // Health check interval
+    app.WithRestartPolicy(3),                     // Max restart attempts
+    app.WithRestartDelay(5*time.Second),          // Delay between restarts
+)
+
 // Register services
 m.services.Register(
     m.db,
@@ -287,36 +302,41 @@ This connects:
 
 ## Signal Handling
 
-The server responds to Unix signals:
+Signal handling is now managed by the app manager with sensible defaults and customizable handlers.
 
-### SIGINT (Ctrl+C)
-Triggers graceful shutdown:
-```bash
-kill -INT <pid>
-# or press Ctrl+C
+### Default Signal Handlers
+
+| Signal | Action |
+|--------|--------|
+| `SIGINT` / `SIGTERM` | Graceful shutdown (`Stop(true)`) |
+| `SIGUSR1` | Print service info (name, state, alive/ready, uptime) |
+| `SIGUSR2` | Print all goroutine stack traces |
+
+### Custom Signal Handlers
+
+Override default handlers or add new ones:
+
+```go
+m.services = app.New(m.config,
+    app.WithSignalHandler(syscall.SIGHUP, func() {
+        // Custom reload logic
+        log.Info("Reloading configuration...")
+    }),
+)
 ```
 
-### SIGUSR1
-Prints service information to stdout:
+### Usage
+
 ```bash
+# Graceful shutdown
+kill -INT <pid>   # or press Ctrl+C
+
+# Print service info (includes alive/ready/uptime)
 kill -USR1 <pid>
-```
 
-Example output:
-```
-Service: example/pkg/services/example
-Status: running
-Uptime: 1h23m45s
-...
-```
-
-### SIGUSR2
-Prints all goroutine stack traces:
-```bash
+# Print goroutine stack traces
 kill -USR2 <pid>
 ```
-
-Useful for debugging deadlocks or stuck goroutines.
 
 ## Profiling with pprof
 
@@ -362,14 +382,11 @@ Configuration values are resolved in this order (highest to lowest priority):
 2. YAML configuration file
 3. Default values in code
 
-Example:
-```go
-Host: sliceutil.First(
-    viper.GetString("db.source.host"),  // YAML config
-    viper.GetString("DB_HOST"),         // Env var
-    "127.0.0.1",                        // Default
-)
-```
+The server uses **instance-based Viper** (not the global singleton). Configuration is:
+- Passed to the app manager: `app.New(m.config, ...)`
+- Propagated to services via context during `Init(ctx)` using the `confutil` package
+- Services read dynamic config via `confutil.FromContext(ctx)`
+- Hot-reload supported via `config.WatchConfig()`
 
 ## Multiple API Servers
 
@@ -414,9 +431,13 @@ ca:
 
 ## Key Features
 
-- **Configuration Management**: Viper-based with YAML and env var support
-- **Service Orchestration**: Automatic dependency resolution
-- **Graceful Shutdown**: Proper cleanup on SIGINT
+- **Configuration Management**: Instance-based Viper with YAML, env var support, and hot-reload
+- **Config Propagation**: Configuration passed to services via context during `Init(ctx)`
+- **Service Orchestration**: Automatic dependency resolution with topological sort
+- **Health Monitoring**: Periodic liveness/readiness probes with auto-restart on failure
+- **Graceful Shutdown**: Configurable timeout for cleanup on SIGINT/SIGTERM
+- **Signal Handling**: Built-in handlers for SIGINT, SIGTERM, SIGUSR1, SIGUSR2 with customization
+- **Per-Service Operations**: Init, start, stop, and restart individual services at runtime
 - **Database Integration**: Built-in migration and connection pooling
 - **API Flexibility**: Support for multiple servers, TLS, throttling
 - **Debugging Tools**: Signal-based introspection and pprof profiling
@@ -425,13 +446,14 @@ ca:
 
 ## Best Practices
 
-1. **Configuration**: Use environment variables for secrets, YAML for structure
+1. **Configuration**: Use instance-based Viper, env vars for secrets, YAML for structure
 2. **Dependencies**: Declare all service dependencies explicitly
 3. **Error Handling**: Always check and log initialization errors
-4. **Graceful Shutdown**: Test SIGINT handling to ensure clean shutdown
-5. **Monitoring**: Use pprof in development, integrate proper monitoring in production
-6. **Logging**: Set appropriate log levels (Debug in dev, Info+ in production)
-7. **Database**: Configure connection pools based on load
+4. **Graceful Shutdown**: Configure `WithShutdownTimeout()` and test SIGINT handling
+5. **Health Probes**: Implement `Liveness` and `Readiness` interfaces on services for auto-monitoring
+6. **Monitoring**: Configure `WithMonitorInterval()` for health checks, use pprof for profiling
+7. **Logging**: Set appropriate log levels (Debug in dev, Info+ in production)
+8. **Database**: Configure connection pools based on load
 
 ## Extending the Server
 
@@ -445,7 +467,7 @@ ca:
        myService myservice.Manager
    }
    ```
-3. **Initialize in Init()** (pass required dependencies as constructor arguments):
+3. **Initialize in Init(ctx)** (pass required dependencies as constructor arguments):
    ```go
    m.myService = myservice.New(
        m.db,  // Required dependencies first

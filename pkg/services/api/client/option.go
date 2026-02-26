@@ -13,6 +13,12 @@ import (
 
 type Option func(*client)
 
+func (c *client) apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(c)
+	}
+}
+
 func WithLogger(logger log.Logger) Option {
 	return func(c *client) {
 		c.log = logger
@@ -63,6 +69,12 @@ func WithTimeout(timeout time.Duration) Option {
 }
 
 type RequestOption func(*Request)
+
+func (r *Request) apply(opts ...RequestOption) {
+	for _, opt := range opts {
+		opt(r)
+	}
+}
 
 func WithRequestHeaders(headers ...common.Pair[string, string]) RequestOption {
 	return func(r *Request) {

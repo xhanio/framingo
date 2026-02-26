@@ -11,6 +11,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 	"github.com/xhanio/framingo/pkg/services/db"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
@@ -20,6 +21,8 @@ type manager struct {
 	name string
 
 	db db.Manager
+
+	greeting string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -32,9 +35,7 @@ func New(database db.Manager, opts ...Option) Manager {
 		db:  database,
 		wg:  &sync.WaitGroup{},
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
+	m.apply(opts...)
 	m.log = m.log.By(m)
 	if m.ctx == nil {
 		m.ctx = context.Background()
@@ -53,7 +54,12 @@ func (m *manager) Dependencies() []common.Service {
 	return []common.Service{m.db}
 }
 
-func (m *manager) Init() error {
+func (m *manager) Init(ctx context.Context) error {
+	// dynamic configs
+	config := confutil.FromContext(ctx)
+	m.apply(
+		WithDynamicConfig(config.GetString("example.greeting")),
+	)
 	return nil
 }
 
@@ -96,7 +102,11 @@ func (m *manager) Info(w io.Writer, debug bool) {
 }
 
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error) {
-	m.log.Info("hello world!")
+	greeting := m.greeting
+	if greeting == "" {
+		greeting = "hello world!"
+	}
+	m.log.Info(greeting)
 
 	// Create the helloworld ORM model
 	ormModel := &orm.Helloworld{

@@ -27,10 +27,11 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	m := example.New(example.Config{
 		Path: configPath,
 	})
-	if err := m.Init(); err != nil {
+	ctx := context.Background()
+	if err := m.Init(ctx); err != nil {
 		return errors.Wrap(err)
 	}
-	if err := m.Start(context.Background()); err != nil {
+	if err := m.Start(ctx); err != nil {
 		return errors.Wrap(err)
 	}
 	return nil

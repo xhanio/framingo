@@ -66,6 +66,9 @@ Custom methods:
 
 Provides functional options for service configuration:
 - `WithLogger(logger log.Logger)` - Configure custom logger
+- `WithDynamicConfig(greeting string)` - Configure greeting from dynamic config
+
+Options are applied using the `apply()` pattern, which enables re-application during restart.
 
 **Note**: The database dependency is now a required parameter in the `New()` function rather than an optional configuration.
 
@@ -123,8 +126,8 @@ svc := example.New(
 ### Service Lifecycle
 
 ```go
-// Initialize the service
-if err := svc.Init(); err != nil {
+// Initialize the service (config propagated via context)
+if err := svc.Init(ctx); err != nil {
     log.Fatal(err)
 }
 
@@ -149,11 +152,13 @@ if err := svc.Stop(true); err != nil {
 
 ## Key Features
 
-- **Lifecycle Management**: Implements standard Init/Start/Stop pattern
+- **Lifecycle Management**: Implements standard `Init(ctx)`/`Start(ctx)`/`Stop(wait)` pattern
+- **Dynamic Configuration**: Reads config from context during `Init(ctx)` via `confutil.FromContext(ctx)`
 - **Context Support**: Proper context handling for cancellation
 - **Goroutine Safety**: Uses WaitGroup for graceful shutdown
 - **Logging**: Integrated logging support with customizable logger
 - **Service Discovery**: Automatic service name detection using reflection
+- **apply() Pattern**: Options can be re-applied during restart for dynamic reconfiguration
 
 ## Implementation Details
 

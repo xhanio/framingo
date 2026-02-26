@@ -21,8 +21,10 @@ The Framingo framework provides a modular, service-oriented architecture for bui
 - **Service Layer**: Business logic with lifecycle management
 - **HTTP API Layer**: RESTful endpoints with routing and middleware
 - **Command Layer**: CLI interface for application control
-- **Configuration Management**: YAML-based config with environment variable overrides
+- **Configuration Management**: Instance-based Viper config with hot-reload and context propagation
 - **Dependency Management**: Automatic service dependency resolution
+- **Health Monitoring**: Liveness/readiness probes with automatic restart on failure
+- **Signal Handling**: Built-in OS signal management (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
 
 ## Project Structure
 
@@ -70,7 +72,7 @@ Production-ready service implementations that provide core functionality:
 
 - **[api/server](../pkg/services/api/server/)** - HTTP API server with Echo framework integration, middleware support, and route management
 - **[api/client](../pkg/services/api/client/)** - HTTP client utilities for making API requests
-- **[app](../pkg/services/app/)** - Service lifecycle management with dependency resolution and topological sorting
+- **[app](../pkg/services/app/)** - Service lifecycle management with dependency resolution, health monitoring, signal handling, and auto-restart
 - **[db](../pkg/services/db/)** - Database manager with GORM integration, connection pooling, and migration support
 - **[planner](../pkg/services/planner/)** - Task scheduling and planning service
 - **[pubsub](../pkg/services/pubsub/)** - Publish-subscribe messaging pattern implementation
@@ -90,7 +92,7 @@ Efficient, generic data structures for common algorithms:
 
 Core interfaces and type definitions used throughout the framework:
 
-- **[common](../pkg/types/common/)** - Common interfaces (`Service`, `Daemon`, `Initializable`, `Named`, etc.)
+- **[common](../pkg/types/common/)** - Common interfaces (`Service`, `Daemon`, `Initializable`, `Liveness`, `Readiness`, `Named`, etc.)
 - **[api](../pkg/types/api/)** - API-related types (middleware, router, handler interfaces)
 - **[info](../pkg/types/info/)** - Application metadata (version, build info)
 
@@ -100,6 +102,7 @@ Helper packages for common tasks:
 
 - **[certutil](../pkg/utils/certutil/)** - Certificate and TLS utilities
 - **[cmdutil](../pkg/utils/cmdutil/)** - Command-line utilities
+- **[confutil](../pkg/utils/confutil/)** - Configuration context utilities (pass `*viper.Viper` via `context.Context`)
 - **[infra](../pkg/utils/infra/)** - Infrastructure helpers (signals, profiling)
 - **[ioutil](../pkg/utils/ioutil/)** - I/O utilities
 - **[job](../pkg/utils/job/)** - Background job management
@@ -367,9 +370,7 @@ type manager struct {
 // Required dependencies as constructor arguments
 func New(database db.Manager, opts ...Option) Manager {
     m := &manager{db: database}
-    for _, opt := range opts {
-        opt(m)
-    }
+    m.apply(opts...)
     return m
 }
 
@@ -509,8 +510,11 @@ func (m *manager) initAPI() error {
 
 ```go
 // components/server/example/manager.go - Init() method
-func (m *manager) Init() error {
+func (m *manager) Init(ctx context.Context) error {
     // ... (logger, db setup)
+
+    // Initialize service controller (requires *viper.Viper for config propagation)
+    m.services = app.New(m.config, app.WithLogger(m.log))
 
     // Initialize your services (required dependencies as constructor args)
     m.userService = user.New(
@@ -532,8 +536,8 @@ func (m *manager) Init() error {
     // Add API server (must be last)
     m.services.Register(m.api)
 
-    // Initialize all services
-    if err := m.services.Init(); err != nil {
+    // Initialize all services (config is propagated to services via context)
+    if err := m.services.Init(ctx); err != nil {
         return err
     }
 
@@ -606,11 +610,13 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 **Purpose**: Orchestrate all services and manage lifecycle
 
 **Key Features**:
-- Configuration management (Viper)
+- Instance-based Viper configuration with hot-reload
 - Service dependency resolution
 - Multiple API servers
-- Graceful shutdown
-- Signal handling
+- Graceful shutdown with configurable timeout
+- Built-in signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+- Health monitoring with liveness/readiness probes
+- Automatic service restart on liveness failure
 - pprof profiling
 
 **Documentation**: [pkg/components/server/README.md](pkg/components/server/README.md)
@@ -732,7 +738,7 @@ go build -ldflags=" \
 
 ```dockerfile
 # Dockerfile
-FROM golang:1.21 AS builder
+FROM golang:1.24 AS builder
 WORKDIR /app
 COPY go.* ./
 RUN go mod download
@@ -848,10 +854,13 @@ export FRAMINGO_API_HTTP_PORT=8080
 
 ### Configuration
 
-1. **Use YAML for structure**: Define server config, DB settings in YAML
-2. **Use env vars for secrets**: Override sensitive data via environment variables
-3. **Validate on startup**: Check configuration during Init() phase
-4. **Document defaults**: Provide sensible defaults for all config values
+1. **Use instance-based Viper**: Avoid the global singleton; pass `*viper.Viper` to the app manager
+2. **Use YAML for structure**: Define server config, DB settings in YAML
+3. **Use env vars for secrets**: Override sensitive data via environment variables
+4. **Enable WatchConfig()**: Support hot-reload for dynamic configuration
+5. **Read config from context**: Use `confutil.FromContext(ctx)` in `Init(ctx)` for dynamic values
+6. **Validate on startup**: Check configuration during `Init(ctx)` phase
+7. **Document defaults**: Provide sensible defaults for all config values
 
 ### Error Handling
 

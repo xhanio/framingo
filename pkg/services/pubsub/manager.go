@@ -44,9 +44,7 @@ func newManager(b driver.Driver, opts ...Option) *manager {
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
+	m.apply(opts...)
 	m.log = m.log.By(m)
 	return m
 }
@@ -62,7 +60,7 @@ func (m *manager) Dependencies() []common.Service {
 	return nil
 }
 
-func (m *manager) Init() error {
+func (m *manager) Init(ctx context.Context) error {
 	return nil
 }
 
@@ -140,19 +138,15 @@ func (m *manager) listen(svc common.Named, ch <-chan driver.Message) {
 			}
 			if mh, isMessageHandler := svc.(common.MessageHandler); isMessageHandler {
 				if e, ok := msg.Payload.(common.Message); ok {
-					go func() {
-						if err := mh.HandleMessage(m.ctx, e); err != nil {
-							m.log.Errorf("error handling message: subscriber=%s error=%v", svc.Name(), err)
-						}
-					}()
+					if err := mh.HandleMessage(m.ctx, e); err != nil {
+						m.log.Errorf("error handling message: subscriber=%s error=%v", svc.Name(), err)
+					}
 				}
 			}
 			if rmh, isRawMessageHandler := svc.(common.RawMessageHandler); isRawMessageHandler {
-				go func() {
-					if err := rmh.HandleRawMessage(m.ctx, msg.Kind, msg.Payload); err != nil {
-						m.log.Errorf("error handling raw message: subscriber=%s error=%v", svc.Name(), err)
-					}
-				}()
+				if err := rmh.HandleRawMessage(m.ctx, msg.Kind, msg.Payload); err != nil {
+					m.log.Errorf("error handling raw message: subscriber=%s error=%v", svc.Name(), err)
+				}
 			}
 		case <-m.ctx.Done():
 			return

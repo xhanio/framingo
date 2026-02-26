@@ -56,9 +56,7 @@ func newJob(id string, fn Func, opts ...Option) *job {
 		wg:        &sync.WaitGroup{},
 		progress:  -1,
 	}
-	for _, opt := range opts {
-		opt(j)
-	}
+	j.apply(opts...)
 	j.log = j.log.With(zap.String("job", id))
 	return j
 }
