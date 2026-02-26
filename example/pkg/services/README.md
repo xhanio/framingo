@@ -54,10 +54,10 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 ### [model.go](model.go)
 
 Defines the `Manager` interface which extends:
-- `common.Service` - Basic service interface
-- `common.Initializable` - Initialization support
-- `common.Debuggable` - Debug information support
-- `common.Daemon` - Daemon lifecycle management
+- `common.Service` - Basic service interface ([`service.go`](../../../pkg/types/common/service.go))
+- `common.Initializable` - Initialization support ([`service.go`](../../../pkg/types/common/service.go))
+- `common.Debuggable` - Debug information support ([`service.go`](../../../pkg/types/common/service.go))
+- `common.Daemon` - Daemon lifecycle management ([`service.go`](../../../pkg/types/common/service.go))
 
 Custom methods:
 - `HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error)` - Example business logic that accepts a message string and returns a Helloworld entity
@@ -206,4 +206,4 @@ To create a new service based on this example:
 ## See Also
 
 - [Framingo Service Architecture](../../../pkg/types/common/)
-- [Common Service Interfaces](../../../pkg/types/common/)
+- [Common Service Interfaces](../../../pkg/types/common/service.go)

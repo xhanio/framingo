@@ -294,7 +294,7 @@ db.Find(&users)
 
 ## Related Packages
 
-- [pkg/types/common](../../types/common) - Common service interfaces
+- [pkg/types/common/service.go](../../types/common/service.go) - Common service interfaces
 - [pkg/utils/log](../../utils/log) - Logging utilities
 - [pkg/utils/reflectutil](../../utils/reflectutil) - Reflection utilities
 - [pkg/utils/printutil](../../utils/printutil) - Printing utilities

@@ -92,7 +92,7 @@ Efficient, generic data structures for common algorithms:
 
 Core interfaces and type definitions used throughout the framework:
 
-- **[common](../pkg/types/common/)** - Common interfaces (`Service`, `Daemon`, `Initializable`, `Liveness`, `Readiness`, `Named`, etc.)
+- **[common](../pkg/types/common/)** - Common interfaces: service lifecycle in [`service.go`](../pkg/types/common/service.go) (`Service`, `Daemon`, `Initializable`, `Liveness`, `Readiness`, `Debuggable`), general-purpose in [`common.go`](../pkg/types/common/common.go) (`Named`, `Unique`, `Weighted`)
 - **[api](../pkg/types/api/)** - API-related types (middleware, router, handler interfaces)
 - **[info](../pkg/types/info/)** - Application metadata (version, build info)
 

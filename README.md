@@ -201,15 +201,18 @@ Production-ready service implementations that provide core functionality:
 Core interfaces and type definitions used throughout the framework:
 
 - **[common](pkg/types/common/)** - Common interfaces
-  - `Service` - Base service interface with name and dependencies
-  - `Daemon` - Start/Stop lifecycle methods
-  - `Initializable` - Context-aware initialization interface (`Init(ctx context.Context) error`)
-  - `Liveness` - Health probe interface (`Alive() error`) for automatic restart
-  - `Readiness` - Readiness probe interface (`Ready() error`) for traffic gating
-  - `Debuggable` - Debug info output interface
-  - `Named`, `Unique`, `Weighted` - Utility interfaces
-  - `Message`, `MessageSender`, `RawMessageSender` - Messaging interfaces
-  - `MessageHandler`, `RawMessageHandler` - Message consumption interfaces
+  - Service lifecycle ([`service.go`](pkg/types/common/service.go)):
+    - `Service` - Base service interface with name and dependencies
+    - `Daemon` - Start/Stop lifecycle methods
+    - `Initializable` - Context-aware initialization (`Init(ctx context.Context) error`)
+    - `Liveness` - Health probe for automatic restart (`Alive() error`)
+    - `Readiness` - Readiness probe for traffic gating (`Ready() error`)
+    - `Debuggable` - Debug info output
+  - General-purpose ([`common.go`](pkg/types/common/common.go)):
+    - `Named`, `Unique`, `Weighted` - Utility interfaces
+  - Messaging ([`message.go`](pkg/types/common/message.go)):
+    - `Message`, `MessageSender`, `RawMessageSender` - Messaging interfaces
+    - `MessageHandler`, `RawMessageHandler` - Message consumption interfaces
 
 - **[api](pkg/types/api/)** - HTTP API related types
   - `Router`, `Middleware` interfaces
