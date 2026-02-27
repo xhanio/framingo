@@ -205,8 +205,16 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 			// Register route with Echo
 			key := api.HandlerKey(g, h)
 			if hf, ok := m.handlerFuncs[key]; ok {
+				// Normalize root path "/" to "" so the route registers at the
+				// group prefix without a trailing slash. Combined with the
+				// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
+				// resolve to the same handler.
+				routePath := h.Path
+				if routePath == "/" {
+					routePath = ""
+				}
 				m.log.Infof("register handler %s %s", h.Method, h.Path)
-				group.Add(h.Method, h.Path, hf, mwfuncs...)
+				group.Add(h.Method, routePath, hf, mwfuncs...)
 				// Store handler metadata for request lookup in the server instance
 				s.groups[key] = g
 				s.handlers[key] = h
