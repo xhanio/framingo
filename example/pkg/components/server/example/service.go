@@ -7,6 +7,8 @@ import (
 	"github.com/xhanio/framingo/pkg/services/api/server"
 	"github.com/xhanio/framingo/pkg/services/app"
 	"github.com/xhanio/framingo/pkg/services/db"
+	"github.com/xhanio/framingo/pkg/services/pubsub"
+	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
@@ -77,6 +79,11 @@ func (m *manager) initServices() error {
 	/* init utility level components */
 
 	/* init system level components */
+
+	m.bus = pubsub.New(
+		driver.NewMemory(m.log),
+		pubsub.WithLogger(m.log),
+	)
 
 	/* init business level components */
 

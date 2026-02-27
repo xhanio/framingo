@@ -7,6 +7,7 @@ This directory contains a complete server component implementation demonstrating
 The `example` server component is a comprehensive implementation that orchestrates all parts of a Framingo application, including:
 - Instance-based Viper configuration with hot-reload support
 - Database connectivity and migration
+- Pub/sub message bus for inter-service communication
 - Service lifecycle management with context-based config propagation
 - HTTP API server setup with routers and middlewares
 - Built-in signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
@@ -35,6 +36,7 @@ Defines the server interface:
 
 ```go
 type Server interface {
+    common.Named          // Name()
     common.Daemon         // Start() and Stop()
     common.Initializable  // Init(ctx context.Context)
     common.Debuggable     // Info()
@@ -54,6 +56,7 @@ Service instance creation:
 - Logger initialization with file rotation
 - Database manager setup with connection pooling and migration
 - Service controller (`app.Manager`) creation
+- Pub/sub bus creation with configurable driver (memory, Redis, Kafka)
 - Business service creation (e.g. example service)
 - API server manager creation with per-server endpoint, throttle, and TLS configuration
 
@@ -61,6 +64,7 @@ Service instance creation:
 
 Server lifecycle orchestration:
 - Service registration and dependency resolution via topological sort
+- Pub/sub bus subscriptions for all services on hierarchical topics
 - Service initialization and post-initialization (API wiring)
 - Startup flow with pprof and signal handling
 - Graceful shutdown
@@ -168,6 +172,7 @@ The `Init(ctx)` method performs the following steps:
    - Initialize logger with file rotation
    - Create database manager with connection pooling and migration
    - Create service controller: `app.New(m.config, ...)`
+   - Create pub/sub bus with driver (memory by default)
    - Create business services (e.g. example service with database dependency)
    - Create API server manager with per-server endpoint, throttle, and TLS configuration
 
@@ -175,6 +180,7 @@ The `Init(ctx)` method performs the following steps:
    - Register all services with controller
    - Perform topological sort for dependency resolution
    - Register API server last (after topo sort) to ensure latest start
+   - Subscribe all services to the bus on hierarchical topics (`/`, `/components/{component}`, `/components/{component}/services/{service}`)
 
 4. **Initialize All Services**
    - Call `Init(ctx)` on all services (config is propagated via context using `confutil`)
@@ -223,6 +229,9 @@ The server component manages several layers of services:
 - **Logger**: Application-wide logging
 - **Database Manager**: Connection pool and migrations
 
+### System Services
+- **Pub/Sub Bus**: Inter-service message bus ([pkg/services/pubsub](../../../../pkg/services/pubsub/))
+
 ### Business Services
 - **Example Service**: Custom business logic (see [pkg/services/example](../../services/example/))
 
@@ -249,6 +258,7 @@ m.services = app.New(m.config,
 // Register services
 m.services.Register(
     m.db,
+    m.bus,
     m.example,
 )
 
@@ -259,6 +269,13 @@ if err := m.services.TopoSort(); err != nil {
 
 // Add API server last (depends on all other services)
 m.services.Register(m.api)
+
+// Subscribe all services to the bus on hierarchical topics
+for _, svc := range m.services.Services() {
+    m.bus.Subscribe(svc, "/")
+    m.bus.Subscribe(svc, fmt.Sprintf("/components/%s", m.Name()))
+    m.bus.Subscribe(svc, fmt.Sprintf("/components/%s/services/%s", m.Name(), svc.Name()))
+}
 ```
 
 ## API Initialization
@@ -416,8 +433,9 @@ ca:
 - **Graceful Shutdown**: Configurable timeout for cleanup on SIGINT/SIGTERM
 - **Signal Handling**: Built-in handlers for SIGINT, SIGTERM, SIGUSR1, SIGUSR2
 - **Per-Service Operations**: Init, start, stop, and restart individual services at runtime
+- **Pub/Sub Messaging**: Inter-service communication via hierarchical topic bus (memory, Redis, Kafka drivers)
 - **Database Integration**: Built-in migration and connection pooling
-- **API Flexibility**: Support for multiple servers, TLS, throttling
+- **API Flexibility**: Support for multiple servers, TLS, throttling, trailing slash normalization
 - **Debugging Tools**: Signal-based introspection and pprof profiling
 - **Logging**: Structured logging with file rotation
 - **Production Ready**: Panic recovery and error handling
@@ -486,5 +504,6 @@ ca:
 - [Example Middlewares](../../middlewares/example/)
 - [API Server Manager](../../../../pkg/services/api/server/)
 - [Service Controller](../../../../pkg/services/app/)
+- [Pub/Sub Bus](../../../../pkg/services/pubsub/)
 - [Database Manager](../../../../pkg/services/db/)
 - [Viper Configuration](https://github.com/spf13/viper)

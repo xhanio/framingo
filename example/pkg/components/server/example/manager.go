@@ -6,25 +6,30 @@ import (
 	"io"
 	"net/http"
 	_ "net/http/pprof"
+	"path"
 
 	"github.com/spf13/viper"
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/api/server"
 	"github.com/xhanio/framingo/pkg/services/app"
 	"github.com/xhanio/framingo/pkg/services/db"
+	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/example"
 )
 
 type manager struct {
+	name   string
 	config *viper.Viper
 	// util services
 	log log.Logger
 	db  db.Manager
 
 	// system services
+	bus pubsub.Manager
 
 	// business services
 	example example.Manager
@@ -44,6 +49,13 @@ func New(configPath string) Server {
 	}
 }
 
+func (m *manager) Name() string {
+	if m.name == "" {
+		m.name = path.Join(reflectutil.Locate(m))
+	}
+	return m.name
+}
+
 func (m *manager) Init(ctx context.Context) error {
 	if err := m.initConfig(); err != nil {
 		return errors.Wrap(err)
@@ -61,6 +73,7 @@ func (m *manager) Init(ctx context.Context) error {
 
 	// register system services
 	m.services.Register(
+		m.bus,
 		m.example,
 	)
 
@@ -76,10 +89,12 @@ func (m *manager) Init(ctx context.Context) error {
 		m.api,
 	)
 
-	// register to eventbus
-	// if err := m.registerEventHandler(m.services.Services()...); err != nil {
-	// 	return errors.Wrap(err)
-	// }
+	// subscribe all services to the service bus
+	for _, svc := range m.services.Services() {
+		m.bus.Subscribe(svc, "/")
+		m.bus.Subscribe(svc, fmt.Sprintf("/components/%s", m.Name()))
+		m.bus.Subscribe(svc, fmt.Sprintf("/components/%s/services/%s", m.Name(), svc.Name()))
+	}
 
 	/* pre initialization */
 

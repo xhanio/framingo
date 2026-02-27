@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/xhanio/errors"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
@@ -90,6 +91,7 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	mw := newMiddleware(s)
 	e := m.newEcho()
 	e.HTTPErrorHandler = s.errorHandler
+	e.Pre(middleware.RemoveTrailingSlash())
 	var middlewares []echo.MiddlewareFunc
 	// Apply CORS middleware in debug mode
 	if m.debug {
