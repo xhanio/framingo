@@ -363,9 +363,7 @@ The daemon command integrates directly with the server component:
 ```go
 func runDaemon(cmd *cobra.Command, args []string) error {
     // Create server from pkg/components/server
-    m := example.New(example.Config{
-        Path: configPath,
-    })
+    m := example.New(configPath)
 
     // Initialize (loads config, sets up services)
     if err := m.Init(cmd.Context()); err != nil {

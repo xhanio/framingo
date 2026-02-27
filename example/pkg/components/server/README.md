@@ -9,7 +9,7 @@ The `example` server component is a comprehensive implementation that orchestrat
 - Database connectivity and migration
 - Service lifecycle management with context-based config propagation
 - HTTP API server setup with routers and middlewares
-- Built-in signal handling via app manager (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+- Built-in signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
 - Health monitoring with liveness/readiness probes and auto-restart
 - Profiling support (pprof)
 
@@ -19,8 +19,11 @@ This component serves as the main entry point for your application and demonstra
 
 ```
 example/
-├── manager.go    # Main server implementation and initialization
-├── model.go      # Server interface and configuration
+├── manager.go    # Server lifecycle (Init, Start, Stop) and service wiring
+├── model.go      # Server interface
+├── config.go     # Viper configuration setup and loading
+├── service.go    # Service instance creation (logger, db, app manager, API)
+├── signal.go     # OS signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
 └── api.go        # API router and middleware registration
 ```
 
@@ -28,13 +31,9 @@ example/
 
 ### [model.go](model.go)
 
-Defines the server interface and configuration:
+Defines the server interface:
 
 ```go
-type Config struct {
-    Path string  // Configuration file path
-}
-
 type Server interface {
     common.Daemon         // Start() and Stop()
     common.Initializable  // Init(ctx context.Context)
@@ -42,17 +41,29 @@ type Server interface {
 }
 ```
 
+### [config.go](config.go)
+
+Viper configuration setup and loading:
+- Creates instance-based Viper (not global singleton)
+- Sets environment variable prefix and enables `AutomaticEnv()`
+- Reads YAML config file and enables hot-reload with `WatchConfig()`
+
+### [service.go](service.go)
+
+Service instance creation:
+- Logger initialization with file rotation
+- Database manager setup with connection pooling and migration
+- Service controller (`app.Manager`) creation
+- Business service creation (e.g. example service)
+- API server manager creation with per-server endpoint, throttle, and TLS configuration
+
 ### [manager.go](manager.go)
 
-Contains the main server implementation with:
-- Instance-based Viper configuration loading with hot-reload
-- Logger initialization with file rotation
-- Database manager setup
-- Service controller initialization with `*viper.Viper` config
-- API server configuration from YAML
-- Service dependency resolution via topological sort
-- Signal handling delegated to app manager (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
-- pprof profiling support
+Server lifecycle orchestration:
+- Service registration and dependency resolution via topological sort
+- Service initialization and post-initialization (API wiring)
+- Startup flow with pprof and signal handling
+- Graceful shutdown
 
 ### [api.go](api.go)
 
@@ -78,9 +89,7 @@ import (
 
 func main() {
     // Create server with config file path
-    srv := example.New(example.Config{
-        Path: "/path/to/config.yaml",
-    })
+    srv := example.New("/path/to/config.yaml")
 
     // Initialize the server
     if err := srv.Init(); err != nil {
@@ -150,44 +159,27 @@ pprof:
 
 The `Init(ctx)` method performs the following steps:
 
-1. **Load Configuration**
+1. **Load Configuration** (via [config.go](config.go))
    - Read YAML config file via instance-based Viper (not global singleton)
    - Support environment variable overrides
    - Enable config watching with `WatchConfig()`
 
-2. **Initialize Logger**
-   - Configure log level
-   - Set up file rotation
+2. **Create Service Instances** (via [service.go](service.go))
+   - Initialize logger with file rotation
+   - Create database manager with connection pooling and migration
+   - Create service controller: `app.New(m.config, ...)`
+   - Create business services (e.g. example service with database dependency)
+   - Create API server manager with per-server endpoint, throttle, and TLS configuration
 
-3. **Initialize Database Manager**
-   - Configure connection pool
-   - Set up migrations
-
-4. **Initialize Service Controller**
-   - Create service manager with `*viper.Viper` config: `app.New(m.config, ...)`
-   - Handle service dependencies
-
-5. **Initialize Business Services**
-   - Create example service with database dependency (see [pkg/services](../../services/example/))
-   ```go
-   m.example = example.New(
-       m.db,
-       example.WithLogger(m.log),
-   )
-   ```
-
-6. **Initialize API Server**
-   - Configure multiple API servers from config
-   - Set up throttling and TLS if configured
-
-7. **Register Services**
+3. **Register and Wire Services** (via [manager.go](manager.go))
    - Register all services with controller
    - Perform topological sort for dependency resolution
+   - Register API server last (after topo sort) to ensure latest start
 
-8. **Initialize All Services**
+4. **Initialize All Services**
    - Call `Init(ctx)` on all services (config is propagated via context using `confutil`)
 
-9. **Initialize API Components** (via [api.go](api.go:10))
+5. **Initialize API Components** (via [api.go](api.go))
    - Register middlewares (see [pkg/middlewares](../../middlewares/example/))
    - Register routers (see [pkg/routers](../../routers/example/))
 
@@ -201,18 +193,17 @@ The `Start()` method:
 2. **Enable pprof (if configured)**
    - Starts pprof HTTP server on configured port
 
-3. **Signal Handling (via app manager)**
+3. **Signal Handling**
    - SIGINT/SIGTERM: Graceful shutdown
    - SIGUSR1: Print service info to stdout
    - SIGUSR2: Print goroutine stack traces
-   - Custom handlers via `app.WithSignalHandler()`
 
 4. **Health Monitoring (if configured)**
    - Periodic liveness/readiness checks on all services
    - Automatic restart on liveness failure with configurable retry policy
 
 5. **Block Until Shutdown**
-   - Waits for SIGINT/SIGTERM via `signal.NotifyContext`
+   - Waits for SIGINT/SIGTERM
    - Handles shutdown gracefully with configurable timeout
 
 ### Shutdown Flow
@@ -243,7 +234,7 @@ The server component manages several layers of services:
 ### Service Controller
 - **Controller Manager**: Orchestrates service lifecycle ([pkg/services/app](../../../pkg/services/app/))
 
-The controller automatically resolves dependencies using topological sorting, manages health monitoring, and handles signal dispatching:
+The controller automatically resolves dependencies using topological sorting and manages health monitoring:
 
 ```go
 // Create service controller with config for propagation to services
@@ -302,28 +293,15 @@ This connects:
 
 ## Signal Handling
 
-Signal handling is now managed by the app manager with sensible defaults and customizable handlers.
+Signal handling is managed by the server component in [signal.go](signal.go).
 
-### Default Signal Handlers
+### Signal Handlers
 
 | Signal | Action |
 |--------|--------|
-| `SIGINT` / `SIGTERM` | Graceful shutdown (`Stop(true)`) |
+| `SIGINT` / `SIGTERM` | Graceful shutdown (`services.Stop(true)`) |
 | `SIGUSR1` | Print service info (name, state, alive/ready, uptime) |
 | `SIGUSR2` | Print all goroutine stack traces |
-
-### Custom Signal Handlers
-
-Override default handlers or add new ones:
-
-```go
-m.services = app.New(m.config,
-    app.WithSignalHandler(syscall.SIGHUP, func() {
-        // Custom reload logic
-        log.Info("Reloading configuration...")
-    }),
-)
-```
 
 ### Usage
 
@@ -436,7 +414,7 @@ ca:
 - **Service Orchestration**: Automatic dependency resolution with topological sort
 - **Health Monitoring**: Periodic liveness/readiness probes with auto-restart on failure
 - **Graceful Shutdown**: Configurable timeout for cleanup on SIGINT/SIGTERM
-- **Signal Handling**: Built-in handlers for SIGINT, SIGTERM, SIGUSR1, SIGUSR2 with customization
+- **Signal Handling**: Built-in handlers for SIGINT, SIGTERM, SIGUSR1, SIGUSR2
 - **Per-Service Operations**: Init, start, stop, and restart individual services at runtime
 - **Database Integration**: Built-in migration and connection pooling
 - **API Flexibility**: Support for multiple servers, TLS, throttling

@@ -570,23 +570,6 @@ func TestOptions(t *testing.T) {
 	})
 }
 
-func TestSignalDefaults(t *testing.T) {
-	m := newTestManager()
-	assert.NotNil(t, m.signals)
-	assert.Len(t, m.signals, 4) // SIGINT, SIGTERM, SIGUSR1, SIGUSR2
-}
-
-func TestWithSignalHandler(t *testing.T) {
-	called := false
-	m := newTestManager(WithSignalHandler(testSignal, func() {
-		called = true
-	}))
-	handler, ok := m.signals[testSignal]
-	require.True(t, ok)
-	handler()
-	assert.True(t, called)
-}
-
 func TestMigrateNotImplemented(t *testing.T) {
 	m := newTestManager()
 	err := m.Migrate()

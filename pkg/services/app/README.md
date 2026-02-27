@@ -10,7 +10,6 @@ This guide covers how to write a standard service and manage it using `pkg/servi
 - [Dynamic Configuration](#dynamic-configuration)
 - [Health Probes](#health-probes)
 - [Health Monitoring and Auto-Restart](#health-monitoring-and-auto-restart)
-- [Signal Handling](#signal-handling)
 - [Per-Service Operations](#per-service-operations)
 - [Service Stats and Debugging](#service-stats-and-debugging)
 - [Shutdown Timeout](#shutdown-timeout)
@@ -279,7 +278,7 @@ func (m *manager) DoWork(ctx context.Context, input string) (string, error) {
 
 ## Managing Services with the App Manager
 
-The `app.Manager` orchestrates service lifecycle: registration, dependency resolution, initialization, startup, health monitoring, signal handling, and shutdown.
+The `app.Manager` orchestrates service lifecycle: registration, dependency resolution, initialization, startup, health monitoring, and shutdown.
 
 ### Creating the Manager
 
@@ -337,7 +336,7 @@ if err := services.Init(ctx); err != nil {
 }
 
 // Start all daemon services (in dependency order)
-// Also starts signal listeners and health monitor
+// Also starts health monitor if configured
 if err := services.Start(ctx); err != nil {
     log.Fatal(err)
 }
@@ -358,7 +357,6 @@ During `Init`:
 
 During `Start`:
 - Only services implementing `Daemon` are started
-- Signal listeners are activated (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
 - Health monitor starts if `WithMonitorInterval` is configured
 - Double-start is a safe no-op
 
@@ -460,36 +458,6 @@ When a service fails its liveness check:
 
 The restart counter and timestamp are tracked in `Stats.Restarts` and `Stats.RestartedAt`.
 
-## Signal Handling
-
-The app manager handles OS signals with sensible defaults:
-
-| Signal | Default Handler |
-|--------|----------------|
-| `SIGINT` | Graceful shutdown (`Stop(true)`) |
-| `SIGTERM` | Graceful shutdown (`Stop(true)`) |
-| `SIGUSR1` | Print service status table to stdout |
-| `SIGUSR2` | Print all goroutine stack traces |
-
-### Custom Signal Handlers
-
-Override defaults or add new signals:
-
-```go
-services := app.New(config,
-    app.WithSignalHandler(syscall.SIGHUP, func() {
-        log.Info("reloading configuration...")
-        config.ReadInConfig()
-    }),
-    app.WithSignalHandler(syscall.SIGUSR1, func() {
-        // override the default SIGUSR1 handler
-        log.Info("custom USR1 handler")
-    }),
-)
-```
-
-Signal listeners are started automatically when `Start()` is called and stopped when the context is cancelled.
-
 ## Per-Service Operations
 
 The app manager supports operating on individual services at runtime:
@@ -548,7 +516,7 @@ The `Stats` struct contains:
 
 ### Info / Debug Output
 
-The `Info(w, debug)` method prints a formatted table to the given writer. This is what `SIGUSR1` triggers by default:
+The `Info(w, debug)` method prints a formatted table to the given writer:
 
 ```
 service status
@@ -718,7 +686,6 @@ Creates a new app manager. Pass `nil` for config if no config propagation is nee
 | `WithMonitorInterval(time.Duration)` | Health check polling interval (0 = disabled) |
 | `WithRestartPolicy(int)` | Max restart attempts (0 = disabled, -1 = unlimited) |
 | `WithRestartDelay(time.Duration)` | Delay before restart attempt |
-| `WithSignalHandler(os.Signal, func())` | Register or override a signal handler |
 
 ### Manager Interface
 

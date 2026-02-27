@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"io"
-	"os"
 	"path"
 	"sort"
 	"sync"
@@ -26,7 +25,6 @@ type manager struct {
 
 	lc      *lifecycle
 	monitor *monitor
-	signals map[os.Signal]func()
 }
 
 func New(config *viper.Viper, opts ...Option) Manager {
@@ -43,7 +41,6 @@ func newManager(config *viper.Viper, opts ...Option) *manager {
 			lc: lc,
 		},
 	}
-	m.signals = defaultSignals(m)
 	m.apply(opts...)
 	m.log = m.log.By(m)
 	m.lc.log = m.log
@@ -165,7 +162,6 @@ func (m *manager) Start(ctx context.Context) error {
 		<-ctx.Done()
 		m.log.Infof("service %s stopped", m.Name())
 	}()
-	m.listenSignals(ctx)
 	if m.monitor.interval > 0 {
 		m.wg.Add(1)
 		go func() {

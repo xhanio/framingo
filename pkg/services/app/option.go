@@ -1,7 +1,6 @@
 package app
 
 import (
-	"os"
 	"time"
 
 	"github.com/xhanio/framingo/pkg/utils/log"
@@ -51,8 +50,3 @@ func WithRestartDelay(delay time.Duration) Option {
 	}
 }
 
-func WithSignalHandler(sig os.Signal, handler func()) Option {
-	return func(m *manager) {
-		m.signals[sig] = handler
-	}
-}

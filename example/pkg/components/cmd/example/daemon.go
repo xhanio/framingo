@@ -24,9 +24,7 @@ func NewDaemonCmd() *cobra.Command {
 }
 
 func runDaemon(cmd *cobra.Command, args []string) error {
-	m := example.New(example.Config{
-		Path: configPath,
-	})
+	m := example.New(configPath)
 	ctx := context.Background()
 	if err := m.Init(ctx); err != nil {
 		return errors.Wrap(err)
