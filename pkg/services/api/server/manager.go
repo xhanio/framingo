@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -209,10 +210,7 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 				// group prefix without a trailing slash. Combined with the
 				// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
 				// resolve to the same handler.
-				routePath := h.Path
-				if routePath == "/" {
-					routePath = ""
-				}
+				routePath := strings.TrimSuffix(h.Path, "/")
 				m.log.Infof("register handler %s %s", h.Method, h.Path)
 				group.Add(h.Method, routePath, hf, mwfuncs...)
 				// Store handler metadata for request lookup in the server instance
