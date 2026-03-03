@@ -32,4 +32,6 @@ type Manager interface {
 	FromContextTimeout(ctx context.Context, timeout time.Duration) (*gorm.DB, context.CancelFunc)
 	Cleanup(schema bool) error
 	Reload() error
+	// Transaction executes fn within a database transaction.
+	Transaction(ctx context.Context, fn func(ctx context.Context) error, opts ...*sql.TxOptions) error
 }
