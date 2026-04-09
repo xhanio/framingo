@@ -66,6 +66,7 @@ func (m *manager) initServices() error {
 			m.config.GetInt("db.connection.max_open"),
 			m.config.GetInt("db.connection.max_idle"),
 			m.config.GetDuration("db.connection.max_lifetime"),
+			m.config.GetDuration("db.connection.max_idle_time"),
 			m.config.GetDuration("db.connection.exec_timeout"),
 		),
 		db.WithLogger(m.log),

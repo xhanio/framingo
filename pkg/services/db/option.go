@@ -47,7 +47,7 @@ func WithMigration(sqlDir string, version uint) Option {
 	}
 }
 
-func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, execTimeout time.Duration) Option {
+func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, maxIdleTime time.Duration, execTimeout time.Duration) Option {
 	return func(m *manager) {
 		if maxOpen == 0 {
 			maxOpen = 10
@@ -65,6 +65,7 @@ func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, execTim
 			MaxOpen:     maxOpen,
 			MaxIdle:     maxIdle,
 			MaxLifetime: maxLifetime,
+			MaxIdleTime: maxIdleTime,
 			ExecTimeout: execTimeout,
 		}
 	}

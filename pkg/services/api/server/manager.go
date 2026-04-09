@@ -211,7 +211,7 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 				// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
 				// resolve to the same handler.
 				routePath := strings.TrimSuffix(h.Path, "/")
-				m.log.Infof("register handler %s %s", h.Method, h.Path)
+				m.log.Infof("register handler %s %s%s", h.Method, prefix, h.Path)
 				group.Add(h.Method, routePath, hf, mwfuncs...)
 				// Store handler metadata for request lookup in the server instance
 				s.groups[key] = g

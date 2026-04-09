@@ -14,6 +14,7 @@ type ConnectionConfig struct {
 	MaxOpen     int
 	MaxIdle     int
 	MaxLifetime time.Duration
+	MaxIdleTime time.Duration
 	ExecTimeout time.Duration
 }
 

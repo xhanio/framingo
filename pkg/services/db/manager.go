@@ -122,6 +122,7 @@ func (m *manager) Init(ctx context.Context) error {
 			config.GetInt("db.connection.max_open"),
 			config.GetInt("db.connection.max_idle"),
 			config.GetDuration("db.connection.max_lifetime"),
+			config.GetDuration("db.connection.max_idle_time"),
 			config.GetDuration("db.connection.exec_timeout"),
 		),
 	)
@@ -134,6 +135,7 @@ func (m *manager) Init(ctx context.Context) error {
 	m.sqlDB.SetMaxOpenConns(m.connection.MaxOpen)
 	m.sqlDB.SetMaxIdleConns(m.connection.MaxIdle)
 	m.sqlDB.SetConnMaxLifetime(m.connection.MaxLifetime)
+	m.sqlDB.SetConnMaxIdleTime(m.connection.MaxIdleTime)
 	// migration
 	if m.migration.Directory != "" {
 		err = m.migrate(fmt.Sprintf("file://%s", m.migration.Directory), m.migration.Version)
