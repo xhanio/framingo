@@ -819,7 +819,7 @@ handlers:
   - method: POST
     path: /
     func: CreateUser
-    middleware: auth
+    middlewares: [auth]
 ```
 
 ### Middleware Pipeline
