@@ -37,6 +37,10 @@ func (lc *lifecycle) register(service common.Service) {
 			Name:   service.Name(),
 			source: service,
 		}
+		// append late-registered services to the end of the sorted list
+		if len(lc.services) > 0 {
+			lc.services = append(lc.services, service)
+		}
 	}
 	lc.graph.Add(service)
 }

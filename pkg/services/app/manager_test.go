@@ -134,6 +134,42 @@ func TestTopoSort(t *testing.T) {
 		assert.Equal(t, "db", services[0].Name())
 		assert.Equal(t, "api", services[1].Name())
 	})
+
+	t.Run("register after TopoSort appends to service list", func(t *testing.T) {
+		m := newTestManager()
+		db := newMockService("db")
+		m.Register(db)
+		require.NoError(t, m.TopoSort())
+		require.Len(t, m.Services(), 1)
+
+		// register a new service after TopoSort — appended to end
+		api := newMockService("api")
+		api.deps = []common.Service{db}
+		m.Register(api)
+
+		services := m.Services()
+		require.Len(t, services, 2)
+		assert.Equal(t, "db", services[0].Name())
+		assert.Equal(t, "api", services[1].Name())
+	})
+
+	t.Run("register after TopoSort with new dependency appends both", func(t *testing.T) {
+		m := newTestManager()
+		a := newMockService("a")
+		m.Register(a)
+		require.NoError(t, m.TopoSort())
+		require.Len(t, m.Services(), 1)
+
+		// register service with a new dependency — both appended
+		dep := newMockService("dep")
+		svc := newMockService("svc")
+		svc.deps = []common.Service{dep}
+		m.Register(svc)
+
+		services := m.Services()
+		require.Len(t, services, 3)
+		assert.Equal(t, "a", services[0].Name())
+	})
 }
 
 func TestInitAndStart(t *testing.T) {
