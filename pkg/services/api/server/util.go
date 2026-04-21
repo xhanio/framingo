@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -37,6 +38,14 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 	s.log.Debugf("looking for key %s", key)
 	h, hok := s.handlers[key]
 	g, gok := s.groups[key]
+	// fall back to ANY handler if exact method not found
+	if !hok || !gok {
+		anyKey := strings.Replace(key, "<"+req.Method+">", "<"+api.MethodAny+">", 1)
+		if ah, ok := s.handlers[anyKey]; ok {
+			h, hok = ah, true
+			g, gok = s.groups[anyKey], true
+		}
+	}
 	if gok && hok {
 		req.Handler = h
 		req.HandlerGroup = g

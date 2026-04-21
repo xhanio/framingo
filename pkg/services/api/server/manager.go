@@ -155,6 +155,10 @@ func (m *manager) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 	}
 	// Register each handler function
 	for _, handler := range group.Handlers {
+		handler.Method = strings.ToUpper(handler.Method)
+		if !validHTTPMethod(handler.Method) {
+			return nil, errors.Newf("invalid HTTP method %q for handler %s", handler.Method, handler.Func)
+		}
 		handlerFunc, ok := handlers[handler.Func]
 		if !ok {
 			return nil, errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
@@ -212,7 +216,11 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 				// resolve to the same handler.
 				routePath := strings.TrimSuffix(h.Path, "/")
 				m.log.Infof("register handler %s %s%s", h.Method, prefix, h.Path)
-				group.Add(h.Method, routePath, hf, mwfuncs...)
+				if h.Method == api.MethodAny {
+					group.Any(routePath, hf, mwfuncs...)
+				} else {
+					group.Add(h.Method, routePath, hf, mwfuncs...)
+				}
 				// Store handler metadata for request lookup in the server instance
 				s.groups[key] = g
 				s.handlers[key] = h
@@ -246,6 +254,7 @@ func (m *manager) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]ech
 
 	return mwfuncs, nil
 }
+
 
 // RegisterMiddlewares registers middlewares with the server
 func (m *manager) RegisterMiddlewares(middlewares ...api.Middleware) error {

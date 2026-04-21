@@ -8,7 +8,10 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
-const DefaultAPIPrefix = "/"
+const (
+	DefaultAPIPrefix = "/"
+	MethodAny        = "ANY"
+)
 
 type Middleware interface {
 	common.Service
