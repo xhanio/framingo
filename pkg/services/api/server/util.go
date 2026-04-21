@@ -21,6 +21,8 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 	if prevID != "" {
 		traceID = fmt.Sprintf("%s/%s", prevID, traceID)
 	}
+	c.Echo().Router().Find(r.Method, r.URL.EscapedPath(), c)
+	s.log.Debugf("current call (endpoint %s) %s - %s", s.endpoint.Path, r.URL.Path, r.URL.EscapedPath())
 	req := &api.RequestInfo{
 		Server:    s.name,
 		URI:       r.RequestURI,
@@ -31,8 +33,6 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 		IP:        c.RealIP(),
 		StartedAt: time.Now(),
 	}
-	c.Echo().Router().Find(r.Method, r.URL.EscapedPath(), c)
-	s.log.Debugf("current call (endpoint %s) %s - %s", s.endpoint.Path, r.URL.Path, r.URL.EscapedPath())
 	// find the handler and group from this server instance
 	key := req.Key(s.endpoint.Path)
 	s.log.Debugf("looking for key %s", key)
