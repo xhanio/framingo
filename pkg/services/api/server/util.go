@@ -36,17 +36,8 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 	// find the handler and group from this server instance
 	key := req.Key(s.endpoint.Path)
 	s.log.Debugf("looking for key %s", key)
-	h, hok := s.handlers[key]
-	g, gok := s.groups[key]
-	// fall back to ANY handler if exact method not found
-	if !hok || !gok {
-		anyKey := strings.Replace(key, "<"+req.Method+">", "<"+api.MethodAny+">", 1)
-		if ah, ok := s.handlers[anyKey]; ok {
-			h, hok = ah, true
-			g, gok = s.groups[anyKey], true
-		}
-	}
-	if gok && hok {
+	h, g := s.matchHandler(key, req.Method, req.Path)
+	if h != nil && g != nil {
 		req.Handler = h
 		req.HandlerGroup = g
 	} else {
@@ -113,4 +104,60 @@ func colorDuration(duration time.Duration) string {
 		str = color.YellowString("%s", duration.Round(time.Microsecond).String())
 	}
 	return "took=" + str
+}
+
+// matchHandler looks up handler metadata by key with fallback:
+// 1. exact key match
+// 2. ANY method match (same path, method=ANY)
+// 3. wildcard path match — longest prefix wins, exact method over ANY
+func (s *server) matchHandler(key, method, reqPath string) (*api.Handler, *api.HandlerGroup) {
+	// exact match
+	if h, ok := s.handlers[key]; ok {
+		return h, s.groups[key]
+	}
+	// ANY method fallback
+	anyKey := strings.Replace(key, "<"+method+">", "<"+api.MethodAny+">", 1)
+	if h, ok := s.handlers[anyKey]; ok {
+		return h, s.groups[anyKey]
+	}
+	// wildcard path match: iterate stored keys ending with /* and match
+	// against the actual request path. Longest prefix wins (most specific),
+	// and exact method takes priority over ANY at the same prefix length.
+	reqPath = strings.TrimPrefix(reqPath, s.endpoint.Path)
+	if !strings.HasPrefix(reqPath, "/") {
+		reqPath = "/" + reqPath
+	}
+	serverMethod := fmt.Sprintf("%s<%s>", s.name, method)
+	serverAny := fmt.Sprintf("%s<%s>", s.name, api.MethodAny)
+
+	var bestKey string
+	var bestLen int
+	var bestExact bool // true if matched via exact method (not ANY)
+
+	for storedKey := range s.handlers {
+		if !strings.HasSuffix(storedKey, "/*") {
+			continue
+		}
+		isExact := strings.HasPrefix(storedKey, serverMethod)
+		isAny := strings.HasPrefix(storedKey, serverAny)
+		if !isExact && !isAny {
+			continue
+		}
+		// "http<ANY>/api/*" → "/api/"
+		wildcardBase := strings.TrimSuffix(storedKey[strings.Index(storedKey, ">")+1:], "*")
+		if !strings.HasPrefix(reqPath, wildcardBase) {
+			continue
+		}
+		baseLen := len(wildcardBase)
+		// prefer longer prefix; at same length prefer exact method over ANY
+		if baseLen > bestLen || (baseLen == bestLen && isExact && !bestExact) {
+			bestKey = storedKey
+			bestLen = baseLen
+			bestExact = isExact
+		}
+	}
+	if bestKey != "" {
+		return s.handlers[bestKey], s.groups[bestKey]
+	}
+	return nil, nil
 }
