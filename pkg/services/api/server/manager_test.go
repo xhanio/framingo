@@ -47,8 +47,8 @@ func freePort(t *testing.T) uint {
 }
 
 // startServer sets up a manager with routers, starts the server, and returns
-// a request function and cleanup function.
-func startServer(t *testing.T, routers ...*mockRouter) (do func(method, path string) (int, string), cleanup func()) {
+// the base URL and a cleanup function.
+func startServer(t *testing.T, routers ...*mockRouter) (baseURL string, cleanup func()) {
 	t.Helper()
 	port := freePort(t)
 	m := testManager()
@@ -57,8 +57,7 @@ func startServer(t *testing.T, routers ...*mockRouter) (do func(method, path str
 		require.NoError(t, m.RegisterRouters(r))
 	}
 	require.NoError(t, m.Start(context.Background()))
-	// wait for server to be ready
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	baseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool {
 		resp, err := http.Get(baseURL + "/")
 		if err != nil {
@@ -67,21 +66,20 @@ func startServer(t *testing.T, routers ...*mockRouter) (do func(method, path str
 		resp.Body.Close()
 		return true
 	}, 2*time.Second, 10*time.Millisecond)
-
-	do = func(method, path string) (int, string) {
-		req, err := http.NewRequest(method, baseURL+path, nil)
-		require.NoError(t, err)
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		return resp.StatusCode, string(body)
-	}
-	cleanup = func() {
-		require.NoError(t, m.Stop(true))
-	}
+	cleanup = func() { require.NoError(t, m.Stop(true)) }
 	return
+}
+
+// httpDo makes an HTTP request and returns status code and body.
+func httpDo(t *testing.T, method, url string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body)
 }
 
 func TestRegisterRouter_MethodValidation(t *testing.T) {
@@ -139,7 +137,7 @@ handlers:
 }
 
 func TestHandler_ExactKey(t *testing.T) {
-	do, cleanup := startServer(t, &mockRouter{
+	base, cleanup := startServer(t, &mockRouter{
 		name: "test",
 		config: []byte(`server: http
 prefix: /api
@@ -151,13 +149,13 @@ handlers:
 	})
 	defer cleanup()
 
-	code, body := do("GET", "/api/data")
+	code, body := httpDo(t, "GET", base+"/api/data")
 	assert.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "ok", body)
 }
 
 func TestHandler_ANYFallback(t *testing.T) {
-	do, cleanup := startServer(t, &mockRouter{
+	base, cleanup := startServer(t, &mockRouter{
 		name: "test",
 		config: []byte(`server: http
 prefix: /api
@@ -170,13 +168,13 @@ handlers:
 	defer cleanup()
 
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
-		code, _ := do(method, "/api/data")
+		code, _ := httpDo(t, method, base+"/api/data")
 		assert.Equal(t, http.StatusOK, code, "ANY handler should respond to %s", method)
 	}
 }
 
 func TestHandler_WildcardPath(t *testing.T) {
-	do, cleanup := startServer(t, &mockRouter{
+	base, cleanup := startServer(t, &mockRouter{
 		name: "test",
 		config: []byte(`server: http
 prefix: /api
@@ -188,13 +186,13 @@ handlers:
 	})
 	defer cleanup()
 
-	code, body := do("GET", "/api/v1/namespaces")
+	code, body := httpDo(t, "GET", base+"/api/v1/namespaces")
 	assert.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "ok", body)
 }
 
 func TestHandler_ANYWildcard(t *testing.T) {
-	do, cleanup := startServer(t, &mockRouter{
+	base, cleanup := startServer(t, &mockRouter{
 		name: "test",
 		config: []byte(`server: http
 prefix: /api
@@ -207,7 +205,7 @@ handlers:
 	defer cleanup()
 
 	for _, method := range []string{"GET", "POST", "DELETE"} {
-		code, _ := do(method, "/api/v1/namespaces")
+		code, _ := httpDo(t, method, base+"/api/v1/namespaces")
 		assert.Equal(t, http.StatusOK, code, "%s should match ANY wildcard", method)
 	}
 }
@@ -216,7 +214,7 @@ func TestHandler_WildcardLongestPrefixWins(t *testing.T) {
 	appHandler := func(c echo.Context) error { return c.String(http.StatusOK, "app") }
 	apiHandler := func(c echo.Context) error { return c.String(http.StatusOK, "api") }
 
-	do, cleanup := startServer(t,
+	base, cleanup := startServer(t,
 		&mockRouter{
 			name: "app-router",
 			config: []byte(`server: http
@@ -240,18 +238,17 @@ handlers:
 	)
 	defer cleanup()
 
-	code, body := do("GET", "/api/v1/namespaces")
+	code, body := httpDo(t, "GET", base+"/api/v1/namespaces")
 	assert.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "api", body)
 
-	code, body = do("GET", "/app/something")
+	code, body = httpDo(t, "GET", base+"/app/something")
 	assert.Equal(t, http.StatusOK, code)
 	assert.Equal(t, "app", body)
 }
 
-
 func TestHandler_NoMatch(t *testing.T) {
-	do, cleanup := startServer(t, &mockRouter{
+	base, cleanup := startServer(t, &mockRouter{
 		name: "test",
 		config: []byte(`server: http
 prefix: /api
@@ -263,6 +260,6 @@ handlers:
 	})
 	defer cleanup()
 
-	code, _ := do("POST", "/other")
+	code, _ := httpDo(t, "POST", base+"/other")
 	assert.Equal(t, http.StatusNotFound, code)
 }
