@@ -3,6 +3,8 @@ package executor
 import (
 	"sync"
 	"time"
+
+	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
 type Option func(*executor)
@@ -108,5 +110,11 @@ func WithCooldown(cooldown time.Duration) Option {
 func Once() Option {
 	return func(e *executor) {
 		e.once = true
+	}
+}
+
+func OnComplete(fn func(job.Job)) Option {
+	return func(e *executor) {
+		e.onComplete = fn
 	}
 }

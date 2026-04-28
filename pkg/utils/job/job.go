@@ -232,12 +232,16 @@ func (j *job) IsExecuting() bool {
 }
 
 func (j *job) SetProgress(progress float64) {
+	j.Lock()
 	j.progress = progress
 	// j.sendEvent(JobActionUpdate)
+	j.Unlock()
 }
 
 func (j *job) SetResult(result any) {
+	j.Lock()
 	j.result = result
+	j.Unlock()
 }
 
 func (j *job) GetParams() any {

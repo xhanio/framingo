@@ -13,11 +13,12 @@ import (
 var _ Executor = (*executor)(nil)
 
 type executor struct {
-	j        job.Job
-	once     bool
-	timeout  *timeoutOptions
-	retry    *retryOptions
-	cooldown *cooldownOptions
+	j          job.Job
+	once       bool
+	timeout    *timeoutOptions
+	retry      *retryOptions
+	cooldown   *cooldownOptions
+	onComplete func(job.Job)
 }
 
 func New(j job.Job, opts ...Option) Executor {
@@ -99,6 +100,10 @@ func (e *executor) Start(ctx context.Context, params any) error {
 		e.cooldown.Lock()
 		e.cooldown.endedAt = time.Now().Add(e.cooldown.Duration)
 		e.cooldown.Unlock()
+	}
+
+	if e.onComplete != nil {
+		e.onComplete(e.j)
 	}
 
 	return err
