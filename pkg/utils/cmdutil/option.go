@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"time"
 )
 
 type Option func(*cmd)
@@ -39,5 +40,41 @@ func WithInput(inputs ...io.Reader) Option {
 		} else {
 			c.in = io.MultiReader(inputs...)
 		}
+	}
+}
+
+func WithDir(dir string) Option {
+	return func(c *cmd) {
+		c.dir = dir
+	}
+}
+
+func WithCancel(fn func(*os.Process) error) Option {
+	return func(c *cmd) {
+		c.cancel = fn
+	}
+}
+
+func WithWaitDelay(d time.Duration) Option {
+	return func(c *cmd) {
+		c.waitDelay = d
+	}
+}
+
+func WithMaxBuffer(n int) Option {
+	return func(c *cmd) {
+		c.maxBuffer = n
+	}
+}
+
+func WithStdout(w io.Writer) Option {
+	return func(c *cmd) {
+		c.stdout = w
+	}
+}
+
+func WithStderr(w io.Writer) Option {
+	return func(c *cmd) {
+		c.stderr = w
 	}
 }

@@ -9,23 +9,31 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/xhanio/errors"
+	"github.com/xhanio/framingo/pkg/utils/ioutil"
 )
 
 const ErrorCodeCmd string = "CMD_ERROR"
 
 type cmd struct {
-	ctx     context.Context
-	bin     string
-	args    []string
-	envs    []string
-	async   bool
-	in      io.Reader
-	out     io.Reader
-	outBuff *bytes.Buffer
-	errBuff *bytes.Buffer
-	p       *exec.Cmd
+	ctx        context.Context
+	bin        string
+	args       []string
+	envs       []string
+	async      bool
+	dir        string
+	cancel     func(*os.Process) error
+	waitDelay  time.Duration
+	maxBuffer  int
+	stdout     io.Writer
+	stderr     io.Writer
+	in         io.Reader
+	out        io.Reader
+	outBuff    *bytes.Buffer
+	errBuff    *bytes.Buffer
+	p          *exec.Cmd
 }
 
 func New(bin string, args []string, opts ...Option) Command {
@@ -45,16 +53,45 @@ func newCMD(bin string, args []string, opts ...Option) *cmd {
 	p.Env = os.Environ()
 	p.Env = append(p.Env, c.envs...)
 	p.Stdin = c.in
-	c.outBuff = bytes.NewBuffer([]byte{})
-	c.errBuff = bytes.NewBuffer([]byte{})
+	if c.dir != "" {
+		p.Dir = c.dir
+	}
+	if c.cancel != nil {
+		cancel := c.cancel
+		p.Cancel = func() error {
+			return cancel(p.Process)
+		}
+	}
+	if c.waitDelay > 0 {
+		p.WaitDelay = c.waitDelay
+	}
+	if c.maxBuffer > 0 {
+		c.outBuff = bytes.NewBuffer(make([]byte, 0, c.maxBuffer))
+		c.errBuff = bytes.NewBuffer(make([]byte, 0, c.maxBuffer))
+	} else {
+		c.outBuff = bytes.NewBuffer([]byte{})
+		c.errBuff = bytes.NewBuffer([]byte{})
+	}
+	var outWriter io.Writer = c.outBuff
+	var errWriter io.Writer = c.errBuff
+	if c.maxBuffer > 0 {
+		outWriter = ioutil.NewLimitWriter(c.outBuff, c.maxBuffer)
+		errWriter = ioutil.NewLimitWriter(c.errBuff, c.maxBuffer)
+	}
+	if c.stdout != nil {
+		outWriter = io.MultiWriter(outWriter, c.stdout)
+	}
+	if c.stderr != nil {
+		errWriter = io.MultiWriter(errWriter, c.stderr)
+	}
 	if c.async {
 		pr, pw := io.Pipe()
 		c.out = pr
 		p.Stdout = pw
 	} else {
-		p.Stdout = c.outBuff
+		p.Stdout = outWriter
 	}
-	p.Stderr = c.errBuff
+	p.Stderr = errWriter
 	c.p = p
 	return c
 }
@@ -94,6 +131,9 @@ func (c *cmd) Print(fns ...PrintFunc) {
 func (c *cmd) ExitCode() int {
 	if c.p.ProcessState == nil {
 		return -1
+	}
+	if c.p.ProcessState.Success() {
+		return 0
 	}
 	return c.p.ProcessState.ExitCode()
 }
