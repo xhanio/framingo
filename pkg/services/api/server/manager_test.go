@@ -139,6 +139,24 @@ handlers:
 	})
 }
 
+func TestHandler_RootPrefix(t *testing.T) {
+	base, cleanup := startServer(t, &mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /
+handlers:
+  - method: GET
+    path: /health
+    func: Health`),
+		handlers: map[string]any{"Health": okHandler},
+	})
+	defer cleanup()
+
+	code, body := httpDo(t, "GET", base+"/health")
+	assert.Equal(t, http.StatusOK, code)
+	assert.Equal(t, "ok", body)
+}
+
 func TestHandler_ExactKey(t *testing.T) {
 	base, cleanup := startServer(t, &mockRouter{
 		name: "test",

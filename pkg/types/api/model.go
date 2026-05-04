@@ -12,9 +12,8 @@ import (
 )
 
 const (
-	DefaultAPIPrefix = "/"
-	MethodAny        = "ANY"
-	MethodWS         = "WS"
+	MethodAny = "ANY"
+	MethodWS  = "WS"
 )
 
 // WebSocketHandlerFunc is a handler for WebSocket connections.

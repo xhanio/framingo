@@ -212,14 +212,10 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 			return errors.Newf("server %s not found, please call AddServer first", serverName)
 		}
 
-		// Create echo group with API prefix
-		var prefix string
-		if s.endpoint != nil {
-			prefix = path.Join(s.endpoint.Path, g.Prefix)
-		}
-		if prefix == "" {
-			prefix = api.DefaultAPIPrefix
-		}
+		// Create echo group with API prefix.
+		// Trim trailing slash so Echo's literal prefix+path concatenation
+		// doesn't produce double slashes (e.g., "/" + "/health" → "//health").
+		prefix := strings.TrimSuffix(path.Join(s.endpoint.Path, g.Prefix), "/")
 		group := s.echo.Group(prefix)
 
 		// Register each handler with middlewares
@@ -236,7 +232,7 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 			// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
 			// resolve to the same handler.
 			routePath := strings.TrimSuffix(h.Path, "/")
-			m.log.Infof("register handler %s %s%s", h.Method, prefix, h.Path)
+			m.log.Infof("register handler %s %s", h.Method, path.Join(prefix, h.Path))
 
 			var hf echo.HandlerFunc
 			switch h.Method {
