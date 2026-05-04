@@ -24,8 +24,8 @@ func (r *router) Example(c echo.Context) error {
 	return c.JSON(http.StatusOK, body)
 }
 
-func (r *router) Handlers() map[string]echo.HandlerFunc {
-	handlers := make(map[string]echo.HandlerFunc)
+func (r *router) Handlers() map[string]any {
+	handlers := make(map[string]any)
 	rv := reflect.ValueOf(r)
 	rt := reflect.TypeOf(r)
 	// Iterate through all methods
@@ -35,11 +35,11 @@ func (r *router) Handlers() map[string]echo.HandlerFunc {
 		if method.Name == "Handlers" {
 			continue
 		}
-		// Try to convert to handler signature func(apis.Context) error
+		// Try to convert to handler signature func(echo.Context) error
 		methodValue := rv.Method(i)
 		if handlerFunc, ok := methodValue.Interface().(func(echo.Context) error); ok {
 			// Successfully converted - this is a handler method
-			handlers[method.Name] = handlerFunc
+			handlers[method.Name] = echo.HandlerFunc(handlerFunc)
 		}
 		// If conversion fails, silently skip (not a handler method)
 	}

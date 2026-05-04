@@ -400,9 +400,9 @@ func (r *router) Name() string { return "hello-router" }
 func (r *router) Dependencies() []common.Service { return []common.Service{r.helloSvc} }
 func (r *router) Config() []byte { return config }
 
-func (r *router) Handlers() map[string]echo.HandlerFunc {
-    return map[string]echo.HandlerFunc{
-        "Hello": r.Hello,
+func (r *router) Handlers() map[string]any {
+    return map[string]any{
+        "Hello": echo.HandlerFunc(r.Hello),
     }
 }
 

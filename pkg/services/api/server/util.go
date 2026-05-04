@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -35,13 +36,13 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 	}
 	// find the handler and group from this server instance
 	key := req.Key(s.endpoint.Path)
-	s.log.Debugf("looking for key %s", key)
-	h, g := s.matchHandler(key, req.Method, req.Path)
+	s.log.Debugf("looking for key %s", key.String())
+	h, g := s.matchHandler(key)
 	if h != nil && g != nil {
 		req.Handler = h
 		req.HandlerGroup = g
 	} else {
-		s.log.Debugf("unable to locate api %s for req %s %s", key, req.Method, req.RawPath)
+		s.log.Debugf("unable to locate api %s for req %s %s", key.String(), req.Method, req.RawPath)
 	}
 	return req
 }
@@ -108,43 +109,52 @@ func colorDuration(duration time.Duration) string {
 
 // matchHandler looks up handler metadata by key with fallback:
 // 1. exact key match
-// 2. ANY method match (same path, method=ANY)
-// 3. wildcard path match — longest prefix wins, exact method over ANY
-func (s *server) matchHandler(key, method, reqPath string) (*api.Handler, *api.HandlerGroup) {
+// 2. WS method fallback (WS routes registered as GET but keyed with WS)
+// 3. ANY method match (same path, method=ANY)
+// 4. wildcard path match — longest prefix wins, exact method over ANY
+func (s *server) matchHandler(key api.HandlerKey) (*api.Handler, *api.HandlerGroup) {
 	// exact match
 	if h, ok := s.handlers[key]; ok {
 		return h, s.groups[key]
 	}
+	// WS method fallback
+	if key.Method == http.MethodGet {
+		wsKey := api.HandlerKey{Server: key.Server, Method: api.MethodWS, Path: key.Path}
+		if h, ok := s.handlers[wsKey]; ok {
+			return h, s.groups[wsKey]
+		}
+	}
 	// ANY method fallback
-	anyKey := strings.Replace(key, "<"+method+">", "<"+api.MethodAny+">", 1)
+	anyKey := api.HandlerKey{Server: key.Server, Method: api.MethodAny, Path: key.Path}
 	if h, ok := s.handlers[anyKey]; ok {
 		return h, s.groups[anyKey]
 	}
 	// wildcard path match: iterate stored keys ending with /* and match
 	// against the actual request path. Longest prefix wins (most specific),
 	// and exact method takes priority over ANY at the same prefix length.
-	reqPath = strings.TrimPrefix(reqPath, s.endpoint.Path)
+	reqPath := strings.TrimPrefix(key.Path, s.endpoint.Path)
 	if !strings.HasPrefix(reqPath, "/") {
 		reqPath = "/" + reqPath
 	}
-	serverMethod := fmt.Sprintf("%s<%s>", s.name, method)
-	serverAny := fmt.Sprintf("%s<%s>", s.name, api.MethodAny)
 
-	var bestKey string
+	var bestKey api.HandlerKey
 	var bestLen int
 	var bestExact bool // true if matched via exact method (not ANY)
 
 	for storedKey := range s.handlers {
-		if !strings.HasSuffix(storedKey, "/*") {
+		if !strings.HasSuffix(storedKey.Path, "/*") {
 			continue
 		}
-		isExact := strings.HasPrefix(storedKey, serverMethod)
-		isAny := strings.HasPrefix(storedKey, serverAny)
+		if storedKey.Server != key.Server {
+			continue
+		}
+		isExact := storedKey.Method == key.Method
+		isAny := storedKey.Method == api.MethodAny
 		if !isExact && !isAny {
 			continue
 		}
-		// "http<ANY>/api/*" → "/api/"
-		wildcardBase := strings.TrimSuffix(storedKey[strings.Index(storedKey, ">")+1:], "*")
+		// "/api/*" → "/api/"
+		wildcardBase := strings.TrimSuffix(storedKey.Path, "*")
 		if !strings.HasPrefix(reqPath, wildcardBase) {
 			continue
 		}
@@ -156,7 +166,7 @@ func (s *server) matchHandler(key, method, reqPath string) (*api.Handler, *api.H
 			bestExact = isExact
 		}
 	}
-	if bestKey != "" {
+	if bestLen > 0 {
 		return s.handlers[bestKey], s.groups[bestKey]
 	}
 	return nil, nil

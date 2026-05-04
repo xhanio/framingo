@@ -11,31 +11,31 @@ func TestRequestInfoKey(t *testing.T) {
 		name     string
 		req      RequestInfo
 		prefix   string
-		expected string
+		expected HandlerKey
 	}{
 		{
 			name:     "simple path",
 			req:      RequestInfo{Server: "http", Method: "GET", RawPath: "/api/users"},
 			prefix:   "/",
-			expected: "http<GET>/api/users",
+			expected: HandlerKey{Server: "http", Method: "GET", Path: "/api/users"},
 		},
 		{
 			name:     "with endpoint prefix",
 			req:      RequestInfo{Server: "http", Method: "POST", RawPath: "/v1/api/users"},
 			prefix:   "/v1",
-			expected: "http<POST>/api/users",
+			expected: HandlerKey{Server: "http", Method: "POST", Path: "/api/users"},
 		},
 		{
 			name:     "wildcard pattern",
 			req:      RequestInfo{Server: "http", Method: "GET", RawPath: "/api/*"},
 			prefix:   "/",
-			expected: "http<GET>/api/*",
+			expected: HandlerKey{Server: "http", Method: "GET", Path: "/api/*"},
 		},
 		{
 			name:     "wildcard with endpoint prefix",
 			req:      RequestInfo{Server: "http", Method: "POST", RawPath: "/v1/proxy/*"},
 			prefix:   "/v1",
-			expected: "http<POST>/proxy/*",
+			expected: HandlerKey{Server: "http", Method: "POST", Path: "/proxy/*"},
 		},
 	}
 	for _, tt := range tests {

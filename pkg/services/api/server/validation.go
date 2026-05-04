@@ -17,6 +17,7 @@ var httpMethods = map[string]bool{
 	http.MethodTrace:   true,
 	http.MethodConnect: true,
 	api.MethodAny:      true,
+	api.MethodWS:       true,
 }
 
 func validHTTPMethod(method string) bool {

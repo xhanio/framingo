@@ -23,8 +23,8 @@ type server struct {
 	throttleConfig *api.ThrottleConfig
 	echo           *echo.Echo
 
-	groups   map[string]*api.HandlerGroup
-	handlers map[string]*api.Handler
+	groups   map[api.HandlerKey]*api.HandlerGroup
+	handlers map[api.HandlerKey]*api.Handler
 }
 
 func (s *server) Name() string {

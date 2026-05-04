@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	github.com/LauZero/gateway v1.0.10
 	github.com/avast/retry-go/v4 v4.7.0
+	github.com/coder/websocket v1.8.14
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.18.0
 	github.com/golang-migrate/migrate/v4 v4.19.0
@@ -15,6 +16,7 @@ require (
 	github.com/redis/go-redis/v9 v9.17.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/segmentio/kafka-go v0.4.50
+	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/xhanio/errors v1.0.2
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d
@@ -75,7 +77,6 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect

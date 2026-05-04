@@ -280,11 +280,12 @@ Located in `pkg/services/api/server`. Built on Echo. The server uses a **declara
 3. Routers registered         →  srvMgr.RegisterRouters(myRouter)
    a. Router.Config() called  →  returns embedded YAML ([]byte)
    b. YAML unmarshaled        →  produces HandlerGroup with Handlers
-   c. Router.Handlers() called →  returns map[string]echo.HandlerFunc
+   c. Router.Handlers() called →  returns map[string]any (echo.HandlerFunc or api.WebSocketHandlerFunc)
    d. For each YAML handler:
       - Func name looked up in Handlers() map
-      - HandlerKey generated: "serverName<METHOD>/prefix/path"
-      - Handler func stored in manager.handlerFuncs[key]
+      - Type asserted based on method (WS → WebSocketHandlerFunc, others → echo.HandlerFunc)
+      - HandlerKey struct generated: {Server, Method, Path}
+      - Handler func stored in manager.handlerFuncs[key] or wsHandlerFuncs[key]
    e. Server matched by HandlerGroup.Server field
    f. Echo group created at endpoint.Path + group.Prefix
    g. For each handler:
@@ -367,11 +368,12 @@ func (r *router) Config() []byte { return config }
 
 // Handlers returns func-name → implementation mapping
 // Keys MUST match the "func" field in router.yaml
-func (r *router) Handlers() map[string]echo.HandlerFunc {
-    return map[string]echo.HandlerFunc{
-        "ListUsers":  r.listUsers,
-        "CreateUser": r.createUser,
-        "GetUser":    r.getUser,
+// Values must be echo.HandlerFunc for HTTP or api.WebSocketHandlerFunc for WS
+func (r *router) Handlers() map[string]any {
+    return map[string]any{
+        "ListUsers":  echo.HandlerFunc(r.listUsers),
+        "CreateUser": echo.HandlerFunc(r.createUser),
+        "GetUser":    echo.HandlerFunc(r.getUser),
     }
 }
 
@@ -413,11 +415,24 @@ handlers:
     throttle:              # per-handler rate limiting
       rps: 10
       burst_size: 20
+  - method: WS            # WebSocket handler — registered as GET, server upgrades automatically
+    path: /feed
+    func: Feed            # must be api.WebSocketHandlerFunc in Handlers() map
 ```
 
 ### Handler Key Format
 
-The server generates a unique key for each handler: `serverName<METHOD>/prefix/path`. For example, given the config above, the key for `ListUsers` is `http<GET>/users`. This key is used internally to store and look up handler functions and metadata.
+The server uses a struct-based key to uniquely identify each handler:
+
+```go
+type HandlerKey struct {
+    Server string
+    Method string
+    Path   string
+}
+```
+
+For example, the key for `ListUsers` is `HandlerKey{Server: "http", Method: "GET", Path: "/users"}`. Keys are used as map keys for direct lookups. The `matchHandler` logic falls back through: exact match → WS fallback (for GET requests) → ANY fallback → wildcard path matching.
 
 ### How Routes Map to Echo
 
@@ -434,10 +449,12 @@ Root paths (`/`) are normalized by trimming the trailing slash, so both `/api/v1
 
 ```go
 // pkg/types/api/model.go
+type WebSocketHandlerFunc func(ctx context.Context, conn *websocket.Conn) error
+
 type Router interface {
     common.Service
-    Config() []byte                           // YAML config bytes (typically //go:embed)
-    Handlers() map[string]echo.HandlerFunc    // func name → handler implementation
+    Config() []byte                    // YAML config bytes (typically //go:embed)
+    Handlers() map[string]any          // func name → echo.HandlerFunc or WebSocketHandlerFunc
 }
 
 type Middleware interface {
@@ -445,6 +462,33 @@ type Middleware interface {
     Func(echo.HandlerFunc) echo.HandlerFunc   // standard Echo middleware signature
 }
 ```
+
+### WebSocket Handlers
+
+Declare WebSocket routes with `method: WS` in YAML. The server automatically upgrades the connection and passes it to the handler. Uses `github.com/coder/websocket`.
+
+```go
+func (r *router) Handlers() map[string]any {
+    return map[string]any{
+        "ListUsers": echo.HandlerFunc(r.listUsers),
+        "Feed":      api.WebSocketHandlerFunc(r.feed),
+    }
+}
+
+func (r *router) feed(ctx context.Context, conn *websocket.Conn) error {
+    for {
+        typ, msg, err := conn.Read(ctx)
+        if err != nil {
+            return nil // client disconnected
+        }
+        if err := conn.Write(ctx, typ, msg); err != nil {
+            return err
+        }
+    }
+}
+```
+
+**Lifecycle**: Middleware stack runs before upgrade (auth, logging, throttle all apply). Once upgraded, errors are logged and the connection is closed with the appropriate status code. The handler receives a `context.Context` from the original HTTP request.
 
 ### Middleware Resolution
 

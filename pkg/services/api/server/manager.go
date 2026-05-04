@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"path"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/xhanio/errors"
@@ -27,7 +29,8 @@ type manager struct {
 
 	servers map[string]*server // map of server name to server instance
 
-	handlerFuncs    map[string]echo.HandlerFunc
+	handlerFuncs    map[api.HandlerKey]echo.HandlerFunc
+	wsHandlerFuncs  map[api.HandlerKey]api.WebSocketHandlerFunc
 	middlewareFuncs map[string]echo.MiddlewareFunc
 
 	sync.Mutex // lock for rate limiters
@@ -43,7 +46,8 @@ func newManager(opts ...Option) *manager {
 	m := &manager{
 		log:             log.Default,
 		servers:         make(map[string]*server),
-		handlerFuncs:    make(map[string]echo.HandlerFunc),
+		handlerFuncs:    make(map[api.HandlerKey]echo.HandlerFunc),
+		wsHandlerFuncs:  make(map[api.HandlerKey]api.WebSocketHandlerFunc),
 		middlewareFuncs: make(map[string]echo.MiddlewareFunc),
 		limits:          make(map[string]*rate.Limiter),
 	}
@@ -82,8 +86,8 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	s := &server{
 		name:     name,
 		log:      m.log,
-		groups:   make(map[string]*api.HandlerGroup),
-		handlers: make(map[string]*api.Handler),
+		groups:   make(map[api.HandlerKey]*api.HandlerGroup),
+		handlers: make(map[api.HandlerKey]*api.Handler),
 	}
 	s.apply(opts...)
 	if s.endpoint == nil {
@@ -159,12 +163,30 @@ func (m *manager) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 		if !validHTTPMethod(handler.Method) {
 			return nil, errors.Newf("invalid HTTP method %q for handler %s", handler.Method, handler.Func)
 		}
-		handlerFunc, ok := handlers[handler.Func]
+		fn, ok := handlers[handler.Func]
 		if !ok {
 			return nil, errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
 		}
-		key := api.HandlerKey(group, handler)
-		m.handlerFuncs[key] = handlerFunc
+		key := api.NewHandlerKey(group, handler)
+		if handler.Method == api.MethodWS {
+			switch f := fn.(type) {
+			case api.WebSocketHandlerFunc:
+				m.wsHandlerFuncs[key] = f
+			case func(context.Context, *websocket.Conn) error:
+				m.wsHandlerFuncs[key] = f
+			default:
+				return nil, errors.Newf("handler %s declared as WS but is not api.WebSocketHandlerFunc", handler.Func)
+			}
+		} else {
+			switch f := fn.(type) {
+			case echo.HandlerFunc:
+				m.handlerFuncs[key] = f
+			case func(echo.Context) error:
+				m.handlerFuncs[key] = f
+			default:
+				return nil, errors.Newf("handler %s must be echo.HandlerFunc", handler.Func)
+			}
+		}
 	}
 	m.log.Debugf("registered router %s with %d handlers", router.Name(), len(group.Handlers))
 	return group, nil
@@ -208,23 +230,40 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 				return err
 			}
 			// Register route with Echo
-			key := api.HandlerKey(g, h)
-			if hf, ok := m.handlerFuncs[key]; ok {
-				// Normalize root path "/" to "" so the route registers at the
-				// group prefix without a trailing slash. Combined with the
-				// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
-				// resolve to the same handler.
-				routePath := strings.TrimSuffix(h.Path, "/")
-				m.log.Infof("register handler %s %s%s", h.Method, prefix, h.Path)
-				if h.Method == api.MethodAny {
-					group.Any(routePath, hf, mwfuncs...)
-				} else {
-					group.Add(h.Method, routePath, hf, mwfuncs...)
+			key := api.NewHandlerKey(g, h)
+			// Normalize root path "/" to "" so the route registers at the
+			// group prefix without a trailing slash. Combined with the
+			// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
+			// resolve to the same handler.
+			routePath := strings.TrimSuffix(h.Path, "/")
+			m.log.Infof("register handler %s %s%s", h.Method, prefix, h.Path)
+
+			var hf echo.HandlerFunc
+			switch h.Method {
+			case api.MethodWS:
+				wsFunc, ok := m.wsHandlerFuncs[key]
+				if !ok {
+					continue
 				}
-				// Store handler metadata for request lookup in the server instance
-				s.groups[key] = g
-				s.handlers[key] = h
+				hf = m.wrapWebSocket(wsFunc)
+			default:
+				var ok bool
+				hf, ok = m.handlerFuncs[key]
+				if !ok {
+					continue
+				}
 			}
+
+			switch h.Method {
+			case api.MethodWS:
+				group.Add(http.MethodGet, routePath, hf, mwfuncs...)
+			case api.MethodAny:
+				group.Any(routePath, hf, mwfuncs...)
+			default:
+				group.Add(h.Method, routePath, hf, mwfuncs...)
+			}
+			s.groups[key] = g
+			s.handlers[key] = h
 		}
 	}
 	return nil
@@ -255,6 +294,29 @@ func (m *manager) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]ech
 	return mwfuncs, nil
 }
 
+// wrapWebSocket wraps a WebSocketHandlerFunc into an echo.HandlerFunc
+// that upgrades the HTTP connection and delegates to the WS handler.
+func (m *manager) wrapWebSocket(fn api.WebSocketHandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
+			InsecureSkipVerify: m.debug,
+		})
+		if err != nil {
+			return errors.BadRequest.Wrap(err)
+		}
+
+		// Once upgraded, the HTTP response is hijacked — errors cannot be
+		// returned to Echo. Handle closure directly.
+		ctx := c.Request().Context()
+		if err = fn(ctx, conn); err != nil {
+			m.log.Error(errors.Wrap(err))
+			conn.Close(websocket.StatusInternalError, err.Error())
+		} else {
+			conn.Close(websocket.StatusNormalClosure, "")
+		}
+		return nil
+	}
+}
 
 // RegisterMiddlewares registers middlewares with the server
 func (m *manager) RegisterMiddlewares(middlewares ...api.Middleware) error {

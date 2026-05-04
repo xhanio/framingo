@@ -180,8 +180,8 @@ The full URL is constructed as:
 The router uses reflection to automatically discover handlers:
 
 ```go
-func (r *router) Handlers() map[string]echo.HandlerFunc {
-    handlers := make(map[string]echo.HandlerFunc)
+func (r *router) Handlers() map[string]any {
+    handlers := make(map[string]any)
     rv := reflect.ValueOf(r)
     rt := reflect.TypeOf(r)
 
@@ -192,7 +192,7 @@ func (r *router) Handlers() map[string]echo.HandlerFunc {
         }
         methodValue := rv.Method(i)
         if handlerFunc, ok := methodValue.Interface().(func(echo.Context) error); ok {
-            handlers[method.Name] = handlerFunc
+            handlers[method.Name] = echo.HandlerFunc(handlerFunc)
         }
     }
     return handlers

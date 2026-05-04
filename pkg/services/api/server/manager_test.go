@@ -9,9 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
@@ -24,13 +27,13 @@ func testManager() *manager {
 type mockRouter struct {
 	name     string
 	config   []byte
-	handlers map[string]echo.HandlerFunc
+	handlers map[string]any
 }
 
-func (r *mockRouter) Name() string                          { return r.name }
-func (r *mockRouter) Dependencies() []common.Service        { return nil }
-func (r *mockRouter) Config() []byte                        { return r.config }
-func (r *mockRouter) Handlers() map[string]echo.HandlerFunc { return r.handlers }
+func (r *mockRouter) Name() string                   { return r.name }
+func (r *mockRouter) Dependencies() []common.Service { return nil }
+func (r *mockRouter) Config() []byte                 { return r.config }
+func (r *mockRouter) Handlers() map[string]any       { return r.handlers }
 
 func okHandler(c echo.Context) error {
 	return c.String(http.StatusOK, "ok")
@@ -96,7 +99,7 @@ handlers:
   - method: ` + method + `
     path: /test
     func: Test`),
-				handlers: map[string]echo.HandlerFunc{"Test": okHandler},
+				handlers: map[string]any{"Test": okHandler},
 			})
 			assert.NoError(t, err, "method %s should be accepted", method)
 		}
@@ -113,7 +116,7 @@ handlers:
   - method: any
     path: /test
     func: Test`),
-			handlers: map[string]echo.HandlerFunc{"Test": okHandler},
+			handlers: map[string]any{"Test": okHandler},
 		})
 		assert.NoError(t, err)
 	})
@@ -129,7 +132,7 @@ handlers:
   - method: INVALID
     path: /test
     func: Test`),
-			handlers: map[string]echo.HandlerFunc{"Test": okHandler},
+			handlers: map[string]any{"Test": okHandler},
 		})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid HTTP method")
@@ -145,7 +148,7 @@ handlers:
   - method: GET
     path: /data
     func: GetData`),
-		handlers: map[string]echo.HandlerFunc{"GetData": okHandler},
+		handlers: map[string]any{"GetData": okHandler},
 	})
 	defer cleanup()
 
@@ -163,7 +166,7 @@ handlers:
   - method: ANY
     path: /data
     func: AnyData`),
-		handlers: map[string]echo.HandlerFunc{"AnyData": okHandler},
+		handlers: map[string]any{"AnyData": okHandler},
 	})
 	defer cleanup()
 
@@ -182,7 +185,7 @@ handlers:
   - method: GET
     path: /*
     func: CatchAll`),
-		handlers: map[string]echo.HandlerFunc{"CatchAll": okHandler},
+		handlers: map[string]any{"CatchAll": okHandler},
 	})
 	defer cleanup()
 
@@ -200,7 +203,7 @@ handlers:
   - method: ANY
     path: /*
     func: Proxy`),
-		handlers: map[string]echo.HandlerFunc{"Proxy": okHandler},
+		handlers: map[string]any{"Proxy": okHandler},
 	})
 	defer cleanup()
 
@@ -223,7 +226,7 @@ handlers:
   - method: ANY
     path: /*
     func: App`),
-			handlers: map[string]echo.HandlerFunc{"App": appHandler},
+			handlers: map[string]any{"App": appHandler},
 		},
 		&mockRouter{
 			name: "api-router",
@@ -233,7 +236,7 @@ handlers:
   - method: ANY
     path: /*
     func: API`),
-			handlers: map[string]echo.HandlerFunc{"API": apiHandler},
+			handlers: map[string]any{"API": apiHandler},
 		},
 	)
 	defer cleanup()
@@ -256,10 +259,144 @@ handlers:
   - method: GET
     path: /data
     func: GetData`),
-		handlers: map[string]echo.HandlerFunc{"GetData": okHandler},
+		handlers: map[string]any{"GetData": okHandler},
 	})
 	defer cleanup()
 
 	code, _ := httpDo(t, "POST", base+"/other")
 	assert.Equal(t, http.StatusNotFound, code)
+}
+
+// ============================================================================
+// WebSocket Tests
+// ============================================================================
+
+func TestWebSocket_Echo(t *testing.T) {
+	echoWS := api.WebSocketHandlerFunc(func(ctx context.Context, conn *websocket.Conn) error {
+		for {
+			typ, msg, err := conn.Read(ctx)
+			if err != nil {
+				return nil
+			}
+			if err := conn.Write(ctx, typ, msg); err != nil {
+				return nil
+			}
+		}
+	})
+
+	base, cleanup := startServer(t, &mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /ws
+handlers:
+  - method: WS
+    path: /echo
+    func: Echo`),
+		handlers: map[string]any{"Echo": echoWS},
+	})
+	defer cleanup()
+
+	// Connect via WebSocket
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL := "ws" + base[4:] + "/ws/echo" // http:// → ws://
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(t, err)
+	defer conn.CloseNow()
+
+	// Send and receive a message
+	msg := []byte("hello websocket")
+	err = conn.Write(ctx, websocket.MessageText, msg)
+	require.NoError(t, err)
+
+	typ, got, err := conn.Read(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, websocket.MessageText, typ)
+	assert.Equal(t, msg, got)
+
+	// Send another message
+	msg2 := []byte("second message")
+	err = conn.Write(ctx, websocket.MessageText, msg2)
+	require.NoError(t, err)
+
+	typ, got, err = conn.Read(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, websocket.MessageText, typ)
+	assert.Equal(t, msg2, got)
+
+	conn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestWebSocket_RegisterRejectsWrongType(t *testing.T) {
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
+
+	// WS method with an echo.HandlerFunc should fail
+	err := m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /ws
+handlers:
+  - method: WS
+    path: /bad
+    func: Bad`),
+		handlers: map[string]any{"Bad": okHandler},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not api.WebSocketHandlerFunc")
+}
+
+func TestWebSocket_NonWSRequestRejected(t *testing.T) {
+	echoWS := api.WebSocketHandlerFunc(func(ctx context.Context, conn *websocket.Conn) error {
+		return nil
+	})
+
+	base, cleanup := startServer(t, &mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /ws
+handlers:
+  - method: WS
+    path: /feed
+    func: Feed`),
+		handlers: map[string]any{"Feed": echoWS},
+	})
+	defer cleanup()
+
+	// Plain HTTP GET to a WS endpoint should not succeed as WebSocket
+	code, _ := httpDo(t, "GET", base+"/ws/feed")
+	assert.NotEqual(t, http.StatusSwitchingProtocols, code)
+}
+
+func TestWebSocket_HandlerError(t *testing.T) {
+	failWS := api.WebSocketHandlerFunc(func(ctx context.Context, conn *websocket.Conn) error {
+		return fmt.Errorf("something went wrong")
+	})
+
+	base, cleanup := startServer(t, &mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /ws
+handlers:
+  - method: WS
+    path: /fail
+    func: Fail`),
+		handlers: map[string]any{"Fail": failWS},
+	})
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL := "ws" + base[4:] + "/ws/fail"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	require.NoError(t, err)
+
+	// Server should close with StatusInternalError
+	_, _, err = conn.Read(ctx)
+	assert.Error(t, err)
+	var closeErr websocket.CloseError
+	assert.ErrorAs(t, err, &closeErr)
+	assert.Equal(t, websocket.StatusInternalError, closeErr.Code)
 }
