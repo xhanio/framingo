@@ -304,13 +304,26 @@ func (m *manager) wrapWebSocket(fn api.WebSocketHandlerFunc) echo.HandlerFunc {
 		// Once upgraded, the HTTP response is hijacked — errors cannot be
 		// returned to Echo. Handle closure directly.
 		ctx := c.Request().Context()
-		if err = fn(ctx, conn); err != nil {
-			m.log.Error(errors.Wrap(err))
-			conn.Close(websocket.StatusInternalError, err.Error())
-		} else {
-			conn.Close(websocket.StatusNormalClosure, "")
-		}
+		err = fn(ctx, conn)
+		m.closeWebSocket(ctx, conn, err)
 		return nil
+	}
+}
+
+// closeWebSocket handles WebSocket connection closure after the handler returns.
+func (m *manager) closeWebSocket(ctx context.Context, conn *websocket.Conn, err error) {
+	if err == nil {
+		conn.Close(websocket.StatusNormalClosure, "")
+		return
+	}
+	switch status := websocket.CloseStatus(err); {
+	case status == websocket.StatusNormalClosure, status == websocket.StatusGoingAway:
+		// Client closed intentionally — not an error.
+	case ctx.Err() != nil:
+		conn.Close(websocket.StatusGoingAway, "server shutting down")
+	default:
+		m.log.Error(errors.Wrap(err))
+		conn.Close(websocket.StatusInternalError, err.Error())
 	}
 }
 
