@@ -290,7 +290,8 @@ handlers:
 // ============================================================================
 
 func TestWebSocket_Echo(t *testing.T) {
-	echoWS := api.WebSocketHandlerFunc(func(ctx context.Context, conn *websocket.Conn) error {
+	echoWS := api.WebSocketHandlerFunc(func(c echo.Context, conn *websocket.Conn) error {
+		ctx := c.Request().Context()
 		for {
 			typ, msg, err := conn.Read(ctx)
 			if err != nil {
@@ -366,7 +367,7 @@ handlers:
 }
 
 func TestWebSocket_NonWSRequestRejected(t *testing.T) {
-	echoWS := api.WebSocketHandlerFunc(func(ctx context.Context, conn *websocket.Conn) error {
+	echoWS := api.WebSocketHandlerFunc(func(c echo.Context, conn *websocket.Conn) error {
 		return nil
 	})
 
@@ -388,7 +389,7 @@ handlers:
 }
 
 func TestWebSocket_HandlerError(t *testing.T) {
-	failWS := api.WebSocketHandlerFunc(func(ctx context.Context, conn *websocket.Conn) error {
+	failWS := api.WebSocketHandlerFunc(func(c echo.Context, conn *websocket.Conn) error {
 		return fmt.Errorf("something went wrong")
 	})
 

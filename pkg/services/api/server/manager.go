@@ -172,7 +172,7 @@ func (m *manager) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 			switch f := fn.(type) {
 			case api.WebSocketHandlerFunc:
 				m.wsHandlerFuncs[key] = f
-			case func(context.Context, *websocket.Conn) error:
+			case func(echo.Context, *websocket.Conn) error:
 				m.wsHandlerFuncs[key] = f
 			default:
 				return nil, errors.Newf("handler %s declared as WS but is not api.WebSocketHandlerFunc", handler.Func)
@@ -303,9 +303,8 @@ func (m *manager) wrapWebSocket(fn api.WebSocketHandlerFunc) echo.HandlerFunc {
 
 		// Once upgraded, the HTTP response is hijacked — errors cannot be
 		// returned to Echo. Handle closure directly.
-		ctx := c.Request().Context()
-		err = fn(ctx, conn)
-		m.closeWebSocket(ctx, conn, err)
+		err = fn(c, conn)
+		m.closeWebSocket(c.Request().Context(), conn, err)
 		return nil
 	}
 }
