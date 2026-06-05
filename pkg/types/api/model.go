@@ -39,7 +39,7 @@ type HandlerKey struct {
 }
 
 func (k HandlerKey) String() string {
-	return fmt.Sprintf("%s:%s %s", k.Server, k.Method, k.Path)
+	return fmt.Sprintf("[%s] %s %s", k.Server, k.Method, k.Path)
 }
 
 // NewHandlerKey creates a HandlerKey from a HandlerGroup and Handler.

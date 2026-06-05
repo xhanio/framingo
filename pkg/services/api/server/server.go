@@ -6,6 +6,7 @@ import (
 	"path"
 
 	"github.com/labstack/echo/v4"
+
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/maputil"
@@ -13,7 +14,7 @@ import (
 
 var _ Server = (*server)(nil)
 
-// server holds an echo instance with its configuration and implements Server interface
+// server holds an echo instance with its configuration and implements model.APIServer interface
 type server struct {
 	name string
 	log  log.Logger

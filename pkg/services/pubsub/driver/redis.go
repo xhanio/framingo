@@ -7,6 +7,8 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/xhanio/errors"
+
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -39,7 +41,7 @@ func NewRedis(client *redis.Client, log log.Logger) (Driver, error) {
 	}, nil
 }
 
-func (b *redisDriver) Subscribe(name string, topic string) (<-chan Message, error) {
+func (b *redisDriver) Subscribe(name string, topic string) (<-chan entity.PubsubMessage, error) {
 	if name == "" {
 		return nil, nil
 	}
@@ -47,7 +49,7 @@ func (b *redisDriver) Subscribe(name string, topic string) (<-chan Message, erro
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	ch := make(chan Message, channelBufferSize)
+	ch := make(chan entity.PubsubMessage, channelBufferSize)
 	sub := subscriber{name: name, ch: ch}
 	b.topics[topic] = append(b.topics[topic], sub)
 
@@ -174,7 +176,7 @@ func (b *redisDriver) Stop(wait bool) error {
 // Publish dispatches locally and sends to Redis for cross-instance delivery.
 func (b *redisDriver) Publish(from string, topic string, kind string, payload any) error {
 	b.mu.RLock()
-	msg := Message{From: from, Topic: topic, Kind: kind, Payload: payload}
+	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
 	for subTopic, subs := range b.topics {
 		if topicMatches(subTopic, topic) {
 			for _, sub := range subs {
@@ -243,7 +245,7 @@ func (b *redisDriver) handleRedisMessage(msg *redis.Message) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	m := Message{
+	m := entity.PubsubMessage{
 		From:    eventMsg.Publisher,
 		Topic:   eventMsg.Topic,
 		Kind:    eventMsg.Kind,

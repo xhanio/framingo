@@ -7,8 +7,10 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/structs/graph"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
@@ -20,22 +22,22 @@ type lifecycle struct {
 	shutdownTimeout time.Duration
 	graph           graph.Graph[common.Service]
 	services        []common.Service
-	stats           map[string]*Stats
+	stats           map[string]*entity.ApplicationStats
 }
 
 func newLifecycle(config *viper.Viper) *lifecycle {
 	return &lifecycle{
 		config: config,
 		graph:  graph.New[common.Service](),
-		stats:  make(map[string]*Stats),
+		stats:  make(map[string]*entity.ApplicationStats),
 	}
 }
 
 func (lc *lifecycle) register(service common.Service) {
 	if _, ok := lc.stats[service.Name()]; !ok {
-		lc.stats[service.Name()] = &Stats{
+		lc.stats[service.Name()] = &entity.ApplicationStats{
 			Name:   service.Name(),
-			source: service,
+			Source: service,
 		}
 		// append late-registered services to the end of the sorted list
 		if len(lc.services) > 0 {
@@ -68,7 +70,7 @@ func (lc *lifecycle) find(name string) common.Service {
 	return nil
 }
 
-func (lc *lifecycle) stat(name string) *Stats {
+func (lc *lifecycle) stat(name string) *entity.ApplicationStats {
 	return lc.stats[name]
 }
 

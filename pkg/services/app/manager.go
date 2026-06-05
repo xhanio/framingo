@@ -10,7 +10,9 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
@@ -86,8 +88,8 @@ func (m *manager) Services() []common.Service {
 	return m.lc.services
 }
 
-func (m *manager) Stats() ([]*Stats, error) {
-	var result []*Stats
+func (m *manager) Stats() ([]*entity.ApplicationStats, error) {
+	var result []*entity.ApplicationStats
 	sorted := make([]common.Service, len(m.lc.services))
 	copy(sorted, m.lc.services)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -191,7 +193,7 @@ func (m *manager) Info(w io.Writer, debug bool) {
 	t.Title("service", "alive", "ready", "uptime", "init_err", "start_err", "healthcheck_err")
 	stats, _ := m.Stats() // errors are displayed in the table below
 	for _, stat := range stats {
-		_ = m.monitor.healthcheck(stat.source) // refreshes stat fields for display
+		_ = m.monitor.healthcheck(stat.Source) // refreshes stat fields for display
 		alive := stat.LivenessErr == nil && stat.Healthcheck() == nil
 		t.Row(stat.Name, alive, stat.Ready, stat.Uptime(), stat.InitializationErr, stat.StartErr, stat.HealthcheckErr)
 	}

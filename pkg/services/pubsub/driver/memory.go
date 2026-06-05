@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/xhanio/framingo/pkg/structs/trie"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -23,7 +24,7 @@ func NewMemory(log log.Logger) Driver {
 	}
 }
 
-func (b *memoryDriver) Subscribe(name string, topic string) (<-chan Message, error) {
+func (b *memoryDriver) Subscribe(name string, topic string) (<-chan entity.PubsubMessage, error) {
 	if name == "" {
 		return nil, nil
 	}
@@ -31,7 +32,7 @@ func (b *memoryDriver) Subscribe(name string, topic string) (<-chan Message, err
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	ch := make(chan Message, channelBufferSize)
+	ch := make(chan entity.PubsubMessage, channelBufferSize)
 	sub := subscriber{name: name, ch: ch}
 
 	if node, ok := b.topics.Find(topic); ok {
@@ -105,7 +106,7 @@ func (b *memoryDriver) Publish(from string, topic string, kind string, payload a
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	msg := Message{From: from, Topic: topic, Kind: kind, Payload: payload}
+	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
 	sections := strings.Split(topic, "/")
 	for i := range sections {
 		prefix := strings.Join(sections[:i+1], "/")

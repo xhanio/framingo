@@ -10,7 +10,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -364,19 +366,19 @@ func TestStats(t *testing.T) {
 
 func TestStatsHealthcheck(t *testing.T) {
 	t.Run("returns nil when healthy", func(t *testing.T) {
-		s := &Stats{Name: "svc", Initialized: true}
+		s := &entity.ApplicationStats{Name: "svc", Initialized: true}
 		assert.NoError(t, s.Healthcheck())
 	})
 
 	t.Run("reports stopped", func(t *testing.T) {
-		s := &Stats{Name: "svc", Stopped: true}
+		s := &entity.ApplicationStats{Name: "svc", Stopped: true}
 		err := s.Healthcheck()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "stopped")
 	})
 
 	t.Run("reports init error", func(t *testing.T) {
-		s := &Stats{Name: "svc", InitializationErr: fmt.Errorf("init boom")}
+		s := &entity.ApplicationStats{Name: "svc", InitializationErr: fmt.Errorf("init boom")}
 		err := s.Healthcheck()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "init boom")
@@ -384,7 +386,7 @@ func TestStatsHealthcheck(t *testing.T) {
 	})
 
 	t.Run("reports start error", func(t *testing.T) {
-		s := &Stats{Name: "svc", StartErr: fmt.Errorf("start boom")}
+		s := &entity.ApplicationStats{Name: "svc", StartErr: fmt.Errorf("start boom")}
 		err := s.Healthcheck()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "start boom")

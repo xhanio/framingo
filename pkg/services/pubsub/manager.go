@@ -9,8 +9,10 @@ import (
 	"sync/atomic"
 
 	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
@@ -128,7 +130,7 @@ func (m *manager) Subscribe(svc common.Named, topic string) {
 }
 
 // listen reads messages from a subscription channel and dispatches to MessageHandler/RawMessageHandler.
-func (m *manager) listen(svc common.Named, ch <-chan driver.Message) {
+func (m *manager) listen(svc common.Named, ch <-chan entity.PubsubMessage) {
 	defer m.wg.Done()
 	for {
 		select {

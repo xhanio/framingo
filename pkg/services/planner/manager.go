@@ -13,7 +13,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
@@ -34,7 +36,7 @@ type manager struct {
 	tm task.Manager
 
 	sync.RWMutex
-	todos map[string]*TODO
+	todos map[string]*entity.PlannerTODO
 }
 
 func New(es common.MessageSender, opts ...Option) Manager {
@@ -45,7 +47,7 @@ func newManager(es common.MessageSender, opts ...Option) *manager {
 	m := &manager{
 		log:   log.Default,
 		es:    es,
-		todos: make(map[string]*TODO),
+		todos: make(map[string]*entity.PlannerTODO),
 	}
 	m.apply(opts...)
 	m.log = m.log.By(m)
@@ -67,7 +69,7 @@ func (m *manager) Dependencies() []common.Service {
 	return nil
 }
 
-func (m *manager) Add(todo *TODO) error {
+func (m *manager) Add(todo *entity.PlannerTODO) error {
 	if todo.ID == "" {
 		todo.ID = uuid.NewString()
 	}
@@ -115,15 +117,15 @@ func (m *manager) GetResult(id string) (any, error) {
 	return nil, errors.NotFound.Newf("failed to get result of todo %s: todo id not found", id)
 }
 
-func (m *manager) stats(all bool) []*Stats {
-	result := make([]*Stats, 0)
+func (m *manager) stats(all bool) []*entity.PlannerStats {
+	result := make([]*entity.PlannerStats, 0)
 	for _, todo := range m.todos {
 		t := todo.Task.Job
 		if !all && t.State() == job.StateSucceeded {
 			continue
 		}
 		ts := t.Stats()
-		stats := &Stats{
+		stats := &entity.PlannerStats{
 			ID:            ts.ID,
 			State:         ts.State,
 			Progress:      ts.Progress,
@@ -146,14 +148,14 @@ func (m *manager) stats(all bool) []*Stats {
 	return result
 }
 
-func (m *manager) Stats(opts StatsOptions) ([]*Stats, error) {
+func (m *manager) Stats(opts entity.PlannerStatsOptions) ([]*entity.PlannerStats, error) {
 	selector, err := labels.Parse(opts.Selector)
 	if err != nil {
 		return nil, errors.InvalidArgument.Wrap(err)
 	}
 	m.RLock()
 	defer m.RUnlock()
-	var result []*Stats
+	var result []*entity.PlannerStats
 	for _, todo := range m.stats(opts.All) {
 		if selector.Empty() || selector.Matches(todo.Labels) {
 			result = append(result, todo)

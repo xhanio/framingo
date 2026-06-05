@@ -30,8 +30,8 @@ type manager struct {
 
 	dbtype     string
 	source     Source
-	migration  MigrationConfig
-	connection ConnectionConfig
+	migration  migrationConfig
+	connection connectionConfig
 
 	dialector gorm.Dialector
 	ormDB     *gorm.DB

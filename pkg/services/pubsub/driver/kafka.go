@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/segmentio/kafka-go"
 	"github.com/xhanio/errors"
+
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -66,7 +68,7 @@ func NewKafka(brokers []string, groupID string, log log.Logger) (Driver, error) 
 	}, nil
 }
 
-func (b *kafkaDriver) Subscribe(name string, topic string) (<-chan Message, error) {
+func (b *kafkaDriver) Subscribe(name string, topic string) (<-chan entity.PubsubMessage, error) {
 	if name == "" {
 		return nil, nil
 	}
@@ -74,7 +76,7 @@ func (b *kafkaDriver) Subscribe(name string, topic string) (<-chan Message, erro
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	ch := make(chan Message, channelBufferSize)
+	ch := make(chan entity.PubsubMessage, channelBufferSize)
 	sub := subscriber{name: name, ch: ch}
 	b.topics[topic] = append(b.topics[topic], sub)
 
@@ -137,7 +139,7 @@ func (b *kafkaDriver) Unsubscribe(name string, topic string) error {
 func (b *kafkaDriver) Publish(from string, topic string, kind string, payload any) error {
 	// Local delivery
 	b.mu.RLock()
-	msg := Message{From: from, Topic: topic, Kind: kind, Payload: payload}
+	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
 	for subTopic, subs := range b.topics {
 		if topicMatches(subTopic, topic) {
 			for _, sub := range subs {
@@ -236,7 +238,7 @@ func (b *kafkaDriver) handleKafkaMessage(data []byte) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	m := Message{
+	m := entity.PubsubMessage{
 		From:    em.Publisher,
 		Topic:   em.Topic,
 		Kind:    em.Kind,

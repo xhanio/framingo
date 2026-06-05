@@ -40,7 +40,7 @@ func WithDataSource(source Source) Option {
 
 func WithMigration(sqlDir string, version uint) Option {
 	return func(m *manager) {
-		m.migration = MigrationConfig{
+		m.migration = migrationConfig{
 			Directory: sqlDir,
 			Version:   version,
 		}
@@ -61,7 +61,7 @@ func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, maxIdle
 		if execTimeout == 0 {
 			execTimeout = 30 * time.Second
 		}
-		m.connection = ConnectionConfig{
+		m.connection = connectionConfig{
 			MaxOpen:     maxOpen,
 			MaxIdle:     maxIdle,
 			MaxLifetime: maxLifetime,

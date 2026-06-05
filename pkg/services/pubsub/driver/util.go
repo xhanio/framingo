@@ -3,6 +3,8 @@ package driver
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
 const channelBufferSize = 256
@@ -10,7 +12,7 @@ const channelBufferSize = 256
 // subscriber holds a subscriber's name and delivery channel.
 type subscriber struct {
 	name string
-	ch   chan Message
+	ch   chan entity.PubsubMessage
 }
 
 type eventMessage struct {
