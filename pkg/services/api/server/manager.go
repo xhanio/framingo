@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/xhanio/errors"
@@ -55,10 +56,19 @@ func newManager(opts ...Option) *manager {
 	return m
 }
 
+type echoValidator struct {
+	v *validator.Validate
+}
+
+func (ev *echoValidator) Validate(i any) error {
+	return ev.v.Struct(i)
+}
+
 func (m *manager) newEcho() *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
+	e.Validator = &echoValidator{v: validator.New()}
 	return e
 }
 
@@ -77,22 +87,25 @@ func (m *manager) Dependencies() []common.Service {
 	return nil
 }
 
+// Init rebuilds every server's echo instance and re-registers all routes
+// from the persisted handler metadata. Required because net/http forbids
+// reusing a server after Shutdown — on restart we need fresh echos.
 func (m *manager) Init(ctx context.Context) error {
+	for _, s := range m.servers {
+		m.buildEcho(s)
+		for key, h := range s.handlers {
+			g := s.groups[key]
+			if err := m.installHandler(s, g, h); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
-// Add adds a new echo server instance with the given configuration
-func (m *manager) Add(name string, opts ...ServerOption) error {
-	s := &server{
-		name:     name,
-		log:      m.log,
-		groups:   make(map[api.HandlerKey]*api.HandlerGroup),
-		handlers: make(map[api.HandlerKey]*api.Handler),
-	}
-	s.apply(opts...)
-	if s.endpoint == nil {
-		return errors.Newf("server must have a valid endpoint")
-	}
+// buildEcho creates a fresh echo instance for the given server and applies
+// the pre + core middlewares. Replaces any prior s.echo.
+func (m *manager) buildEcho(s *server) {
 	mw := newMiddleware(s)
 	e := m.newEcho()
 	e.HTTPErrorHandler = s.errorHandler
@@ -111,6 +124,21 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	)
 	e.Use(middlewares...)
 	s.echo = e
+}
+
+// Add adds a new echo server instance with the given configuration
+func (m *manager) Add(name string, opts ...ServerOption) error {
+	s := &server{
+		name:     name,
+		log:      m.log,
+		groups:   make(map[api.HandlerKey]*api.HandlerGroup),
+		handlers: make(map[api.HandlerKey]*api.Handler),
+	}
+	s.apply(opts...)
+	if s.endpoint == nil {
+		return errors.Newf("server must have a valid endpoint")
+	}
+	m.buildEcho(s)
 	m.servers[name] = s
 	return nil
 }
@@ -212,55 +240,63 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 			return errors.Newf("server %s not found, please call AddServer first", serverName)
 		}
 
-		// Create echo group with API prefix.
-		// Trim trailing slash so Echo's literal prefix+path concatenation
-		// doesn't produce double slashes (e.g., "/" + "/health" → "//health").
-		prefix := strings.TrimSuffix(path.Join(s.endpoint.Path, g.Prefix), "/")
-		group := s.echo.Group(prefix)
-
-		// Register each handler with middlewares
 		for _, h := range g.Handlers {
-			// Collect middlewares (handler-specific + group-level)
-			mwfuncs, err := m.collectMiddlewares(h, g)
-			if err != nil {
-				return err
-			}
-			// Register route with Echo
 			key := api.NewHandlerKey(g, h)
-			// Normalize root path "/" to "" so the route registers at the
-			// group prefix without a trailing slash. Combined with the
-			// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
-			// resolve to the same handler.
-			routePath := strings.TrimSuffix(h.Path, "/")
-			m.log.Infof("register handler %s %s", h.Method, path.Join(prefix, h.Path))
-
-			var hf echo.HandlerFunc
-			switch h.Method {
-			case api.MethodWS:
-				wsFunc, ok := m.wsHandlerFuncs[key]
-				if !ok {
-					continue
-				}
-				hf = m.wrapWebSocket(wsFunc)
-			default:
-				var ok bool
-				hf, ok = m.handlerFuncs[key]
-				if !ok {
-					continue
-				}
-			}
-
-			switch h.Method {
-			case api.MethodWS:
-				group.Add(http.MethodGet, routePath, hf, mwfuncs...)
-			case api.MethodAny:
-				group.Any(routePath, hf, mwfuncs...)
-			default:
-				group.Add(h.Method, routePath, hf, mwfuncs...)
-			}
 			s.groups[key] = g
 			s.handlers[key] = h
+			if err := m.installHandler(s, g, h); err != nil {
+				return err
+			}
 		}
+	}
+	return nil
+}
+
+// installHandler registers a single handler on the server's echo instance.
+// Used by both RegisterRouters (initial wiring) and Init (rebuild on restart).
+func (m *manager) installHandler(s *server, g *api.HandlerGroup, h *api.Handler) error {
+	// Create echo group with API prefix.
+	// Trim trailing slash so Echo's literal prefix+path concatenation
+	// doesn't produce double slashes (e.g., "/" + "/health" → "//health").
+	prefix := strings.TrimSuffix(path.Join(s.endpoint.Path, g.Prefix), "/")
+	group := s.echo.Group(prefix)
+
+	mwfuncs, err := m.collectMiddlewares(h, g)
+	if err != nil {
+		return err
+	}
+
+	key := api.NewHandlerKey(g, h)
+	// Normalize root path "/" to "" so the route registers at the
+	// group prefix without a trailing slash. Combined with the
+	// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
+	// resolve to the same handler.
+	routePath := strings.TrimSuffix(h.Path, "/")
+	m.log.Infof("register handler %s %s", h.Method, path.Join(prefix, h.Path))
+
+	var hf echo.HandlerFunc
+	switch h.Method {
+	case api.MethodWS:
+		wsFunc, ok := m.wsHandlerFuncs[key]
+		if !ok {
+			return nil
+		}
+		hf = m.wrapWebSocket(wsFunc)
+	default:
+		var ok bool
+		hf, ok = m.handlerFuncs[key]
+		if !ok {
+			return nil
+		}
+	}
+
+	switch h.Method {
+	case api.MethodWS:
+		group.Add(http.MethodGet, routePath, hf, mwfuncs...)
+	case api.MethodAny:
+		group.Any(routePath, hf, mwfuncs...)
+	default:
+		group.Add(h.Method, routePath, hf, mwfuncs...)
 	}
 	return nil
 }
@@ -346,7 +382,9 @@ func (m *manager) RegisterMiddlewares(middlewares ...api.Middleware) error {
 func (m *manager) Start(ctx context.Context) error {
 	for _, s := range m.servers {
 		go func(srv *server) {
-			if err := srv.start(); err != nil {
+			// http.ErrServerClosed is the expected return from echo.Start
+			// after a graceful Shutdown — not an error worth logging.
+			if err := srv.start(); err != nil && err != http.ErrServerClosed {
 				srv.log.Debugf("server %s start error: %v", srv.name, err)
 			}
 		}(s)

@@ -6,8 +6,9 @@ import (
 )
 
 type Manager interface {
-	common.Service
+	// business
+	model.Planner
+	// lifecycle
 	common.Debuggable
 	common.Daemon
-	model.Planner
 }

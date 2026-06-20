@@ -124,6 +124,9 @@ func (c *client) NewRequest(ctx context.Context, request *Request) (*http.Reques
 	if request.ContentType != "" {
 		r.Header.Set("Content-Type", request.ContentType)
 	}
+	if request.Encoding != "" && body != nil {
+		r.Header.Set("Content-Encoding", string(request.Encoding))
+	}
 	return r, nil
 }
 

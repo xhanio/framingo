@@ -1,0 +1,19 @@
+server: http
+prefix: /auth
+handlers:
+  - method: POST
+    path: /login
+    func: Login
+    # throttle:
+    #   rps: 1
+    #   burst_size: 3
+  - method: POST
+    path: /logout
+    func: Logout
+    middlewares:
+      - authnuser
+  - method: GET
+    path: /session
+    func: Session
+    middlewares:
+      - authnuser

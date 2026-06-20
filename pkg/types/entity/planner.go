@@ -8,7 +8,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
-type PlannerTODO struct {
+type Plan struct {
 	ID          string     `json:"id"`
 	Metadata    labels.Set `json:"metadata"`
 	Description string     `json:"description"`

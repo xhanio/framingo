@@ -3,7 +3,6 @@
 
 product: framingo-example
 version: v1.0.0
-project: github.com/xhanio/framingo/example
 
 default:
   binary_src: build/binary
@@ -22,14 +21,15 @@ default:
   kubernetes_tgt: dist/default/kubernetes
 
   binaries:
-    - example-app
+    - exampleapp
+    - examplecli
   images:
     - postgres
-    - example-app
+    - exampleapp
   configs:
-    - example-app
+    - exampleapp
   kubernetes_templates:
-    - example-app
+    - exampleapp
     - postgres
 
 env:
@@ -40,54 +40,28 @@ env:
     config_src: env/local/config
     config_tgt: dist/local/config
 
-    kubernetes_src: env/local/kubernetes
-    kubernetes_tgt: dist/local/kubernetes
-
-  prod:
-    binary_build_env:
-      - CGO_ENABLED=0
-      - GOOS=linux
-      - GOARCH=amd64
-    binary_build_args:
-      - -v
-      - -ldflags
-      - '-s -w'
-      - -ldflags
-      - '-extldflags "-static"'
-
-    config_src: env/prod/config
-    config_tgt: dist/prod/config
-
-    kubernetes_src: env/prod/kubernetes
-    kubernetes_tgt: dist/prod/kubernetes
+    docker_compose_src: env/local/docker-compose
+    docker_compose_tgt: dist/local
 
 build:
   binaries:
-    - name: example-app
-      config_dir: /etc/framingo-example
+    - name: exampleapp
+      config_dir: dist/local/config/exampleapp
+    - name: examplecli
 
   images:
     - name: postgres
       build_from: postgres:16-alpine
-    - name: example-app
+    - name: exampleapp
       base: ubuntu:22.04
 
 generate:
   configs:
-    - name: example-app
+    - name: exampleapp
       files:
         - config.yaml
-        - secret.env
         - migrations/*.sql
 
-  kubernetes:
-    - name: example-app
-      files:
-        - deployment.yaml
-        - service.yaml
-        - configmap.yaml
-    - name: postgres
-      files:
-        - statefulset.yaml
-        - service.yaml
-        - configmap.yaml
+  docker_compose:
+    files:
+      - docker-compose.yaml

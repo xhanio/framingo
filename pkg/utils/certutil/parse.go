@@ -80,7 +80,11 @@ func ParsePEMKey(b []byte, password string) (crypto.PrivateKey, error) {
 func ParseDERKey(der []byte, password string) (crypto.PrivateKey, error) {
 	var _key any
 	var err error
-	_key, err = pkcs8.ParsePKCS8PrivateKey(der, []byte(password))
+	if password != "" {
+		_key, err = pkcs8.ParsePKCS8PrivateKey(der, []byte(password))
+	} else {
+		_key, err = pkcs8.ParsePKCS8PrivateKey(der)
+	}
 	if err != nil {
 		if strings.Contains(err.Error(), "ParseECPrivateKey") {
 			_key, err = x509.ParseECPrivateKey(der)

@@ -3,18 +3,25 @@ package example
 import (
 	"fmt"
 
+	"go.uber.org/zap/zapcore"
+
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/api/server"
-	"github.com/xhanio/framingo/pkg/services/app"
 	"github.com/xhanio/framingo/pkg/services/db"
 	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
+	"github.com/xhanio/framingo/pkg/services/supervisor"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/xhanio/framingo/example/pkg/services/example"
+	"github.com/xhanio/framingo/example/pkg/services/repository"
+	"github.com/xhanio/framingo/example/pkg/services/system/auth"
+	"github.com/xhanio/framingo/example/pkg/services/system/certificate"
+	"github.com/xhanio/framingo/example/pkg/services/system/organization"
+	"github.com/xhanio/framingo/example/pkg/services/system/role"
+	"github.com/xhanio/framingo/example/pkg/services/system/user"
 	"github.com/xhanio/framingo/example/pkg/utils/infra"
 )
 
@@ -31,7 +38,13 @@ func (m *manager) initServices() error {
 	)
 	infra.Debug = (m.log.Level() == zapcore.DebugLevel)
 
-	// init db manager
+	// init service manager
+	m.services = supervisor.New(m.config,
+		supervisor.WithLogger(m.log),
+	)
+
+	/* init infra level services */
+
 	m.db = db.New(
 		db.WithType(m.config.GetString("db.type")),
 		db.WithDataSource(db.Source{
@@ -72,24 +85,49 @@ func (m *manager) initServices() error {
 		db.WithLogger(m.log),
 	)
 
-	// init service manager
-	m.services = app.New(m.config,
-		app.WithLogger(m.log),
-	)
-
-	/* init utility level components */
-
-	/* init system level components */
-
 	m.bus = pubsub.New(
 		driver.NewMemory(m.log),
 		pubsub.WithLogger(m.log),
 	)
 
+	m.repository = repository.New(
+		m.db,
+		repository.WithLogger(m.log),
+	)
+
+	/* init system level services */
+
+	m.user = user.New(
+		m.repository,
+		user.WithLogger(m.log),
+	)
+
+	m.role = role.New(
+		m.repository,
+		role.WithLogger(m.log),
+	)
+
+	m.organization = organization.New(
+		m.repository,
+		organization.WithLogger(m.log),
+	)
+
+	m.certificate = certificate.New(
+		m.repository,
+		certificate.WithLogger(m.log),
+	)
+
+	m.auth = auth.New(
+		m.user,
+		nil, // LDAPAuthN is optional
+		nil, // APITokenAuthN is optional
+		auth.WithLogger(m.log),
+	)
+
 	/* init business level components */
 
 	m.example = example.New(
-		m.db,
+		m.repository,
 		example.WithLogger(m.log),
 	)
 

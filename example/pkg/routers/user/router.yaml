@@ -1,0 +1,29 @@
+server: http
+prefix: /users
+middlewares:
+  - authnuser
+handlers:
+  - method: POST
+    path: /
+    func: Create
+    middlewares:
+      - authz
+  - method: GET
+    path: /
+    func: List
+    middlewares:
+      - authz
+  - method: DELETE
+    path: /
+    func: Delete
+    middlewares:
+      - authz
+  - method: GET
+    path: /:id
+    func: Get
+  - method: PATCH
+    path: /:id
+    func: Update
+  - method: PUT
+    path: /:id/passwords
+    func: ResetPassword

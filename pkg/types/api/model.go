@@ -15,15 +15,15 @@ const (
 	MethodWS  = "WS"
 )
 
-// WebSocketHandlerFunc is a handler for WebSocket connections.
-// The server upgrades the HTTP connection and passes the resulting conn.
-// Returning an error closes the connection with an internal error status.
-type WebSocketHandlerFunc func(c echo.Context, conn *websocket.Conn) error
-
 type Middleware interface {
 	common.Service
 	Func(echo.HandlerFunc) echo.HandlerFunc
 }
+
+// WebSocketHandlerFunc is a handler for WebSocket connections.
+// The server upgrades the HTTP connection and passes the resulting conn.
+// Returning an error closes the connection with an internal error status.
+type WebSocketHandlerFunc func(c echo.Context, conn *websocket.Conn) error
 
 type Router interface {
 	common.Service

@@ -9,7 +9,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 
-	"github.com/xhanio/framingo/example/pkg/services/example"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
 var _ api.Router = (*router)(nil)
@@ -21,10 +21,10 @@ type router struct {
 	name string
 	log  log.Logger
 
-	em example.Manager
+	em model.Example
 }
 
-func New(em example.Manager, log log.Logger) api.Router {
+func New(em model.Example, log log.Logger) api.Router {
 	return &router{
 		em:  em,
 		log: log,

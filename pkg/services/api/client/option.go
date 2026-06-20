@@ -87,3 +87,9 @@ func WithRequestCookies(cookies ...*http.Cookie) RequestOption {
 		r.Cookies = append(r.Cookies, cookies...)
 	}
 }
+
+func WithRequestEncoding(encoding api.Encoding) RequestOption {
+	return func(r *Request) {
+		r.Encoding = encoding
+	}
+}

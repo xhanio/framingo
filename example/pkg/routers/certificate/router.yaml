@@ -1,0 +1,27 @@
+server: http
+prefix: /certificates
+middlewares:
+  - authnuser
+  - authz
+handlers:
+  - method: POST
+    path: /
+    func: Upload
+  - method: GET
+    path: /
+    func: List
+  - method: DELETE
+    path: /
+    func: Delete
+  - method: GET
+    path: /:id
+    func: Get
+  - method: PATCH
+    path: /:id
+    func: Update
+  - method: POST
+    path: /:id/download
+    func: Download
+  - method: POST
+    path: /generate
+    func: Generate

@@ -21,8 +21,9 @@ type migrationConfig struct {
 }
 
 type Manager interface {
-	common.Service
+	// business
+	model.Database
+	// lifecycle
 	common.Initializable
 	common.Debuggable
-	model.DB
 }

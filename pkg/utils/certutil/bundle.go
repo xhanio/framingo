@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/xhanio/errors"
 )
@@ -310,6 +311,9 @@ func (b *bundle) SignClient(req *ClientRequest) (CertBundle, error) {
 }
 
 func (b *bundle) Dump(certFile, keyFile string) error {
+	if err := os.MkdirAll(filepath.Dir(certFile), 0755); err != nil {
+		return errors.Wrap(err)
+	}
 	cf, err := os.Create(certFile)
 	if err != nil {
 		return errors.Wrap(err)
@@ -317,6 +321,9 @@ func (b *bundle) Dump(certFile, keyFile string) error {
 	if _, err := cf.Write(b.CertPEM()); err != nil {
 		ce := cf.Close()
 		return errors.Combine(ce, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(keyFile), 0755); err != nil {
+		return errors.Wrap(err)
 	}
 	kf, err := os.Create(keyFile)
 	if err != nil {

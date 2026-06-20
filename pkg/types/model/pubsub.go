@@ -5,6 +5,7 @@ import (
 )
 
 type Pubsub interface {
+	common.Service
 	common.MessageSender
 	common.RawMessageSender
 

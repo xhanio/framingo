@@ -2,7 +2,7 @@ package orm
 
 import "time"
 
-type Helloworld struct {
+type HelloWorld struct {
 	ID        int64     `gorm:"primaryKey"`
 	Message   string    `gorm:"type:text;not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
@@ -10,6 +10,6 @@ type Helloworld struct {
 }
 
 // TableName specifies the table name for GORM
-func (Helloworld) TableName() string {
+func (HelloWorld) TableName() string {
 	return "helloworld_messages"
 }

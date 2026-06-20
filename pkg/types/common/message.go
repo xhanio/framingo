@@ -7,7 +7,7 @@ type Message interface {
 }
 
 type MessageSender interface {
-	SendMessage(ctx context.Context, from Named, message Message)
+	SendMessage(ctx context.Context, from Named, msg Message)
 }
 
 type RawMessageSender interface {
@@ -15,7 +15,7 @@ type RawMessageSender interface {
 }
 
 type MessageHandler interface {
-	HandleMessage(ctx context.Context, e Message) error
+	HandleMessage(ctx context.Context, msg Message) error
 }
 
 type RawMessageHandler interface {

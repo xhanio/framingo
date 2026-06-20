@@ -1,5 +1,5 @@
 package api
 
-type CreateHelloworldMessage struct {
+type CreateHelloWorldMessage struct {
 	Message string `json:"message" form:"message" query:"message" validate:"required"`
 }

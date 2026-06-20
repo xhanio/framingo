@@ -1,0 +1,24 @@
+server: http
+prefix: /roles
+middlewares:
+  - authnuser
+  - authz
+handlers:
+  - method: POST
+    path: /
+    func: Create
+  - method: GET
+    path: /
+    func: List
+  - method: DELETE
+    path: /:id
+    func: Delete
+  - method: PATCH
+    path: /:id
+    func: Update
+  - method: GET
+    path: /:id/permissions
+    func: ListPermissions
+  - method: PUT
+    path: /:id/permissions
+    func: SetPermissions

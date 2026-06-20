@@ -1,16 +1,16 @@
 package example
 
 import (
-	"context"
-
-	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/types/common"
+
+	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
 type Manager interface {
-	common.Service
+	// business.go
+	model.Example
+	// lifecycle.go
 	common.Initializable
 	common.Debuggable
 	common.Daemon
-	HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error)
 }

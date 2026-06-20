@@ -2,6 +2,12 @@ package api
 
 import "github.com/xhanio/framingo/pkg/types/common"
 
+type Encoding string
+
+const (
+	EncodingDeflate Encoding = "deflate"
+)
+
 const (
 	ContextKeyRequestInfo  = common.ContextKeyAPIRequestInfo
 	ContextKeyResponseInfo = common.ContextKeyAPIResponseInfo
@@ -27,6 +33,6 @@ const (
 	QueryParamJob     = "job"
 
 	LabelKeySession   = "session"
-	LabelKeyNamespace = "namespace"
+	LabelKeyNamespace = "organization"
 	LabelKeyUsername  = "username"
 )

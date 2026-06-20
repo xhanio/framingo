@@ -1,11 +1,13 @@
 package model
 
 import (
+	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
 type Planner interface {
-	Add(todo *entity.PlannerTODO) error
+	common.Service
+	Add(todo *entity.Plan) error
 	Cancel(id string) error
 	Delete(id string, force bool) error
 	GetResult(id string) (any, error)

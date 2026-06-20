@@ -2,7 +2,7 @@ package entity
 
 import "time"
 
-type Helloworld struct {
+type HelloWorld struct {
 	ID        int64     `json:"id"`
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at"`
