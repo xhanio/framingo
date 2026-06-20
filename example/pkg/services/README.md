@@ -1,209 +1,92 @@
-# Example Service
+# Services
 
-This directory contains an example service implementation demonstrating the Framingo service architecture and patterns.
+This directory contains all service implementations for the example application. Services are organized into three layers, each with a single, well-defined responsibility.
 
-## Overview
-
-The `example` service is a minimal implementation showcasing how to create a service using the Framingo framework. It implements the core service interfaces and provides a simple "Hello World" functionality.
-
-## Structure
+## Layered Architecture
 
 ```
-example/
-├── manager.go    # Service manager implementation
-├── model.go      # Interface definitions
-└── option.go     # Configuration options
+example/         business logic (HelloWorld)
+system/*         business logic for cross-cutting concerns
+                 (auth, user, role, organization, certificate)
+        ↓
+repository/      data access; gorm-backed implementations
+                 of per-domain repo interfaces
+        ↓
+framework db.Manager (pkg/services/db) → gorm.DB → driver
 ```
 
-## Files
+Dependency rules:
 
-### [manager.go](manager.go)
+- **`repository/`** depends only on the framework `db.Manager`. No business logic, no validation, no HTTP concerns — just queries, transactions, and gorm error mapping.
+- **`system/*`** depends on `repository.Repository` (and on other system services where noted). Business code never calls `m.db.FromContext(ctx)` or touches gorm directly.
+- **`example/`** depends on `repository.Repository`. Application-level business services may additionally depend on `system/*` services as needed.
 
-Contains the main service manager implementation (`manager` struct) and implements:
-- `Manager` interface from [model.go](model.go)
-- Service lifecycle methods: `Init()`, `Start()`, `Stop()`
-- Core functionality: `HelloWorld()` method
+## Repository Layer ([repository/](repository/))
 
-The `HelloWorld` method demonstrates a simple business operation that saves data to the database:
-```go
-func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error) {
-    m.log.Info("hello world!")
+A single `Repository` interface ([model.go](repository/model.go)) embeds per-domain interfaces declared under [`pkg/types/repo/`](../types/repo/):
 
-    // Create ORM model for database operation
-    ormModel := &orm.Helloworld{
-        Message: message,
-    }
+| File | Domain |
+|------|--------|
+| [user.go](repository/user.go) | Users + contacts |
+| [role.go](repository/role.go) | Roles + permissions |
+| [organization.go](repository/organization.go) | Organizations / tenants |
+| [certificate.go](repository/certificate.go) | Certificates |
+| [example.go](repository/example.go) | Helloworld (example) |
 
-    // Save to database
-    if err := m.db.FromContext(ctx).Create(ormModel).Error; err != nil {
-        return nil, errors.Wrap(err)
-    }
+`New(db model.Database, opts ...Option) Repository` — depends on the framework `db.Manager`. Also exposes `Transaction(ctx, fn, opts...)` for service-side transaction boundaries.
 
-    // Convert ORM to entity for return
-    result := &entity.Helloworld{
-        ID:        ormModel.ID,
-        Message:   ormModel.Message,
-        CreatedAt: ormModel.CreatedAt,
-        UpdatedAt: ormModel.UpdatedAt,
-    }
+## System Services ([system/](system/))
 
-    return result, nil
-}
+Cross-cutting business services. Each follows the same per-service file pattern:
+
+```
+<service>/
+├── manager.go    # struct, New(...), Name(), Dependencies()
+├── lifecycle.go  # Init / Start / Stop / message handlers
+├── business.go   # interface methods — validation + repo calls + entity conversion
+├── model.go      # Manager interface (composes model.* + common.*)
+├── option.go     # functional options (WithLogger, ...)
+└── util.go       # internal helpers (some services)
 ```
 
-### [model.go](model.go)
+The `Manager` interface for each service is composed of a business interface from [`pkg/types/model/`](../types/model/) plus the relevant `common.*` lifecycle interfaces.
 
-Defines the `Manager` interface which extends:
-- `common.Service` - Basic service interface ([`service.go`](../../../pkg/types/common/service.go))
-- `common.Initializable` - Initialization support ([`service.go`](../../../pkg/types/common/service.go))
-- `common.Debuggable` - Debug information support ([`service.go`](../../../pkg/types/common/service.go))
-- `common.Daemon` - Daemon lifecycle management ([`service.go`](../../../pkg/types/common/service.go))
+| Service | Purpose | `New(...)` dependencies |
+|---------|---------|-------------------------|
+| [auth/](system/auth/) | Login / sessions, user + LDAP + API token authentication, session lookup and refresh | `model.UserAuthN`, `model.LDAPAuthN`, `model.APITokenAuthN` (latter two optional) |
+| [user/](system/user/) | User CRUD, password management, contacts; also implements `model.UserAuthN` consumed by `auth` | `repository.Repository` |
+| [role/](system/role/) | RBAC roles and permissions | `repository.Repository` |
+| [organization/](system/organization/) | Organization / tenant model | `repository.Repository` |
+| [certificate/](system/certificate/) | Certificate issuance and management | `repository.Repository` |
 
-Custom methods:
-- `HelloWorld(ctx context.Context, message string) (*entity.Helloworld, error)` - Example business logic that accepts a message string and returns a Helloworld entity
+`user/` and `role/` ship with `manager_test.go` covering the business layer against a mock repository.
 
-### [option.go](option.go)
+## Example Service ([example/](example/))
 
-Provides functional options for service configuration:
-- `WithLogger(logger log.Logger)` - Configure custom logger
-- `WithDynamicConfig(greeting string)` - Configure greeting from dynamic config
+The `example` service demonstrates the full pattern end-to-end on a single `Helloworld` entity. It uses the same `manager.go` / `lifecycle.go` / `business.go` / `model.go` / `option.go` layout as the system services and delegates persistence to `repository.Repository`.
 
-Options are applied using the `apply()` pattern, which enables re-application during restart.
+`New(repo repository.Repository, opts ...Option) Manager`
 
-**Note**: The database dependency is now a required parameter in the `New()` function rather than an optional configuration.
+See [example/README.md](example/README.md) for the full walkthrough — service construction, lifecycle, option patterns, entity vs. ORM type separation, and the end-to-end repository pattern (service-side validation + repo-side gorm error mapping + service-spanning transactions).
 
-## Type Separation
+## Conventions
 
-The service uses different type structures for different purposes:
+Business code (`business.go` in `system/*` and `example/`):
 
-### Entity Type ([pkg/types/entity](../types/entity/example.go))
-Used for business logic and API responses:
-```go
-type Helloworld struct {
-    ID        int64     `json:"id"`
-    Message   string    `json:"message"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
-}
-```
+- Validate inputs, call the repo, convert ORM → entity.
+- No `m.db.FromContext`, no `tx.Transaction`, no gorm types.
+- The one exception: wrap multi-repo atomic operations with `m.db.Transaction(ctx, func(_ctx context.Context) error { ... })`.
 
-### ORM Type ([pkg/types/orm](../types/orm/example.go))
-Used for database operations:
-```go
-type Helloworld struct {
-    ID        int64     `gorm:"primaryKey"`
-    Message   string    `gorm:"type:text;not null"`
-    CreatedAt time.Time `gorm:"autoCreateTime"`
-    UpdatedAt time.Time `gorm:"autoUpdateTime"`
-}
-```
+Repository code (`repository/*.go`):
 
-See [pkg/types/README.md](../types/README.md) for more details on type separation.
-
-## Usage
-
-### Creating a Service Instance
-
-```go
-import (
-    "github.com/xhanio/framingo/example/pkg/services/example"
-    "github.com/xhanio/framingo/pkg/services/db"
-)
-
-// Database is a required dependency
-dbManager := db.New(/* db options */)
-
-// Create with default logger
-svc := example.New(dbManager)
-
-// Create with custom logger
-svc := example.New(
-    dbManager,
-    example.WithLogger(customLogger),
-)
-```
-
-### Service Lifecycle
-
-```go
-// Initialize the service (config propagated via context)
-if err := svc.Init(ctx); err != nil {
-    log.Fatal(err)
-}
-
-// Start the service
-ctx := context.Background()
-if err := svc.Start(ctx); err != nil {
-    log.Fatal(err)
-}
-
-// Use the service
-result, err := svc.HelloWorld(ctx, "Hello, Framingo!")
-if err != nil {
-    log.Error(err)
-}
-fmt.Printf("Message: %s\n", result.Message) // Output: Message: Hello, Framingo!
-
-// Stop the service (with wait)
-if err := svc.Stop(true); err != nil {
-    log.Error(err)
-}
-```
-
-## Key Features
-
-- **Lifecycle Management**: Implements standard `Init(ctx)`/`Start(ctx)`/`Stop(wait)` pattern
-- **Dynamic Configuration**: Reads config from context during `Init(ctx)` via `confutil.FromContext(ctx)`
-- **Context Support**: Proper context handling for cancellation
-- **Goroutine Safety**: Uses WaitGroup for graceful shutdown
-- **Logging**: Integrated logging support with customizable logger
-- **Service Discovery**: Automatic service name detection using reflection
-- **apply() Pattern**: Options can be re-applied during restart for dynamic reconfiguration
-
-## Implementation Details
-
-### Service Name
-
-The service name is automatically derived from the package path using reflection:
-```go
-func (m *manager) Name() string {
-    if m.name == "" {
-        m.name = path.Join(reflectutil.Locate(m))
-    }
-    return m.name
-}
-```
-
-### Dependencies
-
-The example service depends on the database manager:
-```go
-func (m *manager) Dependencies() []common.Service {
-    return []common.Service{m.db}
-}
-```
-
-The database dependency is injected through the constructor to ensure it's always available.
-
-### Graceful Shutdown
-
-The service properly handles shutdown by:
-1. Listening for context cancellation
-2. Using WaitGroup to track running goroutines
-3. Providing optional blocking wait during `Stop()`
-
-## Extending This Example
-
-To create a new service based on this example:
-
-1. Copy the `example` directory to a new service name
-2. Update package name and interface methods in [model.go](model.go)
-3. Implement business logic in [manager.go](manager.go)
-4. Add configuration options in [option.go](option.go)
-5. Add dependencies in `Dependencies()` method if needed
-6. Implement actual work in the `Start()` goroutine
+- Public methods take `context.Context`; private helpers take `tx *gorm.DB`.
+- Wrap multi-step writes in `tx.Transaction(...)`.
+- Map gorm errors: `gorm.ErrRecordNotFound` → `errors.NotFound`, `gorm.ErrDuplicatedKey` → `errors.AlreadyExist`, default → `errors.DBFailed`.
+- Always return errors via `errors.Wrap` / `errors.Wrapf`.
 
 ## See Also
 
-- [Framingo Service Architecture](../../../pkg/types/common/)
-- [Common Service Interfaces](../../../pkg/types/common/service.go)
+- [Framework service interfaces](../../../pkg/types/common/service.go)
+- [Business interfaces](../types/model/) — `model.User`, `model.Role`, `model.Auth`, ...
+- [Repository interfaces](../types/repo/) — per-domain contracts
+- [Entity / ORM type separation](../types/README.md)

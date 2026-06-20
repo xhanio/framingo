@@ -32,22 +32,53 @@ When building a new Framingo application, organize your code into these key dire
 
 ```
 example/
++-- build/              # Build inputs (binary main.go + Dockerfiles)
+|   +-- binary/
+|   |   +-- exampleapp/     # Server daemon entry point (main.go)
+|   |   +-- examplecli/     # CLI client entry point (main.go)
+|   +-- image/
+|       +-- exampleapp/     # Dockerfile for the server
++-- env/local/          # Local deployment assets (config, k8s manifests, migrations)
 +-- pkg/                # Application packages
-|   +-- components/     # Application components (CLI & server orchestration)
-|   |   +-- cmd/        # CLI interface using Cobra - entry point and command definitions
-|   |   |   +-- example/    # Command implementations (daemon, version, etc.)
-|   |   +-- server/     # Server component - wires services, routers, and middlewares together
-|   |       +-- example/    # Server orchestration and lifecycle management
-|   +-- services/       # Business logic layer - core application functionality
-|   |   +-- example/    # Example: domain services with Init/Start/Stop lifecycle
-|   +-- routers/        # HTTP routing layer - API endpoint handlers
-|   |   +-- example/    # Example: request handlers mapped to routes via YAML config
-|   +-- middlewares/    # HTTP middleware layer - request/response processing
-|   |   +-- example/    # Example: authentication, compression, validation, etc.
+|   +-- components/     # Application components (CLI, server, client SDK)
+|   |   +-- cmd/        # Cobra CLI entry points
+|   |   |   +-- app/        # Server commands (daemon, version)
+|   |   |   +-- cli/        # Client commands (login, logout, helloworld, cert gen)
+|   |   +-- server/         # Server orchestration: wires services, routers, middlewares
+|   |   |   +-- example/    # The exampleapp server manager
+|   |   +-- client/         # Go client SDK for talking to the server
+|   |       +-- example/    # Typed client with credential persistence
+|   +-- services/       # Business logic layer (lifecycle-managed services)
+|   |   +-- example/        # Intro/demo service (helloworld)
+|   |   +-- system/         # Production system services (one package per domain)
+|   |   |   +-- auth/           # Authentication (local + LDAP + API token); session store
+|   |   |   +-- user/           # User CRUD, password reset
+|   |   |   +-- role/           # Roles and RBAC permission lookup
+|   |   |   +-- organization/   # Organization management
+|   |   |   +-- certificate/    # CA + certificate issuance / storage
+|   |   +-- repository/     # Per-domain DB layer (gorm); owns transactions
+|   +-- routers/        # HTTP routing layer (one package per resource)
+|   |   +-- example/        # /example/helloworld
+|   |   +-- auth/           # /auth (login, logout, session)
+|   |   +-- user/           # /users
+|   |   +-- role/           # /roles + permissions
+|   |   +-- certificate/    # /certificates (upload, download, generate)
+|   +-- middlewares/    # HTTP middleware layer
+|   |   +-- authnuser/      # Session/API-token authentication for users
+|   |   +-- authnagent/     # Mutual-TLS client-cert authentication for agents
+|   |   +-- authz/          # RBAC authorization on method+path
+|   |   +-- deflate/        # Decompress deflate-encoded request bodies
+|   |   +-- feature/        # Feature/license gating per handler permission
 |   +-- types/          # Type definitions - data models and interfaces
-|   |   +-- api/        # API request/response types with validation
+|   |   +-- api/        # API request/response types; echo<->context bridge (context.go)
 |   |   +-- entity/     # Business entities (pure domain models)
 |   |   +-- orm/        # ORM models for database operations
+|   |   +-- repo/       # Repository interfaces (one file per domain)
+|   |   +-- model/      # Service-level business interfaces
+|   |   +-- message/    # pubsub message payloads
+|   |   +-- preset/     # Default IDs, names, expiration constants
+|   |   +-- rbac/       # Permission and feature catalogs
+|   |   +-- infra/      # Misc infra types
 |   +-- utils/          # Utility modules - helper functions and infrastructure
 |       +-- infra/      # Infrastructure utilities (signals, profiling, etc.)
 +-- README.md           # This file
@@ -55,11 +86,12 @@ example/
 
 **Key Directory Purposes:**
 
-- **`components/`** - Application entry points and orchestration. The `cmd/` provides CLI interface, while `server/` initializes and manages all services.
-- **`services/`** - Your business logic lives here. Services have lifecycle management (Init/Start/Stop) and dependency injection.
-- **`routers/`** - Define HTTP endpoints and handlers. Each router maps routes to handler functions via YAML configuration.
-- **`middlewares/`** - Process requests before they reach handlers (auth, validation, logging, compression, etc.).
-- **`types/`** - Shared data structures separated by purpose: `api/` for request/response types, `entity/` for business models, `orm/` for database models.
+- **`components/cmd/`** - Two cobra entry points: `app/` for the server daemon (built as `exampleapp`) and `cli/` for the client (built as `examplecli`). `components/server/example/` owns server orchestration; `components/client/example/` is the Go SDK consumed by the CLI and by external integrators.
+- **`services/`** - Lifecycle-managed business logic (Init/Start/Stop, dependency injection via supervisor). Production code lives under `services/system/` and is split per package into `manager.go` (constructor + struct), `lifecycle.go` (`Init`/`Start`/`Stop`/`Dependencies`), `business.go` (domain methods, DB-free), plus `model.go`/`option.go`.
+- **`services/repository/`** - Single repository service implementing one file per domain (`user.go`, `role.go`, `organization.go`, `certificate.go`, `example.go`); owns all `gorm.DB` access, transactions, and gorm-error categorization. System services depend on the repository, not on `db.Manager` directly.
+- **`routers/`** - HTTP endpoints. Each package pairs a `router.yaml` (server, prefix, per-handler method/path/middlewares) with a `handler.go` that returns `func(api.Context) error`. `router.go` exposes the handler set via reflection.
+- **`middlewares/`** - Request processing. Mixed framework-style: `authnuser`/`authnagent` authenticate, `authz` checks RBAC, `deflate` decompresses request bodies, `feature` gates on license/feature flags.
+- **`types/`** - Shared data structures separated by purpose: `api/` for HTTP request/response types and the `api.Context` bridge, `entity/` for business models, `orm/` for database models, `repo/` for repository interfaces, `model/` for service interfaces, plus `preset`, `rbac`, `message`, `infra` constants.
 - **`utils/`** - Reusable helper functions and infrastructure code that doesn't fit in services.
 
 ## Framework Modules
@@ -72,7 +104,7 @@ Production-ready service implementations that provide core functionality:
 
 - **[api/server](../pkg/services/api/server/)** - HTTP API server with Echo framework integration, middleware support, and route management
 - **[api/client](../pkg/services/api/client/)** - HTTP client utilities for making API requests
-- **[app](../pkg/services/app/)** - Service lifecycle management with dependency resolution, health monitoring, signal handling, and auto-restart
+- **[supervisor](../pkg/services/supervisor/)** - Service lifecycle management with dependency resolution, health monitoring, signal handling, and runtime restart (`RestartService(ctx, name)`)
 - **[db](../pkg/services/db/)** - Database manager with GORM integration, connection pooling, and migration support
 - **[planner](../pkg/services/planner/)** - Task scheduling and planning service
 - **[pubsub](../pkg/services/pubsub/)** - Publish-subscribe messaging pattern implementation
@@ -131,11 +163,11 @@ import (
     "fmt"
     "os"
 
-    "github.com/xhanio/framingo/example/pkg/components/cmd/example"
+    "github.com/xhanio/framingo/example/pkg/components/cmd/app"
 )
 
 func main() {
-    rootCmd := example.NewRootCmd()
+    rootCmd := app.NewRootCmd()
     if err := rootCmd.Execute(); err != nil {
         fmt.Fprintf(os.Stderr, "Error: %v\n", err)
         os.Exit(1)
@@ -353,40 +385,41 @@ type Manager interface {
 ```
 
 ```go
-// services/user/manager.go
+// services/user/manager.go — business layer (no DB calls)
 package user
 
 import (
+    "github.com/xhanio/framingo/example/pkg/services/repository"
     "github.com/xhanio/framingo/example/pkg/types/entity"
-    "github.com/xhanio/framingo/example/pkg/types/orm"
-    "github.com/xhanio/framingo/pkg/services/db"
+    "github.com/xhanio/framingo/pkg/types/model"
 )
 
 type manager struct {
-    log log.Logger
-    db  db.Manager
+    log        log.Logger
+    repository repository.Repository   // all DB access (and Transaction) goes through here
 }
 
-// Required dependencies as constructor arguments
-func New(database db.Manager, opts ...Option) Manager {
-    m := &manager{db: database}
+func New(repo repository.Repository, opts ...Option) Manager {
+    m := &manager{repository: repo}
     m.apply(opts...)
     return m
 }
 
+func (m *manager) Dependencies() []common.Service {
+    return []common.Service{m.repository}
+}
+
 func (m *manager) CreateUser(ctx context.Context, username, email string) (*entity.User, error) {
-    // Create ORM model for database
-    ormUser := &orm.User{
+    if username == "" {
+        return nil, errors.InvalidArgument.Newf("username cannot be empty")
+    }
+    ormUser, err := m.repository.CreateUser(ctx, entity.UserCreateOptions{
         Username: username,
         Email:    email,
-    }
-
-    // Save to database
-    if err := m.db.FromContext(ctx).Create(ormUser).Error; err != nil {
+    })
+    if err != nil {
         return nil, errors.Wrap(err)
     }
-
-    // Convert to entity for return
     return &entity.User{
         ID:       ormUser.ID,
         Username: ormUser.Username,
@@ -395,23 +428,46 @@ func (m *manager) CreateUser(ctx context.Context, username, email string) (*enti
 }
 ```
 
-**Learn more:** [Service Documentation](pkg/services/README.md)
+```go
+// services/repository/user.go — repo layer (owns gorm)
+func (m *manager) CreateUser(ctx context.Context, opts entity.UserCreateOptions) (*orm.User, error) {
+    tx := m.db.FromContext(ctx)
+    ormUser := &orm.User{Username: opts.Username, Email: opts.Email}
+    if err := tx.Create(ormUser).Error; err != nil {
+        switch err {
+        case gorm.ErrDuplicatedKey:
+            return nil, errors.AlreadyExist.Wrapf(err, "user %s already exists", opts.Username)
+        default:
+            return nil, errors.DBFailed.Wrap(err)
+        }
+    }
+    return ormUser, nil
+}
+```
+
+The matching interface lives in [`pkg/types/repo/user.go`](pkg/types/repo/user.go) and is embedded into [`repository.Repository`](pkg/services/repository/model.go).
+
+**Learn more:** [Service Documentation](pkg/services/README.md) · [Repository pattern](pkg/services/README.md#repository-pattern)
 
 ### Step 3: Create a Router
 
 Routers define HTTP endpoints and handlers.
 
-```go
-// routers/user/router.yaml
+```yaml
+# routers/user/router.yaml
 server: http
 prefix: /users
+middlewares:
+  - authnuser            # apply to every handler in this group
 handlers:
   - method: GET
     path: /:id
-    func: GetUser
+    func: Get            # name matches the method in handler.go
   - method: POST
     path: /
-    func: CreateUser
+    func: Create
+    middlewares:
+      - authz            # per-handler middleware (in addition to group)
 ```
 
 ```go
@@ -420,52 +476,59 @@ package user
 
 import (
     "net/http"
-    "strconv"
 
-    "github.com/labstack/echo/v4"
     "github.com/xhanio/errors"
-    "github.com/xhanio/framingo/example/pkg/services/user"
+    "github.com/xhanio/framingo/example/pkg/services/system/user"
     "github.com/xhanio/framingo/example/pkg/types/api"
 )
 
 type router struct {
-    userService user.Manager
+    um user.Manager
 }
 
-func (r *router) GetUser(c echo.Context) error {
-    id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-    if err != nil {
-        return errors.BadRequest.Newf("invalid user id: %v", err)
+// Handlers using api.Context can pass `c` directly as the context.Context
+// to service methods — credential/session set by authn middleware flow through.
+func (r *router) Get(c api.Context) error {
+    var id int32
+    if err := c.BindPath().MustInt32("id", &id).BindError(); err != nil {
+        return errors.BadRequest.Wrap(err)
     }
-
-    user, err := r.userService.GetUser(c.Request().Context(), id)
+    u, err := r.um.Get(c, id)
     if err != nil {
         return errors.Wrap(err)
     }
-    return c.JSON(http.StatusOK, user)
+    return c.JSON(http.StatusOK, u)
 }
 
-func (r *router) CreateUser(c echo.Context) error {
-    // Parse and validate API request
-    var req api.CreateUserRequest
-    if err := c.Bind(&req); err != nil {
-        return errors.BadRequest.Newf("invalid request: %v", err)
+func (r *router) Create(c api.Context) error {
+    var body api.UserCreateBody
+    if err := c.Bind(&body); err != nil {
+        return errors.BadRequest.Wrap(err)
     }
-    if err := c.Validate(&req); err != nil {
+    if err := c.Validate(&body); err != nil {
         return errors.Wrap(err)
     }
-
-    // Call service (returns entity)
-    user, err := r.userService.CreateUser(c.Request().Context(), req.Username, req.Email)
+    u, err := r.um.Create(c, entity.UserCreateOptions{
+        Username: body.Username,
+        Email:    body.Email,
+    })
     if err != nil {
         return errors.Wrap(err)
     }
-
-    return c.JSON(http.StatusCreated, user)
+    return c.JSON(http.StatusCreated, api.UserCreateResponse{UserID: u.ID})
 }
 ```
 
 **Learn more:** [Router Documentation](pkg/routers/README.md)
+
+#### The `api.Context` bridge
+
+Handlers prefer `func(api.Context) error` (see [`pkg/types/api/context.go`](pkg/types/api/context.go)) over the raw `echo.Context`. `api.Context` embeds both `echo.Context` and `context.Context`, exposing `Value(key)` against `echo.Context.Get`, plus typed helpers:
+
+- `Credential()` / `Session()` / `TraceID()` pull values that authn middleware put on the context
+- `BindQuery()` / `BindPath()` / `BindForm()` return `echo.ValueBinder` for typed param parsing
+
+Because it satisfies `context.Context`, the handler can pass `c` directly to services (`r.um.Get(c, id)`) and any value `c.Set(...)` puts on the request — credential, session, trace id — flows through into service calls and repo queries without an extra wrapper. `router.Handlers()` discovers both `func(echo.Context) error` and `func(api.Context) error` and wraps the latter with `api.WrapHandler`.
 
 ### Step 4: Create Middleware (Optional)
 
@@ -496,14 +559,20 @@ Update the server component to register your services, routers, and middlewares.
 // components/server/example/api.go
 func (m *manager) initAPI() error {
     middlewares := []api.Middleware{
-        authmw.New(),
+        deflate.New(),
+        authnuser.New(m.auth, m.role),
+        authz.New(m.role),
     }
-
     routers := []api.Router{
-        user.New(m.userService, m.log),
+        exampleRouter.New(m.example, m.log),
+        authRouter.New(m.auth, m.log),
+        userRouter.New(m.user, m.role, m.auth, m.log),
+        roleRouter.New(m.role, m.log),
+        certRouter.New(m.certificate, m.log),
     }
-
-    m.api.RegisterMiddlewares(middlewares...)
+    if err := m.api.RegisterMiddlewares(middlewares...); err != nil {
+        return errors.Wrap(err)
+    }
     return m.api.RegisterRouters(routers...)
 }
 ```
@@ -514,18 +583,17 @@ func (m *manager) Init(ctx context.Context) error {
     // ... (logger, db setup)
 
     // Initialize service controller (requires *viper.Viper for config propagation)
-    m.services = app.New(m.config, app.WithLogger(m.log))
+    m.services = supervisor.New(m.config, supervisor.WithLogger(m.log))
 
-    // Initialize your services (required dependencies as constructor args)
-    m.userService = user.New(
-        m.db,  // Required dependency
-        user.WithLogger(m.log),  // Optional configuration
-    )
+    // Repository owns gorm; system services depend on it instead of db.Manager directly
+    m.repository = repository.New(m.db, repository.WithLogger(m.log))
+    m.user = user.New(m.repository, user.WithLogger(m.log))
 
     // Register services
     m.services.Register(
         m.db,
-        m.userService,
+        m.repository,
+        m.user,
     )
 
     // Resolve dependencies via topological sort
@@ -575,7 +643,7 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 
 **Documentation**: [pkg/services/README.md](pkg/services/README.md)
 
-**Example**: [pkg/services/example/](pkg/services/example/)
+**Examples**: [services/example](pkg/services/example/) (intro), [services/system/*](pkg/services/system/) (production: auth, user, role, organization, certificate), [services/repository](pkg/services/repository/) (DB layer)
 
 ### Routers Layer
 
@@ -589,7 +657,7 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 
 **Documentation**: [pkg/routers/README.md](pkg/routers/README.md)
 
-**Example**: [pkg/routers/example/](pkg/routers/example/)
+**Examples**: [example](pkg/routers/example/), [auth](pkg/routers/auth/), [user](pkg/routers/user/), [role](pkg/routers/role/), [certificate](pkg/routers/certificate/)
 
 ### Middlewares Layer
 
@@ -603,7 +671,7 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 
 **Documentation**: [pkg/middlewares/README.md](pkg/middlewares/README.md)
 
-**Example**: [pkg/middlewares/example/](pkg/middlewares/example/)
+**Examples**: [authnuser](pkg/middlewares/authnuser/), [authnagent](pkg/middlewares/authnagent/), [authz](pkg/middlewares/authz/), [deflate](pkg/middlewares/deflate/), [feature](pkg/middlewares/feature/)
 
 ### Server Component
 
@@ -635,7 +703,7 @@ go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0" \
 
 **Documentation**: [pkg/components/cmd/README.md](pkg/components/cmd/README.md)
 
-**Example**: [pkg/components/cmd/example/](pkg/components/cmd/example/)
+**Examples**: [cmd/app/](pkg/components/cmd/app/) (server: daemon, version), [cmd/cli/](pkg/components/cmd/cli/) (client: login, logout, helloworld, cert gen)
 
 ## Development Workflow
 
@@ -854,7 +922,7 @@ export FRAMINGO_API_HTTP_PORT=8080
 
 ### Configuration
 
-1. **Use instance-based Viper**: Avoid the global singleton; pass `*viper.Viper` to the app manager
+1. **Use instance-based Viper**: Avoid the global singleton; pass `*viper.Viper` to the supervisor
 2. **Use YAML for structure**: Define server config, DB settings in YAML
 3. **Use env vars for secrets**: Override sensitive data via environment variables
 4. **Enable WatchConfig()**: Support hot-reload for dynamic configuration
@@ -887,25 +955,39 @@ export FRAMINGO_API_HTTP_PORT=8080
 
 ### Adding Database Support
 
-Use ORM types for database operations and convert to entities:
+Production services keep `business.go` free of GORM. Declare a domain interface under [`pkg/types/repo/`](pkg/types/repo/), implement it under [`pkg/services/repository/`](pkg/services/repository/), and have the service delegate.
 
 ```go
-// In service
-type manager struct {
-    db db.Manager
+// pkg/types/repo/user.go — the contract
+type User interface {
+    GetUser(ctx context.Context, id int64) (*orm.User, error)
 }
+```
 
-func (m *manager) GetUser(ctx context.Context, id int64) (*entity.User, error) {
-    // Query using ORM type
+```go
+// pkg/services/repository/user.go — the gorm implementation
+func (m *manager) GetUser(ctx context.Context, id int64) (*orm.User, error) {
+    tx := m.db.FromContext(ctx)
     var ormUser orm.User
-    err := m.db.FromContext(ctx).
-        Where("id = ?", id).
-        First(&ormUser).Error
+    if err := tx.Where("id = ?", id).First(&ormUser).Error; err != nil {
+        switch err {
+        case gorm.ErrRecordNotFound:
+            return nil, errors.NotFound.Wrapf(err, "user %d not found", id)
+        default:
+            return nil, errors.DBFailed.Wrap(err)
+        }
+    }
+    return &ormUser, nil
+}
+```
+
+```go
+// pkg/services/system/user/business.go — DB-free
+func (m *manager) GetUser(ctx context.Context, id int64) (*entity.User, error) {
+    ormUser, err := m.repository.GetUser(ctx, id)
     if err != nil {
         return nil, errors.Wrap(err)
     }
-
-    // Convert ORM to entity
     return &entity.User{
         ID:       ormUser.ID,
         Username: ormUser.Username,
@@ -913,6 +995,19 @@ func (m *manager) GetUser(ctx context.Context, id int64) (*entity.User, error) {
     }, nil
 }
 ```
+
+Wire it up by embedding the interface into [`repository.Repository`](pkg/services/repository/model.go):
+
+```go
+type Repository interface {
+    repo.User
+    repo.Organization
+    repo.Role
+    repo.Certificate
+}
+```
+
+When business logic needs to span multiple repo calls atomically (e.g. fetch-verify-update), wrap them with `m.db.Transaction(ctx, func(_ctx context.Context) error { ... })` in the service — that is the only DB-related call that may appear in business code.
 
 ### Adding Authentication Middleware
 
@@ -996,7 +1091,7 @@ server: admin   # Target admin server
 
 - [Framingo Core](../pkg/)
 - [API Server](../pkg/services/api/server/)
-- [Service Controller](../pkg/services/app/)
+- [Service Controller](../pkg/services/supervisor/)
 - [Database Manager](../pkg/services/db/)
 
 ### External Libraries

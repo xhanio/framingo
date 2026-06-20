@@ -1,76 +1,102 @@
-# Example Middleware
+# Example Middlewares
 
-This directory contains an example middleware implementation demonstrating the Framingo middleware architecture and request processing patterns.
+This directory contains example HTTP middleware implementations demonstrating the Framingo middleware architecture and request processing patterns.
 
 ## Overview
 
-The `example` middleware showcases how to create HTTP middleware using the Framingo framework. This particular implementation demonstrates request body decompression for deflate-encoded requests, providing a practical example of request preprocessing.
+Middlewares wrap HTTP handlers to perform cross-cutting concerns such as authentication, logging, compression, validation, and rate limiting. Each middleware in this directory is a self-contained package implementing the `api.Middleware` interface.
 
 ## Structure
 
 ```
-example/
-└── middleware.go    # Middleware implementation
+middlewares/
+├── authnagent/      # Authenticates agents via mTLS client certificate
+├── authnuser/       # Authenticates users via API token or session
+├── authz/           # Enforces RBAC permission checks on authenticated requests
+├── deflate/         # Decompresses deflate-encoded request bodies
+└── feature/         # Gates handlers behind feature licensing
 ```
 
-## Files
+Each package contains a `middleware.go` (and `option.go` when the middleware accepts a logger) implementing the `api.Middleware` interface.
 
-### [middleware.go](middleware.go)
+## Packages
 
-Contains the middleware implementation with:
-- `middleware` struct that implements `api.Middleware` interface
-- Automatic middleware name detection using reflection
-- Request body decompression logic for deflate-encoded content
+### [authnagent](authnagent/)
 
-Key methods:
-- `Name()` - Returns the middleware name (automatically derived from package name)
-- `Dependencies()` - Lists required service dependencies (none for this example)
-- `Func(next echo.HandlerFunc) echo.HandlerFunc` - Core middleware logic
+Authenticates agent requests by validating an X.509 client certificate against the default CA. Accepts certificates either directly via mTLS (`r.TLS.PeerCertificates`) or forwarded by nginx in the `X-Ssl-Certificate` header (`fapi.HeaderKeyClientCert`). Parses the agent ID from the certificate Common Name (`CN=<id>`) and writes a `*entity.Credential` (with `Source: AuthSourceAgent`) into the echo store under `fapi.ContextKeyCredential`. Handlers using `api.Context` read it via `c.Value(api.ContextKeyCredential)` or `c.Credential()`.
+
+- Dependencies: [certificate.Manager](../services/system/certificate/)
+- Options: `WithLogger(log.Logger)`
+
+### [authnuser](authnuser/)
+
+Authenticates user requests via one of two strategies:
+- **API token** — if `fapi.HeaderKeyAPIToken` is set, calls `auth.AuthenticateAPIToken` and resolves role permissions via `role.GetPermissionsByName`
+- **Session** — otherwise reads the session ID from `fapi.HeaderKeySession`, the `fapi.QueryParamSession` query parameter, or the `fapi.CookiesKeySession` cookie; looks up the session, refreshes its lease (`preset.SessionExpiration`), and resolves role permissions
+
+Writes the resolved credential into the echo store under `fapi.ContextKeyCredential` (and the session under `fapi.ContextKeySession` when applicable). Handlers using `api.Context` consume it via `c.Value(api.ContextKeyCredential)` or `c.Credential()`.
+
+- Dependencies: [auth.Manager](../services/system/auth/), [role.Manager](../services/system/role/)
+- Options: `WithLogger(log.Logger)`
+
+### [authz](authz/)
+
+Enforces authorization on requests that already have a `*entity.Credential` in the context (placed there by `authnuser` or `authnagent`). Rejects credentials flagged with `RequirePasswordReset`, and for credentials from `AuthSourceLocalUser` or `AuthSourceLdapUser` verifies the role has permission for the current HTTP method and escaped path via `role.CheckPermissionByName`.
+
+- Dependencies: [role.Manager](../services/system/role/)
+
+### [deflate](deflate/)
+
+Swaps the request body with a `zlib.Reader` when the request advertises `Content-Encoding: deflate`, so downstream handlers read decompressed bytes transparently.
+
+- Dependencies: none
+
+### [feature](feature/)
+
+Gates handler execution behind a feature license. Reads the matched handler from `common.ContextKeyAPIRequestInfo` (populated by the API server), allows the request through when the handler has no `Permission`, and otherwise rejects it with `Forbidden` unless the permission appears in `rbac.Features[rbac.FeatureBasic]`.
+
+- Dependencies: none
 
 ## Usage
 
-### Creating a Middleware
+### Creating a Middleware Instance
 
 ```go
-import "github.com/xhanio/framingo/example/pkg/middlewares/example"
+import "github.com/xhanio/framingo/example/pkg/middlewares/deflate"
 
-// Create middleware instance
-mw := example.New()
+mw := deflate.New()
 ```
 
-### Registering with API Server
+### Registering with the API Server
 
 ```go
 import (
     "github.com/xhanio/framingo/pkg/services/api/server"
-    "github.com/xhanio/framingo/example/pkg/middlewares/example"
+    "github.com/xhanio/framingo/example/pkg/middlewares/deflate"
 )
 
-// Create server manager
-serverMgr := server.New()
+srvMgr := server.New()
 
-// Register middleware
-err := serverMgr.RegisterMiddlewares(example.New())
-if err != nil {
-    log.Fatal(err)
+if err := srvMgr.RegisterMiddlewares(deflate.New()); err != nil {
+    return errors.Wrap(err)
 }
 ```
 
-### Using in Router Configuration
+### Referencing in Router Config
 
-Reference the middleware in your router's [router.yaml](../routers/example/router.yaml):
+The middleware name from `Name()` is the key used in [router.yaml](../routers/example/router.yaml):
 
 ```yaml
 handlers:
-  - method: GET
-    path: /example
+  - method: POST
+    path: /helloworld/:message
     func: Example
-    middleware: example  # Middleware name
+    middlewares: [deflate]   # name returned by middleware.Name()
 ```
 
 ## Middleware Implementation
 
-The example middleware handles deflate compression:
+The `deflate` middleware swaps the request body with a streaming decompressor when the client advertises deflate encoding:
 
 ```go
 func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -81,7 +107,6 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
             if err != nil {
                 return errors.BadRequest.Newf("failed to deflate request body: %s", err)
             }
-            // Replace request body with deflated stream
             c.Request().Body = reader
         }
         return next(c)
@@ -91,95 +116,64 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 
 ### How It Works
 
-1. **Check Request Headers**: Inspects `Content-Encoding` header
-2. **Decompress if Needed**: Creates zlib reader for deflate-encoded bodies
-3. **Replace Request Body**: Swaps compressed body with decompressed stream
-4. **Continue Chain**: Calls `next(c)` to proceed to next middleware/handler
-5. **Error Handling**: Returns `BadRequest` error if decompression fails
+1. **Inspect headers** — checks `Content-Encoding` on the incoming request
+2. **Decompress on match** — constructs a `zlib.Reader` over the original body
+3. **Replace the body** — downstream handlers read decompressed bytes transparently
+4. **Continue the chain** — calls `next(c)` to invoke the next middleware or the handler
+5. **Error path** — returns `errors.BadRequest` if the body is not a valid deflate stream
 
 ## Middleware Interface
 
-The `api.Middleware` interface requires:
+Defined in [pkg/types/api/model.go](../../../pkg/types/api/model.go):
 
 ```go
 type Middleware interface {
-    common.Service           // Name() and Dependencies()
-    Func(echo.HandlerFunc) echo.HandlerFunc  // Middleware logic
+    common.Service                            // Name() and Dependencies()
+    Func(echo.HandlerFunc) echo.HandlerFunc   // standard Echo middleware signature
 }
 ```
 
-All middlewares must implement:
-- `Name()` - Unique identifier for the middleware
-- `Dependencies()` - List of required services
-- `Func()` - Middleware wrapping function
-
-## Built-in Server Middlewares
-
-The API server ([pkg/services/api/server](../../../pkg/services/api/server/middleware.go)) provides several built-in middlewares:
-
-### Error Middleware
-Wraps and handles errors from handlers:
-- Converts errors to API error responses
-- Stores error in context for logging
-- Standardizes error format
-
-### Info Middleware
-Extracts request information:
-- Parses request details (IP, path, trace ID)
-- Injects request info into context
-- Captures response timing and status
-
-### Logger Middleware
-Logs request/response information:
-- Accesses request info from context
-- Prints formatted log entries
-- Supports polling API suppression
-
-### Recover Middleware
-Recovers from panics:
-- Catches panics in handler chain
-- Logs stack traces
-- Converts panics to proper errors
-
-### Throttle Middleware
-Implements rate limiting:
-- Per-IP and per-path rate limiting
-- Configurable per-handler or server-wide
-- Uses token bucket algorithm
-- Returns `TooManyRequests` when limit exceeded
+Every middleware must implement:
+- `Name()` — unique identifier referenced from router YAML
+- `Dependencies()` — services that must be initialized before this middleware
+- `Func()` — the wrapping function applied to handlers
 
 ## Example Request Flow
 
-When a request hits an endpoint with the example middleware:
+A client sending a deflate-encoded POST request:
 
 ```bash
-curl -X POST http://localhost:8080/demo/example \
+curl -X POST http://localhost:8080/example/helloworld/hi \
   -H "Content-Encoding: deflate" \
-  --data-binary @compressed.bin
+  --data-binary @payload.bin
 ```
 
-**Processing Order**:
-1. Server middleware (Recover, Info, Logger, etc.)
-2. **Example middleware** (decompress body)
-3. Handler executes with decompressed body
-4. Response flows back through middleware chain
+Processing order:
+1. Server middlewares (Recover, Info, Logger, Error, Throttle)
+2. **deflate middleware** decompresses the body
+3. The `Example` handler reads the decompressed body
+4. The response flows back through the middleware chain
 
 ## Creating Custom Middlewares
 
-### 1. Define the Middleware Struct
+### 1. Define the Struct and Factory
 
 ```go
 package mymiddleware
 
 import (
+    "path"
+
     "github.com/labstack/echo/v4"
+
     "github.com/xhanio/framingo/pkg/types/api"
     "github.com/xhanio/framingo/pkg/types/common"
+    "github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
-type middleware struct {
-    // Add dependencies or configuration here
-}
+var _ api.Middleware = (*middleware)(nil)
+
+type middleware struct{}
 
 func New() api.Middleware {
     return &middleware{}
@@ -190,11 +184,12 @@ func New() api.Middleware {
 
 ```go
 func (m *middleware) Name() string {
-    return "mymiddleware"
+    pkg, _ := reflectutil.Locate(m)
+    return path.Base(pkg)
 }
 
 func (m *middleware) Dependencies() []common.Service {
-    return nil // or list required services
+    return nil
 }
 ```
 
@@ -203,41 +198,44 @@ func (m *middleware) Dependencies() []common.Service {
 ```go
 func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
     return func(c echo.Context) error {
-        // Pre-processing logic here
+        // pre-processing
 
-        // Call next middleware/handler
         err := next(c)
 
-        // Post-processing logic here
+        // post-processing
 
         return err
     }
 }
 ```
 
-### 4. Register and Use
+### 4. Register and Reference
 
 ```go
-// Register with server
-serverMgr.RegisterMiddlewares(mymiddleware.New())
+// in components/server/.../api.go
+srvMgr.RegisterMiddlewares(mymiddleware.New())
+```
 
-// Reference in router.yaml
+```yaml
+# in routers/.../router.yaml
 handlers:
   - method: GET
-    path: /api/endpoint
+    path: /endpoint
     func: Handler
-    middleware: mymiddleware
+    middlewares:
+      - mymiddleware
 ```
 
 ## Common Middleware Patterns
 
 ### Authentication
+
 ```go
 func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
     return func(c echo.Context) error {
         token := c.Request().Header.Get("Authorization")
         if !validateToken(token) {
-            return errors.Unauthorized.New("invalid token")
+            return errors.Unauthorized.Newf("invalid token")
         }
         c.Set("user", getUserFromToken(token))
         return next(c)
@@ -246,11 +244,12 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 ```
 
 ### Request Validation
+
 ```go
 func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
     return func(c echo.Context) error {
         if c.Request().ContentLength > maxSize {
-            return errors.BadRequest.New("request too large")
+            return errors.BadRequest.Newf("request too large")
         }
         return next(c)
     }
@@ -258,6 +257,7 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 ```
 
 ### Response Modification
+
 ```go
 func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
     return func(c echo.Context) error {
@@ -268,37 +268,15 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 }
 ```
 
-## Key Features
-
-- **Automatic Naming**: Uses reflection for middleware identification
-- **Dependency Injection**: Supports service dependencies
-- **Echo Integration**: Built on Echo middleware pattern
-- **Error Handling**: Proper error propagation and handling
-- **Composability**: Can be chained with other middlewares
-
 ## Best Practices
 
-1. **Naming**: Use descriptive, unique middleware names
-2. **Dependencies**: Declare all service dependencies explicitly
-3. **Error Handling**: Return proper error types for different scenarios
-4. **Performance**: Keep middleware logic lightweight
-5. **Order**: Consider middleware execution order (defined in server configuration)
-6. **Context**: Use `c.Set()` to share data between middlewares and handlers
-7. **Next Call**: Always call `next(c)` unless you want to short-circuit the chain
-
-## Middleware Execution Order
-
-Middlewares execute in the order they're registered on the server:
-
-```
-Request  Recover  Info  Throttle  Logger  Custom (example)  Handler
-                                                             Response
-```
-
-Each middleware can:
-- Modify the request before passing to next
-- Short-circuit the chain by returning without calling next
-- Modify the response after next returns
+1. **Naming** — let `Name()` derive from the package name with `reflectutil.Locate` so it stays in sync with the directory
+2. **Dependencies** — declare every service the middleware reads from, so the supervisor initializes them first
+3. **Errors** — return categorized errors from `github.com/xhanio/errors` so the Error middleware maps them to the right HTTP status
+4. **Performance** — keep middleware logic lightweight; heavy work belongs in services
+5. **Order** — registration order on the server determines execution order for custom middlewares
+6. **Context** — use `c.Set()` / `c.Get()` to pass data between middlewares and handlers
+7. **Short-circuit** — return without calling `next(c)` to halt the chain (e.g., auth failures)
 
 ## See Also
 

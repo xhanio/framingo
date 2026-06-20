@@ -171,4 +171,4 @@ This allows publishing at different scopes:
 
 - [Common Message Interfaces](../../types/common/message.go)
 - [Example Server Component](../../../example/pkg/components/server/example/)
-- [Service Controller](../app/)
+- [Service Controller](../supervisor/)

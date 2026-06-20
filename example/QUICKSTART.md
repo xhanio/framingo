@@ -15,14 +15,16 @@ This guide shows how to quickly build and run the Framingo example application u
 
 ### Build for Local Development
 
-Build the binary with CGO enabled (for local development):
+Build the binaries with CGO enabled (for local development):
 
 ```bash
 cd /home/xhan/projects/works/go/src/xhanio/framingo/example
 gopro build binary -e local
 ```
 
-The binary will be created at: `bin/example-app`
+Two binaries are produced under `bin/`:
+- `bin/exampleapp` - daemon (HTTP API server)
+- `bin/examplecli` - client CLI for the API
 
 ### Build for Production
 
@@ -37,17 +39,17 @@ gopro build binary -e prod
 ### Run with Configuration File
 
 ```bash
-./bin/example-app daemon -c env/local/config/example-app/config.yaml
+./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
 
 Or with environment variables loaded:
 
 ```bash
 # Load environment variables
-export $(cat env/local/config/example-app/secret.env | xargs)
+export $(cat env/local/config/exampleapp/secret.env | xargs)
 
 # Run the application
-./bin/example-app daemon -c env/local/config/example-app/config.yaml
+./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
 
 ### Test the API
@@ -55,11 +57,8 @@ export $(cat env/local/config/example-app/secret.env | xargs)
 Once the application is running:
 
 ```bash
-# Test the example endpoint with query parameter
-curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello%20World"
-
-# Or with JSON body
-curl -X POST http://localhost:8080/api/v1/demo/example \
+# POST /api/v1/example/helloworld (requires authnuser middleware - login first via examplecli)
+curl -X POST http://localhost:8080/api/v1/example/helloworld \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello World"}'
 
@@ -75,8 +74,29 @@ curl -X POST http://localhost:8080/api/v1/demo/example \
 ### Check Version
 
 ```bash
-./bin/example-app version
+./bin/exampleapp version
+./bin/examplecli version
 ```
+
+## Using the CLI
+
+`examplecli` talks to the daemon's HTTP API. Credentials are persisted at `~/.example`.
+
+```bash
+# Login (prompts for password, default username: admin)
+./bin/examplecli -e http://localhost:8080 login
+
+# Call the helloworld endpoint
+./bin/examplecli -e http://localhost:8080 helloworld "Hello World"
+
+# Logout
+./bin/examplecli -e http://localhost:8080 logout
+
+# Generate CA + server cert/key in CWD
+./bin/examplecli certutil -p framingo --domain localhost --ip 127.0.0.1
+```
+
+Global flags: `-e/--endpoint`, `-v/--verbose`.
 
 ## Development Workflow
 
@@ -97,8 +117,8 @@ gopro build binary -e local
 ### 3. Test
 
 ```bash
-./bin/example-app daemon -c env/local/config/example-app/config.yaml
-curl -X GET "http://localhost:8080/api/v1/demo/example?message=Test"
+./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
+./bin/examplecli -e http://localhost:8080 helloworld "Test"
 ```
 
 ## Docker Deployment
@@ -117,8 +137,8 @@ gopro build image
 
 ```bash
 docker run -p 8080:8080 -p 6060:6060 \
-  -v $(pwd)/env/local/config/example-app/config.yaml:/etc/framingo-example/config.yaml \
-  localhost:5000/example-app:latest
+  -v $(pwd)/env/local/config/exampleapp/config.yaml:/etc/framingo-example/config.yaml \
+  localhost:5000/exampleapp:latest
 ```
 
 ## Kubernetes Deployment
@@ -129,12 +149,12 @@ docker run -p 8080:8080 -p 6060:6060 \
 gopro generate kubernetes -e local
 ```
 
-Generated files will be in: `dist/local/kubernetes/example-app/`
+Generated files will be in: `dist/local/kubernetes/exampleapp/`
 
 ### Deploy to Kubernetes
 
 ```bash
-kubectl apply -f dist/local/kubernetes/example-app/
+kubectl apply -f dist/local/kubernetes/exampleapp/
 ```
 
 ### Check Deployment
@@ -156,8 +176,8 @@ kubectl logs -l app=framingo-example -f
 # Port forward to access locally
 kubectl port-forward svc/framingo-example 8080:8080
 
-# Test the API
-curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello"
+# Test the API (login first; see "Using the CLI" above)
+./bin/examplecli -e http://localhost:8080 helloworld "Hello"
 ```
 
 ## Configuration Management
@@ -173,8 +193,8 @@ gopro generate config -e prod
 ```
 
 Generated files will be in:
-- Local: `dist/local/config/example-app/`
-- Prod: `dist/prod/config/example-app/`
+- Local: `dist/local/config/exampleapp/`
+- Prod: `dist/prod/config/exampleapp/`
 
 ## Debugging
 
@@ -200,7 +220,7 @@ open http://localhost:6060/debug/pprof/
 
 ```bash
 # Get PID
-PID=$(pgrep example-app)
+PID=$(pgrep exampleapp)
 
 # Print service info
 kill -USR1 $PID
@@ -219,28 +239,32 @@ example/
 ├── project.yaml                 # GoPro configuration
 ├── build/                       # Build sources
 │   ├── binary/
-│   │   └── example-app/
-│   │       └── main.go         # Application entry point
+│   │   ├── exampleapp/
+│   │   │   └── main.go         # Daemon entry point
+│   │   └── examplecli/
+│   │       └── main.go         # CLI entry point
 │   └── image/
-│       └── example-app/
+│       └── exampleapp/
 │           └── Dockerfile      # Docker image definition
 ├── env/                        # Environment configurations
 │   └── local/
 │       ├── config/
-│       │   └── example-app/
+│       │   └── exampleapp/
 │       │       ├── config.yaml # Application config
-│       │       └── secret.env  # Environment variables
+│       │       ├── secret.env  # Environment variables
+│       │       └── migrations/ # SQL migrations (000_create_system_tables, 001_create_helloworld_table)
 │       └── kubernetes/
-│           └── example-app/
+│           └── exampleapp/
 │               ├── deployment.yaml
 │               ├── service.yaml
 │               └── configmap.yaml
 ├── pkg/                        # Application code
 │   ├── components/
-│   ├── services/
+│   ├── services/               # Business logic (validation, message dispatch, entity conversion)
+│   │   └── repository/         # DB access layer (one file per domain)
 │   ├── routers/
 │   ├── middlewares/
-│   ├── types/
+│   ├── types/                  # api/, entity/, orm/, repo/ (interface definitions)
 │   └── utils/
 ├── bin/                        # Built binaries (generated)
 └── dist/                       # Generated configs (generated)
@@ -260,7 +284,7 @@ go mod tidy
 
 Check configuration file path:
 ```bash
-ls -la env/local/config/example-app/config.yaml
+ls -la env/local/config/exampleapp/config.yaml
 ```
 
 Verify database connection (if using DB):
@@ -271,10 +295,10 @@ psql -h localhost -U framingo -d framingo_example
 
 ### API Returns 404
 
-Verify the correct endpoint with required parameters:
+Verify the correct endpoint and method:
 ```bash
-# Correct endpoint with message parameter
-curl -X GET "http://localhost:8080/api/v1/demo/example?message=Test"
+# Correct endpoint: POST /api/v1/example/helloworld (prefix configurable via api.http.prefix)
+# Note: requires the `authnuser` middleware - use `examplecli login` first
 
 # Check registered routes in logs
 grep "Registering route" /var/log/framingo-example/app.log

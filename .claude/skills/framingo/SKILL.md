@@ -1,6 +1,6 @@
 ---
 name: framingo
-description: Build services and APIs using the Framingo Go framework. Use when creating services, registering them with the app manager, configuring HTTP servers/routers, working with the database service, pub/sub messaging, or implementing service lifecycle interfaces. Activate when user mentions framingo, service lifecycle, app manager, handler groups, or any framingo package imports.
+description: Use when working with Framingo (`github.com/xhanio/framingo`) Go code — creating services, registering with the supervisor, configuring HTTP servers/routers, the database service, pub/sub messaging, or implementing service lifecycle interfaces. Triggers on mentions of framingo, service lifecycle, supervisor, handler groups, or any framingo package imports.
 compatibility: Requires Go 1.24+. Framework module is github.com/xhanio/framingo.
 metadata:
   author: xhanio
@@ -9,14 +9,47 @@ metadata:
 
 # Framingo - Service-Oriented Go Framework
 
+## Overview
+
 Framingo is a modular, production-ready Go framework for building HTTP API applications with service lifecycle management, database integration, pub/sub messaging, and health monitoring.
 
-## Architecture Overview
+## When to Use
+
+- Creating a new framingo service or `Manager` interface
+- Registering services with the supervisor or wiring service dependencies
+- Implementing the lifecycle interfaces (`Service`, `Initializable`, `Daemon`, `Liveness`, `Readiness`, `Debuggable`)
+- Configuring HTTP servers, routers, handler groups, middlewares, or WebSocket routes
+- Working with the database service (`db.Manager`, transactions, migrations)
+- Publishing or subscribing on the pub/sub bus
+- Reading config via `confutil.FromContext(ctx)` or shaping the app's YAML config
+- Touching any `github.com/xhanio/framingo/...` import
+
+**When NOT to use**: generic Go questions, libraries unrelated to `xhanio/framingo`, or non-Go codebases.
+
+## Quick Reference
+
+| Concern | Package | Interface / Key Type |
+|---|---|---|
+| Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` |
+| Database | `pkg/services/db` | `db.Manager` |
+| HTTP API server | `pkg/services/api/server` | `server.Manager`, `api.Router`, `api.Middleware` |
+| Pub/Sub | `pkg/services/pubsub` | `pubsub.Manager`, `pubsub.Message` |
+| Logging | `pkg/utils/log` | `log.Logger` |
+| Errors | `github.com/xhanio/errors` | `errors.Newf`, `errors.Wrap`, category sentinels |
+| Config | `pkg/utils/confutil` | `confutil.FromContext(ctx)` |
+
+For deep reference:
+- API server: see [api-server.md](api-server.md)
+- Errors: see [errors-reference.md](errors-reference.md)
+- Config YAML: see [config-reference.md](config-reference.md)
+- Package layout: see [package-layout.md](package-layout.md)
+
+## Architecture
 
 ```
 CLI / Config (cobra + viper)
     |
-App Manager (lifecycle orchestration, dependency resolution, health monitoring)
+Supervisor (lifecycle orchestration, dependency resolution, health monitoring)
     |
 Services (DB, API Server, PubSub, Planner, custom services)
     |
@@ -46,20 +79,20 @@ type Readiness interface { Ready() error }                             // readin
 type Debuggable interface { Info(w io.Writer, debug bool) }            // debug output
 ```
 
-### App Manager
+### Supervisor
 
-Orchestrates all services. Located in `pkg/services/app`.
+Orchestrates all services. Located in `pkg/services/supervisor`.
 
 ```go
 import (
     "github.com/spf13/viper"
-    "github.com/xhanio/framingo/pkg/services/app"
+    "github.com/xhanio/framingo/pkg/services/supervisor"
 )
 
 // Create manager with viper config
-mgr := app.New(config,
-    app.WithLogger(logger),
-    app.WithMonitorInterval(30 * time.Second),
+mgr := supervisor.New(config,
+    supervisor.WithLogger(logger),
+    supervisor.WithMonitorInterval(30 * time.Second),
 )
 
 // Register services (order doesn't matter - topologically sorted)
@@ -77,6 +110,7 @@ The manager:
 - Calls `Start(ctx)` on `Daemon` services
 - Monitors `Liveness` and `Readiness` probes
 - Auto-restarts services that fail liveness checks
+- Exposes `Restart(ctx) error` for explicit runtime restart of the whole service graph
 - Handles graceful shutdown via OS signals
 
 ### Configuration Pattern
@@ -96,81 +130,7 @@ func (s *myService) Init(ctx context.Context) error {
 
 Priority: CLI flags > env vars > YAML file > defaults.
 
-### Example Config YAML
-
-This is the reference config structure for all framework services. Use this as a template when creating new applications:
-
-```yaml
-# Logging — used by log.New() in service.go
-log:
-  level: 0                    # 0=Debug, 1=Info, 2=Warn, 3=Error
-  file: /var/log/myapp/app.log
-  rotation:
-    max_size: 100             # MB per log file
-    max_backups: 3            # number of rotated files to keep
-    max_age: 7                # days to retain old log files
-
-# Database — used by db.New() options + dynamic config in db.Manager.Init()
-db:
-  type: postgres              # postgres | mysql | sqlite | clickhouse
-  source:
-    host: localhost
-    port: 5432
-    user: myapp
-    password: secret
-    dbname: myapp_db
-  migration:
-    dir: ./migrations         # path to migration SQL files
-    version: 0                # target version (0 = latest)
-  connection:
-    max_open: 10              # max open connections
-    max_idle: 5               # max idle connections
-    max_lifetime: 1h          # connection max lifetime
-    max_idle_time: 30m        # idle connection max lifetime
-    exec_timeout: 30s         # query execution timeout
-
-# API servers — iterated by m.config.GetStringMap("api") in service.go
-# Each key becomes a named server instance via m.api.Add(name, ...)
-api:
-  http:                       # server name: "http"
-    host: 0.0.0.0
-    port: 8080
-    prefix: /api/v1           # server endpoint path
-    throttle:                 # optional: server-wide rate limiting
-      rps: 100.0
-      burst_size: 200
-  admin:                      # server name: "admin"
-    host: 0.0.0.0
-    port: 9090
-    prefix: /admin
-  # HTTPS example with TLS
-  # https:
-  #   host: 0.0.0.0
-  #   port: 443
-  #   prefix: /api/v1
-  #   cert: /path/to/server.crt
-  #   key: /path/to/server.key
-
-# TLS CA certificate (used when any api server has cert/key configured)
-# ca:
-#   cert: /path/to/ca.crt
-
-# pprof profiling — optional, set port to enable
-pprof:
-  port: 6060                  # 0 = disabled
-
-# Custom service config — read in service Init() via confutil.FromContext(ctx)
-# example:
-#   greeting: hello world!
-```
-
-**Notes**:
-- `db.connection.*` keys are read dynamically during `db.Manager.Init(ctx)` via `confutil.FromContext(ctx)`, allowing values to change on service restart
-- `api.*` is iterated as a string map — each top-level key under `api` becomes a named server instance
-- TLS is enabled per-server when `api.<name>.cert` is set
-- Throttle is enabled per-server when `api.<name>.throttle` is set
-- Custom service config keys are accessed in `Init(ctx)` via `confutil.FromContext(ctx).GetString("myservice.key")`
-- Pubsub and planner services are configured entirely via functional options, not YAML keys
+For the full annotated YAML template (log, db, api, pprof, custom service keys) and dynamic-key notes, see [config-reference.md](config-reference.md).
 
 ## Database Service
 
@@ -270,236 +230,19 @@ type Referenced[T comparable] interface {
 
 ## API Server
 
-Located in `pkg/services/api/server`. Built on Echo. The server uses a **declarative routing model**: routes are defined in YAML config, handler functions are provided by a Router implementation, and the server manager wires them together at registration time.
-
-### Route Registration Flow
-
-```
-1. Server instances created    →  srvMgr.Add("http", ...)
-2. Middlewares registered      →  srvMgr.RegisterMiddlewares(authMW, ...)
-3. Routers registered         →  srvMgr.RegisterRouters(myRouter)
-   a. Router.Config() called  →  returns embedded YAML ([]byte)
-   b. YAML unmarshaled        →  produces HandlerGroup with Handlers
-   c. Router.Handlers() called →  returns map[string]any (echo.HandlerFunc or api.WebSocketHandlerFunc)
-   d. For each YAML handler:
-      - Func name looked up in Handlers() map
-      - Type asserted based on method (WS → WebSocketHandlerFunc, others → echo.HandlerFunc)
-      - HandlerKey struct generated: {Server, Method, Path}
-      - Handler func stored in manager.handlerFuncs[key] or wsHandlerFuncs[key]
-   e. Server matched by HandlerGroup.Server field
-   f. Echo group created at endpoint.Path + group.Prefix
-   g. For each handler:
-      - Handler-specific + group-level middlewares collected
-      - Route registered: group.Add(method, path, handlerFunc, middlewares...)
-      - Handler metadata stored on server for runtime lookup
-```
-
-### Creating a Server Manager
+Located in `pkg/services/api/server`. Built on Echo. Routes are defined declaratively: each `api.Router` ships an embedded `router.yaml` plus a `Handlers()` map; the server manager binds them at registration time.
 
 ```go
 import "github.com/xhanio/framingo/pkg/services/api/server"
 
-srvMgr := server.New(
-    server.WithLogger(logger),
-    server.WithDebug(true),
-)
-
-// Step 1: Add named server instances (each gets its own echo.Echo)
+srvMgr := server.New(server.WithLogger(logger))
 srvMgr.Add("http", server.WithEndpoint("0.0.0.0", 8080, "/"))
-srvMgr.Add("admin", server.WithEndpoint("0.0.0.0", 9090, "/admin"),
-    server.WithThrottle(100, 200),
-)
 
-// Step 2: Register middlewares BEFORE routers (routers reference them by name)
-srvMgr.RegisterMiddlewares(authMiddleware, corsMiddleware)
-
-// Step 3: Register routers (triggers the full wiring flow above)
-srvMgr.RegisterRouters(myRouter)
+srvMgr.RegisterMiddlewares(authMW, corsMW)   // must come before routers
+srvMgr.RegisterRouters(userRouter, orderRouter)
 ```
 
-### Implementing a Router
-
-A Router provides two things: a YAML config declaring routes, and a map of handler function implementations. The YAML `func` field is the lookup key into the `Handlers()` map.
-
-```go
-package user
-
-import (
-    _ "embed"
-    "path"
-
-    "github.com/labstack/echo/v4"
-
-    "github.com/xhanio/framingo/pkg/types/api"
-    "github.com/xhanio/framingo/pkg/types/common"
-    "github.com/xhanio/framingo/pkg/utils/log"
-    "github.com/xhanio/framingo/pkg/utils/reflectutil"
-
-    "myapp/pkg/services/user"
-)
-
-var _ api.Router = (*router)(nil) // compile-time interface check
-
-//go:embed router.yaml
-var config []byte
-
-// Unexported struct — returns api.Router interface via factory
-type router struct {
-    name string
-    log  log.Logger
-    svc  user.Manager
-}
-
-func New(svc user.Manager, log log.Logger) api.Router {
-    return &router{svc: svc, log: log}
-}
-
-func (r *router) Name() string {
-    if r.name == "" {
-        r.name = path.Join(reflectutil.Locate(r))
-    }
-    return r.name
-}
-
-func (r *router) Dependencies() []common.Service { return []common.Service{r.svc} }
-
-// Config returns the embedded YAML that declares handler groups
-func (r *router) Config() []byte { return config }
-
-// Handlers returns func-name → implementation mapping
-// Keys MUST match the "func" field in router.yaml
-// Values must be echo.HandlerFunc for HTTP or api.WebSocketHandlerFunc for WS
-func (r *router) Handlers() map[string]any {
-    return map[string]any{
-        "ListUsers":  echo.HandlerFunc(r.listUsers),
-        "CreateUser": echo.HandlerFunc(r.createUser),
-        "GetUser":    echo.HandlerFunc(r.getUser),
-    }
-}
-
-func (r *router) listUsers(c echo.Context) error  { /* ... */ }
-func (r *router) createUser(c echo.Context) error { /* ... */ }
-func (r *router) getUser(c echo.Context) error    { /* ... */ }
-```
-
-### Router YAML Config Format (`router.yaml`)
-
-The `server` field targets a named server instance created via `srvMgr.Add()`. The `func` field maps to keys in `Handlers()`.
-
-**IMPORTANT**: The `prefix` MUST be a conventional REST resource path that matches the semantic meaning of the router package. The router package name and the prefix should describe the same domain concept:
-
-| Router package | Prefix | Why |
-|---|---|---|
-| `routers/user/` | `/users` | Manages user resources |
-| `routers/order/` | `/orders` | Manages order resources |
-| `routers/auth/` | `/auth` | Authentication endpoints |
-| `routers/example/` | `/example` | Example endpoints |
-
-Do NOT use arbitrary or mismatched prefixes (e.g., a `routers/user/` package with prefix `/api/accounts`). The prefix is the public API contract — it must be intuitive and consistent with the package that owns it.
-
-```yaml
-server: http              # MUST match a server name from srvMgr.Add("http", ...)
-prefix: /users            # MUST match the router package's domain (e.g., routers/user/ → /users)
-middlewares: [auth]        # group-level middlewares (applied to ALL handlers in group)
-handlers:
-  - method: GET
-    path: /
-    func: ListUsers       # looked up in Router.Handlers()["ListUsers"]
-  - method: POST
-    path: /
-    func: CreateUser      # looked up in Router.Handlers()["CreateUser"]
-    middlewares: [validate]  # handler-specific middlewares (applied before group middlewares)
-  - method: GET
-    path: /:id
-    func: GetUser
-    throttle:              # per-handler rate limiting
-      rps: 10
-      burst_size: 20
-  - method: WS            # WebSocket handler — registered as GET, server upgrades automatically
-    path: /feed
-    func: Feed            # must be api.WebSocketHandlerFunc in Handlers() map
-```
-
-### Handler Key Format
-
-The server uses a struct-based key to uniquely identify each handler:
-
-```go
-type HandlerKey struct {
-    Server string
-    Method string
-    Path   string
-}
-```
-
-For example, the key for `ListUsers` is `HandlerKey{Server: "http", Method: "GET", Path: "/users"}`. Keys are used as map keys for direct lookups. The `matchHandler` logic falls back through: exact match → WS fallback (for GET requests) → ANY fallback → wildcard path matching.
-
-### How Routes Map to Echo
-
-The final Echo route path is: `server.endpoint.Path` + `group.Prefix` + `handler.Path`.
-
-For a server added as `srvMgr.Add("http", server.WithEndpoint("0.0.0.0", 8080, "/"))` with the YAML above:
-- `GET /users` → `ListUsers`
-- `POST /users` → `CreateUser`
-- `GET /users/:id` → `GetUser`
-
-Root paths (`/`) are normalized by trimming the trailing slash, so both `/api/v1` and `/api/v1/` resolve to the same handler (via `RemoveTrailingSlash` pre-middleware).
-
-### Router Interface (types)
-
-```go
-// pkg/types/api/model.go
-type WebSocketHandlerFunc func(ctx context.Context, conn *websocket.Conn) error
-
-type Router interface {
-    common.Service
-    Config() []byte                    // YAML config bytes (typically //go:embed)
-    Handlers() map[string]any          // func name → echo.HandlerFunc or WebSocketHandlerFunc
-}
-
-type Middleware interface {
-    common.Service
-    Func(echo.HandlerFunc) echo.HandlerFunc   // standard Echo middleware signature
-}
-```
-
-### WebSocket Handlers
-
-Declare WebSocket routes with `method: WS` in YAML. The server automatically upgrades the connection and passes it to the handler. Uses `github.com/coder/websocket`.
-
-```go
-func (r *router) Handlers() map[string]any {
-    return map[string]any{
-        "ListUsers": echo.HandlerFunc(r.listUsers),
-        "Feed":      api.WebSocketHandlerFunc(r.feed),
-    }
-}
-
-func (r *router) feed(ctx context.Context, conn *websocket.Conn) error {
-    for {
-        typ, msg, err := conn.Read(ctx)
-        if err != nil {
-            return nil // client disconnected
-        }
-        if err := conn.Write(ctx, typ, msg); err != nil {
-            return err
-        }
-    }
-}
-```
-
-**Lifecycle**: Middleware stack runs before upgrade (auth, logging, throttle all apply). Once upgraded, errors are logged and the connection is closed with the appropriate status code. The handler receives a `context.Context` from the original HTTP request.
-
-### Middleware Resolution
-
-Middlewares are registered by name via `RegisterMiddlewares()`. The YAML config references them by the name returned from `Middleware.Name()`. During route registration:
-
-1. Handler-specific middlewares are resolved first (from `handler.middlewares`)
-2. Group-level middlewares are resolved next (from `group.middlewares`)
-3. If any referenced middleware name is not found, registration fails with `NotImplemented` error
-
-Built-in server middlewares (applied to all routes automatically):
-`Request → CORS (debug only) → Recover → Logger → Info → Error → Throttle → [Custom middlewares] → Handler → Response`
+For the full registration flow, router/middleware contracts, YAML format, handler key format, WebSocket handling, and middleware resolution, see [api-server.md](api-server.md).
 
 ## Pub/Sub Messaging
 
@@ -603,354 +346,42 @@ func (m *manager) Init(ctx context.Context) error {
 }
 ```
 
-## Error Handling — `github.com/xhanio/errors`
+## Error Handling
 
-**IMPORTANT**: All errors in framingo MUST use the `github.com/xhanio/errors` package. Do NOT use the standard `fmt.Errorf` or `errors.New` from the Go stdlib. The `xhanio/errors` package provides categorized errors with HTTP status codes, stack traces, and error wrapping — the API server's error handler relies on error categories to return correct HTTP responses.
-
-### Import
+All errors in framingo MUST use `github.com/xhanio/errors` — never `fmt.Errorf` or stdlib `errors`. The API server's error handler routes on `xhanio/errors` categories to set the response HTTP status.
 
 ```go
-import "github.com/xhanio/errors"
-```
-
-### Creating Errors
-
-**IMPORTANT**: Use `Newf()` to create errors with a message, NOT `New()`. The `New()` function takes functional `Option` arguments, not a message string. Using `New("some message")` will NOT compile.
-
-```go
-// Uncategorized errors (maps to 500 Internal Server Error)
-errors.Newf("unsupported db type: %s", dbtype)
-
-// Categorized errors (maps to specific HTTP status codes)
-errors.BadRequest.Newf("invalid request: %v", err)
-errors.NotFound.Newf("user %s not found", id)
-errors.Unauthorized.Newf("invalid token")
-errors.Conflict.Newf("resource %s already exists", name)
-errors.NotImplemented.Newf("handler %s not found", funcName)
-
-// Category as bare sentinel (no message needed) — this is the ONLY valid use of New()
-return errors.NotImplemented.New()
-```
-
-### Wrapping Errors
-
-**IMPORTANT**: ALWAYS use `errors.Wrap(err)` or `errors.Wrapf(err, msg, ...)` when returning errors from called functions. NEVER return a raw `err` directly — this loses the stack trace. Every error must be wrapped to maintain the full call chain for debugging.
-
-```go
-// CORRECT — wrap to maintain error stack
-if err := m.initConfig(); err != nil {
-    return errors.Wrap(err)
-}
-
-// CORRECT — wrap with additional context message when helpful
-if err := m.db.FromContext(ctx).Create(record).Error; err != nil {
-    return errors.Wrapf(err, "failed to create user %s", name)
-}
-
-// CORRECT — wrap with a category (overrides the wrapped error's category)
-return errors.BadRequest.Wrap(err)
-return errors.DBFailed.Wrapf(err, "query failed for user %s", id)
-
-// WRONG — never return raw err, stack trace is lost
-if err := doSomething(); err != nil {
-    return err  // ❌ DO NOT DO THIS
+return errors.NotFound.Newf("user %s not found", id)
+if err := s.db.FromContext(ctx).Create(u).Error; err != nil {
+    return errors.Wrapf(err, "failed to create user %s", u.Name)
 }
 ```
 
-### Combining Multiple Errors
-
-```go
-// Combine multiple errors (uses uber/multierr under the hood)
-return errors.Combine(errs...)
-```
-
-### Checking Errors
-
-```go
-// Check if error belongs to a category
-if errors.Is(err, errors.NotFound) { /* ... */ }
-
-// Check if error wraps a specific cause
-if errors.Has(err, ErrConnection) { /* ... */ }
-```
-
-### Available Error Categories
-
-| Category | HTTP Status | Use For |
-|---|---|---|
-| `BadRequest` | 400 | Invalid input, malformed requests |
-| `InvalidArgument` | 400 | Invalid function arguments |
-| `Unauthorized` | 401 | Missing or invalid authentication |
-| `Forbidden` | 403 | Authenticated but not authorized |
-| `PermissionDenied` | 403 | Insufficient permissions |
-| `NotFound` | 404 | Resource not found |
-| `DeadlineExceeded` | 408 | Timeout |
-| `Conflict` | 409 | Resource already exists, concurrent modification |
-| `AlreadyExist` | 409 | Duplicate resource |
-| `TooManyRequests` | 429 | Rate limit exceeded |
-| `Cancaled` | 499 | Operation cancelled |
-| `Internal` | 500 | Unexpected internal errors |
-| `NotImplemented` | 501 | Unimplemented functionality |
-| `Unavailable` | 503 | Service unavailable |
-| `ResourceExhausted` | 503 | Out of resources |
-| `DBFailed` | 500 | Database operation failures |
-
-### Custom Categories
-
-```go
-var ErrPaymentFailed = errors.NewCategory("PaymentFailed", 402)
-
-// Then use like built-in categories:
-return ErrPaymentFailed.Newf("charge declined for order %s", orderID)
-```
+For the full category table, wrapping rules, combining, checking, and custom categories, see [errors-reference.md](errors-reference.md).
 
 ## Package Organization
 
-**IMPORTANT**: All application packages MUST follow the categorized directory structure under `pkg/`. This is a strict convention — do NOT place code outside these categories or flatten the hierarchy.
+All application packages MUST follow the categorized `pkg/` layout. Every category directory is a grouping folder only — Go source files always live in subdirectories, never at a category root.
 
-### Required `pkg/` Structure
+Categories:
+- `components/` — application wiring (cmd, server daemons)
+- `services/` — business logic, one `Manager` interface per service
+- `routers/` — HTTP route handlers (`router.go`, `router.yaml`, `handler.go`)
+- `middlewares/` — `api.Middleware` implementations
+- `types/api/`, `types/entity/`, `types/orm/` — request, business, and DB types kept strictly separate
+- `utils/` — stateless shared helpers
 
-```
-pkg/
-├── components/          # Top-level application components (wires everything together)
-│   ├── cmd/             # CLI commands (cobra commands)
-│   │   └── myapp/       # root.go, daemon.go, common.go
-│   └── server/          # Server components (creates services, registers, starts)
-│       └── myapp/       # manager.go, config.go, service.go, signal.go, api.go
-├── services/            # Business logic services (implement Service/Daemon interfaces)
-│   └── user/            # manager.go, model.go, option.go
-├── routers/             # HTTP route handlers (implement api.Router)
-│   └── user/            # router.go, router.yaml, handler.go
-├── middlewares/          # HTTP middlewares (implement api.Middleware)
-│   └── auth/            # middleware.go
-├── types/               # Pure data types — NO logic, NO imports from services
-│   ├── api/             # Request/response structs (JSON + validation tags)
-│   ├── entity/          # Business domain models (JSON tags only)
-│   └── orm/             # Database models (GORM tags only)
-└── utils/               # Shared utility packages
-    └── infra/           # Infrastructure helpers
-```
+For the full category rules, type-separation example, server component file structure, and import organization, see [package-layout.md](package-layout.md).
 
-**IMPORTANT**: Every `pkg/` category directory is a grouping folder only — NEVER place Go source files directly in a category root. Each category MUST contain subdirectories that hold the actual code. For example, `types/` contains `api/`, `entity/`, `orm/`; `services/` contains `user/`, etc. The category root itself has no `.go` files.
+## Common Mistakes
 
-### Category Rules
-
-| Category | Purpose | Key Rule |
-|---|---|---|
-| `components/` | Application wiring — creates services, registers them with app manager, handles config and signals | Only place that knows about ALL services; the "main" of each deployable |
-| `services/` | Business logic — each service is a self-contained unit with its own `Manager` interface | Must declare dependencies via `Dependencies()`, never import other services directly |
-| `routers/` | HTTP handlers — each router owns a `router.yaml` + `Handlers()` map | Delegates business logic to services, never contains domain logic itself |
-| `middlewares/` | Request processing — each middleware implements `api.Middleware` | Stateless request/response transformations only |
-| `types/api/` | API request/response structs | Tags: `json`, `form`, `query`, `validate`. NO gorm tags |
-| `types/entity/` | Pure business domain models | Tags: `json` only. Returned from services to callers |
-| `types/orm/` | Database table models | Tags: `gorm` only. Must implement `TableName()`. Never exposed outside services |
-| `utils/` | Shared helpers | Must be stateless, no service dependencies |
-
-### Type Separation Example
-
-The same domain concept has THREE separate type representations:
-
-```go
-// types/api/user.go — request validation
-type CreateUserRequest struct {
-    Name  string `json:"name" form:"name" validate:"required"`
-    Email string `json:"email" form:"email" validate:"required,email"`
-}
-
-// types/entity/user.go — clean business model
-type User struct {
-    ID        int64     `json:"id"`
-    Name      string    `json:"name"`
-    Email     string    `json:"email"`
-    CreatedAt time.Time `json:"created_at"`
-}
-
-// types/orm/user.go — database model
-type User struct {
-    ID        int64     `gorm:"primaryKey"`
-    Name      string    `gorm:"type:varchar(255);not null"`
-    Email     string    `gorm:"type:varchar(255);uniqueIndex;not null"`
-    CreatedAt time.Time `gorm:"autoCreateTime"`
-}
-func (User) TableName() string { return "users" }
-```
-
-**Data flows**: Router receives `api.CreateUserRequest` → calls service → service uses `orm.User` for DB → returns `entity.User` to router → router sends JSON response.
-
-### Server Component — Application Daemon
-
-**IMPORTANT**: All server implementations MUST follow the file structure under `example/pkg/components/server/example/`. This is the standard pattern for creating the application daemon. Each file has a specific responsibility:
-
-```
-components/server/myapp/
-├── model.go    # Server interface definition (Named + Daemon + Initializable + Debuggable)
-├── manager.go  # Main struct, New(), Init(), Start(), Stop(), Info() — orchestrates everything
-├── config.go   # Viper config creation (newConfig) and loading (initConfig)
-├── service.go  # initServices() — creates ALL service instances in layered order
-├── api.go      # initAPI() — registers middlewares and routers with the API server
-└── signal.go   # listenSignals() — OS signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
-```
-
-#### `model.go` — Server Interface
-
-```go
-type Server interface {
-    common.Named
-    common.Daemon        // Start(ctx) / Stop(wait)
-    common.Initializable // Init(ctx)
-    common.Debuggable    // Info(w, debug)
-}
-```
-
-#### `manager.go` — Orchestrator
-
-The manager holds all service references and implements the `Server` interface. `Init()` calls `initConfig()` → `initServices()` → registers services with app manager → `TopoSort()` → `services.Init()` → `initAPI()`. `Start()` starts all services and blocks on `<-ctx.Done()`.
-
-```go
-type manager struct {
-    name   string
-    config *viper.Viper
-    log    log.Logger
-
-    // utility services
-    db db.Manager
-
-    // system services
-    bus pubsub.Manager
-
-    // business services
-    userSvc user.Manager
-
-    // api services
-    mws []api.Middleware
-    api server.Manager
-
-    // service controller
-    services app.Manager
-    cancel   context.CancelFunc
-}
-
-func New(configPath string) Server {
-    return &manager{config: newConfig(configPath)}
-}
-```
-
-#### `service.go` — Service Creation (Layered Order)
-
-Services MUST be created in this layered order:
-
-```go
-func (m *manager) initServices() error {
-    // 1. Logger — first, everything depends on it
-    m.log = log.New(...)
-
-    // 2. Database
-    m.db = db.New(db.WithType(...), db.WithDataSource(...), db.WithLogger(m.log))
-
-    // 3. App manager (service controller)
-    m.services = app.New(m.config, app.WithLogger(m.log))
-
-    // 4. System services (pubsub, etc.)
-    m.bus = pubsub.New(driver.NewMemory(m.log), pubsub.WithLogger(m.log))
-
-    // 5. Business services
-    m.userSvc = user.New(m.db, user.WithLogger(m.log))
-
-    // 6. API server (created last, started last)
-    m.api = server.New(server.WithLogger(m.log))
-    // Add server instances from config
-    servers := m.config.GetStringMap("api")
-    for name := range servers {
-        m.api.Add(name, server.WithEndpoint(...))
-    }
-    return nil
-}
-```
-
-#### `api.go` — Middleware and Router Registration
-
-```go
-func (m *manager) initAPI() error {
-    middlewares := []api.Middleware{
-        authmw.New(),
-    }
-    routers := []api.Router{
-        userRouter.New(m.userSvc, m.log),
-    }
-    if err := m.api.RegisterMiddlewares(middlewares...); err != nil {
-        return errors.Wrap(err)
-    }
-    if err := m.api.RegisterRouters(routers...); err != nil {
-        return errors.Wrap(err)
-    }
-    return nil
-}
-```
-
-#### `signal.go` — OS Signal Handling
-
-```go
-func (m *manager) listenSignals(ctx context.Context) {
-    // SIGINT/SIGTERM  → graceful shutdown (services.Stop + cancel)
-    // SIGUSR1         → dump service info to stdout (m.Info(os.Stdout, true))
-    // SIGUSR2         → dump goroutine stack trace
-}
-```
-
-#### Registration Order in `manager.go Init()`
-
-```go
-func (m *manager) Init(ctx context.Context) error {
-    m.initConfig()
-    m.initServices()
-
-    // Register services in dependency layers
-    m.services.Register(m.db)                    // basic services
-    m.services.Register(m.bus, m.userSvc)        // system + business services
-    m.services.TopoSort()                        // resolve dependency order
-    m.services.Register(m.api)                   // API registered AFTER sort to ensure it starts last
-
-    // Subscribe all services to pubsub bus
-    for _, svc := range m.services.Services() {
-        m.bus.Subscribe(svc, "/")
-    }
-
-    m.services.Init(ctx)                         // init all services in dependency order
-    m.initAPI()                                  // wire routes after services are initialized
-    return nil
-}
-```
-
-## Import Organization
-
-**IMPORTANT**: All Go imports MUST be organized into exactly three groups, separated by blank lines:
-
-1. **Go standard library** packages
-2. **Third-party** packages
-3. **Project** packages (current module and `github.com/xhanio/*`)
-
-```go
-import (
-    // Group 1: Go standard library
-    "context"
-    "database/sql"
-    "fmt"
-    "time"
-
-    // Group 2: Third-party packages
-    "github.com/labstack/echo/v4"
-    "github.com/spf13/viper"
-    "gorm.io/gorm"
-
-    // Group 3: Project packages (xhanio/* and current module)
-    "github.com/xhanio/errors"
-    "github.com/xhanio/framingo/pkg/services/db"
-    "github.com/xhanio/framingo/pkg/types/common"
-    "github.com/xhanio/framingo/pkg/utils/log"
-)
-```
-
-Never mix groups. Never use more than three groups. Each group is alphabetically sorted.
+- `errors.New("msg")` does not compile — use `errors.Newf("msg")`. `New` takes functional options, not a message.
+- Never return raw `err` — always `errors.Wrap(err)` or `errors.Wrapf(err, "context")`. Raw returns drop the stack trace.
+- Never use `fmt.Errorf` or stdlib `errors.New` — the API server's error handler routes on `xhanio/errors` categories to set HTTP status.
+- Don't place `.go` files at a `pkg/` category root — every category is a grouping folder; code lives in subdirectories (`pkg/services/user/`, not `pkg/services/foo.go`).
+- A router's `prefix` MUST match the package's domain (e.g., `routers/user/` → `/users`), not an arbitrary path.
+- Don't use the global Viper singleton — use the instance passed via `context.Context` (`confutil.FromContext(ctx)`).
+- After `echo.Shutdown` is called, the same echo instance can't be reused — the framework's api server rebuilds it on `Init`, but custom services must do the same if they wrap net/http servers.
 
 ## Key Patterns
 

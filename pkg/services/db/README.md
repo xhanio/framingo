@@ -52,7 +52,7 @@ if err := manager.Init(ctx); err != nil {
 
 ### Dynamic Configuration via Context
 
-When used with the app manager, the database service automatically reads connection parameters from context during `Init(ctx)`. This enables dynamic reconfiguration on restart:
+When used with the supervisor, the database service automatically reads connection parameters from context during `Init(ctx)`. This enables dynamic reconfiguration on restart:
 
 ```go
 // Connection options can be overridden by Viper config at init time:

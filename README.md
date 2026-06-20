@@ -60,11 +60,11 @@ import (
     "fmt"
     "os"
 
-    "github.com/xhanio/framingo/example/pkg/components/cmd/example"
+    "github.com/xhanio/framingo/example/pkg/components/cmd/app"
 )
 
 func main() {
-    rootCmd := example.NewRootCmd()
+    rootCmd := app.NewRootCmd()
     if err := rootCmd.Execute(); err != nil {
         fmt.Fprintf(os.Stderr, "Error: %v\n", err)
         os.Exit(1)
@@ -90,7 +90,9 @@ go build -o myapp cmd/myapp/main.go
 ./myapp daemon -c config.yaml
 
 # Test the API
-curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello"
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"message":"Hello"}' \
+  http://localhost:8080/api/v1/example/helloworld
 # Response: {"id":1,"message":"Hello","created_at":"...","updated_at":"..."}
 ```
 
@@ -108,7 +110,7 @@ graph TB
     end
 
     subgraph "Service Orchestration"
-        App[App Controller<br/>Lifecycle & Dependencies]
+        Sup[Supervisor<br/>Lifecycle & Dependencies]
     end
 
     subgraph "Core Components"
@@ -117,15 +119,15 @@ graph TB
         Utils[Utilities<br/>Helper Functions]
     end
 
-    CLI --> App
-    Config --> App
-    App --> Services
-    App --> API
-    App --> Utils
+    CLI --> Sup
+    Config --> Sup
+    Sup --> Services
+    Sup --> API
+    Sup --> Utils
 
     style CLI fill:#e1f5ff
     style Config fill:#e1f5ff
-    style App fill:#fff4e1
+    style Sup fill:#fff4e1
     style Services fill:#f0f0f0
     style API fill:#f0f0f0
     style Utils fill:#f0f0f0
@@ -172,7 +174,7 @@ Production-ready service implementations that provide core functionality:
 
 - **[api/client](pkg/services/api/client/)** - HTTP client utilities for making API requests
 
-- **[app](pkg/services/app/)** - Service lifecycle orchestration
+- **[supervisor](pkg/services/supervisor/)** - Service lifecycle orchestration
   - Automatic dependency resolution via topological sort
   - Service registration and initialization with context-based configuration
   - Graceful startup and shutdown with configurable timeout
@@ -446,7 +448,7 @@ import (
 
     "github.com/spf13/viper"
     "github.com/xhanio/framingo/pkg/services/api/server"
-    "github.com/xhanio/framingo/pkg/services/app"
+    "github.com/xhanio/framingo/pkg/services/supervisor"
     "github.com/xhanio/framingo/pkg/types/common"
     "github.com/xhanio/framingo/pkg/utils/log"
 
@@ -461,7 +463,7 @@ type Manager interface {
 type manager struct {
     config   *viper.Viper
     log      log.Logger
-    services app.Manager
+    services supervisor.Manager
     api      server.Manager
     helloSvc hello.Manager
 }
@@ -475,7 +477,7 @@ func (m *manager) Init(ctx context.Context) error {
     m.log = log.New(log.WithLevel(m.config.GetInt("log.level")))
 
     // Initialize service controller (requires *viper.Viper for config propagation)
-    m.services = app.New(m.config, app.WithLogger(m.log))
+    m.services = supervisor.New(m.config, supervisor.WithLogger(m.log))
 
     // Create API server
     m.api = server.New(server.WithLogger(m.log))
@@ -514,7 +516,7 @@ func (m *manager) Init(ctx context.Context) error {
 }
 
 func (m *manager) Start(ctx context.Context) error {
-    // Start all services (signal handling is built into the app manager)
+    // Start all services (signal handling is built into the supervisor)
     return m.services.Start(ctx)
 }
 
@@ -618,7 +620,7 @@ View package documentation using go doc:
 ```bash
 # View package documentation
 go doc github.com/xhanio/framingo/pkg/services/api/server
-go doc github.com/xhanio/framingo/pkg/services/app
+go doc github.com/xhanio/framingo/pkg/services/supervisor
 go doc github.com/xhanio/framingo/pkg/utils/log
 ```
 
@@ -630,7 +632,7 @@ The `example/` directory contains a complete, production-ready application demon
 example/
 +-- pkg/
     +-- components/
-    |   +-- cmd/example/        # CLI with Cobra (daemon, version commands)
+    |   +-- cmd/app/            # CLI with Cobra (daemon, version commands)
     |   +-- server/example/     # Server orchestration and lifecycle management
     +-- services/example/       # Business service with lifecycle methods
     +-- routers/example/        # HTTP routes with YAML configuration
@@ -663,17 +665,17 @@ api:
 EOF
 
 # Create a main.go that uses the example components
-cat > cmd/example/main.go <<EOF
+cat > cmd/app/main.go <<EOF
 package main
 
 import (
     "fmt"
     "os"
-    "github.com/xhanio/framingo/example/pkg/components/cmd/example"
+    "github.com/xhanio/framingo/example/pkg/components/cmd/app"
 )
 
 func main() {
-    rootCmd := example.NewRootCmd()
+    rootCmd := app.NewRootCmd()
     if err := rootCmd.Execute(); err != nil {
         fmt.Fprintf(os.Stderr, "Error: %v\n", err)
         os.Exit(1)
@@ -682,11 +684,13 @@ func main() {
 EOF
 
 # Build and run
-go build -o myapp cmd/example/main.go
+go build -o myapp cmd/app/main.go
 ./myapp daemon -c config.yaml
 
 # Test the API
-curl -X GET "http://localhost:8080/api/v1/demo/example?message=Hello%20World"
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"message":"Hello World"}' \
+  http://localhost:8080/api/v1/example/helloworld
 # Response: {"id":1,"message":"Hello World","created_at":"...","updated_at":"..."}
 ```
 

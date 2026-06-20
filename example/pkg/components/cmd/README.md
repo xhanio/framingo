@@ -1,61 +1,40 @@
 # Example Command Component
 
-This directory contains a CLI (Command Line Interface) implementation using Cobra, providing a command-line interface for the Framingo server application.
+This directory contains the Cobra-based command-line entry points for the example project. It is split into two sibling packages that map to two binaries:
 
-## Overview
-
-The `example` cmd component provides a user-friendly CLI for managing the server application. It includes commands for running the server as a daemon, checking version information, and handling command-line arguments and flags.
+- [`app`](app/) drives the `exampleapp` daemon binary (long-running server process).
+- [`cli`](cli/) drives the `examplecli` client binary (operator/user-facing subcommands that talk to the daemon via the client SDK).
 
 ## Structure
 
 ```
-example/
-├── root.go      # Root command and global flags
-├── daemon.go    # Daemon command to run the server
-└── common.go    # Common commands (version, etc.)
+cmd/
+├── app/             # exampleapp (daemon)
+│   ├── root.go      # Root command and global flags
+│   ├── daemon.go    # `daemon` subcommand: boots the server
+│   └── common.go    # `version` and other shared subcommands
+└── cli/             # examplecli (client)
+    ├── root.go      # Root command, global flags, client SDK wiring
+    ├── common.go    # `version` and other shared subcommands
+    ├── auth.go      # `login` / `logout`
+    ├── cert.go      # `certutil` (CA + server cert generation)
+    └── example.go   # `helloworld` and other domain subcommands
 ```
 
-## Files
+## `app` package — `exampleapp` daemon
 
-### [root.go](root.go)
+`app.NewRootCmd()` returns the root command for the daemon binary. It registers:
 
-Defines the root command and global persistent flags:
-- Root command configuration
-- Global flags: `--help`, `--verbose`
-- Subcommand registration
-- Pre-run hooks
+- `daemon` — loads YAML config (instance-based Viper), constructs the server from [pkg/components/server/example](../server/example/), runs `Init` then `Start`, and blocks until SIGINT/SIGTERM. Accepts `-c, --config <path>` (default `config.json`).
+- `version` — prints build info from [pkg/types/info](../../../../pkg/types/info/) as JSON.
 
-### [daemon.go](daemon.go)
+Global persistent flags: `--help`, `-v, --verbose`.
 
-Implements the daemon command to start the server:
-- Configuration file path flag (`--config`, `-c`)
-- Server initialization and startup
-- Integration with [pkg/components/server](../server/example/)
-
-### [common.go](common.go)
-
-Provides common utility commands:
-- `version` command - displays build information
-- JSON-formatted version output
-
-## Usage
-
-### Integration with main.go
-
-Create a `main.go` file to use the CLI:
+Wired into [`example/build/binary/exampleapp/main.go`](../../../build/binary/exampleapp/main.go):
 
 ```go
-package main
-
-import (
-    "fmt"
-    "os"
-
-    "github.com/xhanio/framingo/example/pkg/components/cmd/example"
-)
-
 func main() {
-    rootCmd := example.NewRootCmd()
+    rootCmd := app.NewRootCmd()
     if err := rootCmd.Execute(); err != nil {
         fmt.Fprintf(os.Stderr, "Error: %v\n", err)
         os.Exit(1)
@@ -63,409 +42,66 @@ func main() {
 }
 ```
 
-### Building the Binary
-
-```bash
-# Build the application
-go build -o myapp cmd/myapp/main.go
-
-# Or with build info
-go build -ldflags="-X github.com/xhanio/framingo/pkg/types/info.Version=1.0.0 \
-                    -X github.com/xhanio/framingo/pkg/types/info.Commit=$(git rev-parse HEAD) \
-                    -X github.com/xhanio/framingo/pkg/types/info.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-         -o myapp cmd/myapp/main.go
-```
-
-## Commands
-
-### daemon
-
-Starts the server as a daemon process.
-
-**Usage:**
-```bash
-myapp daemon [flags]
-```
-
-**Flags:**
-- `-c, --config <path>` - Path to configuration file (default: `config.json`)
-- `-v, --verbose` - Enable verbose output
-- `--help` - Show help information
-
-**Examples:**
-```bash
-# Start with default config
-./myapp daemon
-
-# Start with custom config
-./myapp daemon -c /etc/myapp/config.yaml
-
-# Start with verbose logging
-./myapp daemon -c config.yaml -v
-```
-
-**What it does:**
-1. Loads configuration from specified file (instance-based Viper)
-2. Creates server instance ([pkg/components/server](../server/example/))
-3. Initializes all services with context-based config propagation
-4. Starts HTTP API server(s) with health monitoring
-5. Starts signal listeners (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
-6. Blocks until SIGINT/SIGTERM
-7. Gracefully shuts down with configurable timeout
-
-### version
-
-Displays version and build information.
-
-**Usage:**
-```bash
-myapp version
-```
-
-**Example Output:**
-```json
-{
-  "product": "framingo",
-  "version": "1.0.0",
-  "commit": "a1b2c3d4e5f6",
-  "build_time": "2024-01-15T10:30:00Z",
-  "go_version": "go1.21.5"
-}
-```
-
-**What it does:**
-- Retrieves build information from [pkg/types/info](../../../../pkg/types/info/)
-- Formats as JSON with indentation
-- Prints to stdout
-
-## Global Flags
-
-These flags are available for all commands:
-
-### --help
-Shows help information for the command.
-
-```bash
-myapp --help
-myapp daemon --help
-```
-
-### -v, --verbose
-Enables verbose output (currently defined but not actively used).
-
-```bash
-myapp daemon -v
-```
-
-## Command Flow
-
-### Daemon Command Flow
+### Daemon flow
 
 ```
-User runs: ./myapp daemon -c config.yaml
-    
-Root Command (PersistentPreRun)
-  - Check --help flag
-  - Set up global state
-    
-Daemon Command (RunE)
-  - Parse --config flag
-  - Create server with config path
-    
-Server Initialization (pkg/components/server)
-  - Load YAML config via instance-based Viper
-  - Enable config hot-reload (WatchConfig)
-  - Initialize logger
-  - Initialize database
-  - Create app manager with *viper.Viper config
-  - Initialize services (config propagated via context)
-  - Initialize API server(s)
-  - Register middlewares (pkg/middlewares)
-  - Register routers (pkg/routers)
-
-Server Start
-  - Start all services in dependency order
-  - Start HTTP API server(s)
-  - Start signal listeners (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
-  - Start health monitor (if configured)
-  - Enable pprof (if configured)
-  - Block until SIGINT/SIGTERM
-
-Graceful Shutdown
-  - Stop all services in reverse dependency order
-  - Configurable shutdown timeout
-  - Close connections
-  - Exit
+exampleapp daemon -c config.yaml
+  └── server.New(configPath)
+        ├── Init(ctx)   # load config, init logger/db, build supervisor, register routers/middlewares
+        └── Start(ctx)  # start services + HTTP API, install signal handlers, block until SIGINT/SIGTERM,
+                        # then graceful shutdown in reverse dependency order
 ```
 
-## Error Handling
+## `cli` package — `examplecli` client
 
-The CLI implements proper error handling:
+`cli.NewRootCmd()` returns the root command for the client binary. Unlike `app`, this root command owns a shared client SDK instance ([pkg/components/client/example](../client/example/)) that all subcommands use.
 
-### Error Propagation
-Errors from the server are wrapped and returned:
-```go
-if err := m.Init(); err != nil {
-    return errors.Wrap(err)
-}
-```
+The `PersistentPreRunE` hook runs before every subcommand and:
 
-### Silent Usage on Errors
-When an error occurs, usage information is not shown:
-```go
-cmd := &cobra.Command{
-    SilenceUsage: true,  // Don't show usage on runtime errors
-}
-```
+1. Resolves the credential file at `~/.example`.
+2. Builds an `example.Client` with `WithCredential`, `WithEndpoint`, and (when `-v`) `WithDebug`.
+3. Calls `cli.Init()` so subcommands can immediately invoke client methods.
 
-### Exit Codes
-- `0` - Success
-- `1` - Error (automatically set by Cobra on error)
+Global persistent flags: `--help`, `-v, --verbose`, `-e, --endpoint <url>`.
 
-## Adding New Commands
+### Subcommand groupings
 
-### 1. Create Command File
+- **Auth** ([auth.go](cli/auth.go))
+  - `login -u <username>` — prompts for password via `term.ReadPassword`, calls `cli.Login`.
+  - `logout` — calls `cli.Logout`.
+- **Cert** ([cert.go](cli/cert.go))
+  - `certutil` — generates a CA (`ca.crt`/`ca.key`) and a server cert (`server.crt`/`server.key`) via [pkg/utils/certutil](../../../../pkg/utils/certutil/). Flags: `-p, --product-cn`, `--domain`, `--ip`.
+- **Domain** ([example.go](cli/example.go))
+  - `helloworld [message]` — calls `cli.HelloWorld` against the server.
+- **Common** ([common.go](cli/common.go))
+  - `version` — same build-info output as the daemon's `version`.
 
-Create a new file (e.g., `migrate.go`):
+Wired into [`example/build/binary/examplecli/main.go`](../../../build/binary/examplecli/main.go) with the same pattern as `exampleapp`, swapping `app.NewRootCmd()` for `cli.NewRootCmd()`.
 
-```go
-package example
+## Adding new subcommands
 
-import (
-    "github.com/spf13/cobra"
-    "github.com/xhanio/errors"
-)
+Pick the package by audience:
 
-func NewMigrateCmd() *cobra.Command {
-    cmd := &cobra.Command{
-        Use:          "migrate",
-        Short:        "Run database migrations",
-        RunE:         runMigrate,
-        SilenceUsage: true,
-    }
-    return cmd
-}
+- Operates on the running process (or is intrinsic to the server) → add to `app`.
+- Talks to the server as a client / produces local artifacts → add to `cli` and use the package-level `cli` client instance set up by `PersistentPreRunE`.
 
-func runMigrate(cmd *cobra.Command, args []string) error {
-    // Implementation
-    return nil
-}
-```
+Then register the new `*cobra.Command` in the corresponding `root.go` via `root.AddCommand(...)`.
 
-### 2. Register in Root Command
+## Configuration priority (daemon)
 
-Add to [root.go](root.go):
+Standard Viper precedence:
 
-```go
-root.AddCommand(NewDaemonCmd())
-root.AddCommand(NewVersionCmd())
-root.AddCommand(NewMigrateCmd())  // Add new command
-```
-
-### 3. Use the Command
-
-```bash
-myapp migrate
-```
-
-## Common Command Patterns
-
-### Command with Arguments
-
-```go
-func NewExampleCmd() *cobra.Command {
-    cmd := &cobra.Command{
-        Use:   "example [name]",
-        Short: "Example command with arg",
-        Args:  cobra.ExactArgs(1),  // Require exactly 1 arg
-        RunE: func(cmd *cobra.Command, args []string) error {
-            name := args[0]
-            fmt.Printf("Hello, %s!\n", name)
-            return nil
-        },
-    }
-    return cmd
-}
-```
-
-### Command with Multiple Flags
-
-```go
-var (
-    host string
-    port int
-    tls  bool
-)
-
-func NewServerCmd() *cobra.Command {
-    cmd := &cobra.Command{
-        Use:  "server",
-        RunE: runServer,
-    }
-    cmd.Flags().StringVar(&host, "host", "0.0.0.0", "Server host")
-    cmd.Flags().IntVar(&port, "port", 8080, "Server port")
-    cmd.Flags().BoolVar(&tls, "tls", false, "Enable TLS")
-    return cmd
-}
-```
-
-### Subcommands
-
-```go
-func NewDatabaseCmd() *cobra.Command {
-    cmd := &cobra.Command{
-        Use:   "database",
-        Short: "Database operations",
-    }
-    // Add subcommands
-    cmd.AddCommand(NewMigrateCmd())
-    cmd.AddCommand(NewSeedCmd())
-    return cmd
-}
-
-// Usage: myapp database migrate
-// Usage: myapp database seed
-```
-
-## Configuration Priority
-
-When using the daemon command, configuration is loaded with priority:
-
-1. **Command-line flags** (highest priority)
-2. **Environment variables** (with product prefix)
-3. **Configuration file** (specified via `-c` flag)
-4. **Default values** (lowest priority)
-
-Example:
-```bash
-# Config file specifies port: 8080
-# Environment variable overrides it
-export FRAMINGO_API_HTTP_PORT=9090
-
-# Command runs with port 9090
-./myapp daemon -c config.yaml
-```
-
-## Best Practices
-
-1. **Consistent Naming**: Use verb-noun pattern (e.g., `list users`, `create user`)
-2. **Help Text**: Provide clear, concise help messages
-3. **Error Messages**: Return descriptive errors with context
-4. **Flags**: Use short flags (`-c`) for common options
-5. **Validation**: Validate flags before executing command logic
-6. **Silent Usage**: Set `SilenceUsage: true` for runtime errors
-7. **Exit Codes**: Use appropriate exit codes (0 for success, non-zero for errors)
-
-## Integration with Server Component
-
-The daemon command integrates directly with the server component:
-
-```go
-func runDaemon(cmd *cobra.Command, args []string) error {
-    // Create server from pkg/components/server
-    m := example.New(configPath)
-
-    // Initialize (loads config, sets up services)
-    if err := m.Init(cmd.Context()); err != nil {
-        return errors.Wrap(err)
-    }
-
-    // Start (blocks until SIGINT/SIGTERM)
-    if err := m.Start(cmd.Context()); err != nil {
-        return errors.Wrap(err)
-    }
-
-    return nil
-}
-```
-
-This connects:
-- CLI layer (this package)
-- Server component ([pkg/components/server](../server/example/))
-- All registered services, routers, and middlewares
-
-## Development Workflow
-
-### Running During Development
-
-```bash
-# Run directly with go run
-go run cmd/myapp/main.go daemon -c config.yaml
-
-# Run with verbose flag
-go run cmd/myapp/main.go daemon -c config.yaml -v
-
-# Check version
-go run cmd/myapp/main.go version
-```
-
-### Testing Commands
-
-```bash
-# Build and test
-go build -o myapp cmd/myapp/main.go
-./myapp --help
-./myapp daemon --help
-./myapp version
-```
-
-### Debugging
-
-```bash
-# Use delve for debugging
-dlv debug cmd/myapp/main.go -- daemon -c config.yaml
-```
-
-## Production Deployment
-
-### Systemd Service
-
-Create a systemd service file (`/etc/systemd/system/myapp.service`):
-
-```ini
-[Unit]
-Description=My Framingo Application
-After=network.target
-
-[Service]
-Type=simple
-User=myapp
-Group=myapp
-WorkingDirectory=/opt/myapp
-ExecStart=/opt/myapp/bin/myapp daemon -c /etc/myapp/config.yaml
-Restart=on-failure
-RestartSec=5s
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-```bash
-sudo systemctl enable myapp
-sudo systemctl start myapp
-sudo systemctl status myapp
-```
-
-### Docker Container
-
-```dockerfile
-FROM golang:1.24 AS builder
-WORKDIR /app
-COPY . .
-RUN go build -o myapp cmd/myapp/main.go
-
-FROM debian:bookworm-slim
-COPY --from=builder /app/myapp /usr/local/bin/
-COPY config.yaml /etc/myapp/config.yaml
-CMD ["myapp", "daemon", "-c", "/etc/myapp/config.yaml"]
-```
+1. Command-line flags
+2. Environment variables (product prefix)
+3. Configuration file (via `-c`)
+4. Defaults
 
 ## See Also
 
-- [Cobra Documentation](https://github.com/spf13/cobra)
-- [Server Component](../server/example/)
-- [Example Services](../../services/example/)
+- [Server Component](../server/example/) — what `app daemon` boots
+- [Client Component](../client/example/) — what `cli` subcommands call
 - [Example Routers](../../routers/example/)
-- [Example Middlewares](../../middlewares/example/)
+- [Example Services](../../services/example/)
 - [Build Info Types](../../../../pkg/types/info/)
+- [`exampleapp` main](../../../build/binary/exampleapp/main.go)
+- [`examplecli` main](../../../build/binary/examplecli/main.go)

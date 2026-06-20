@@ -10,7 +10,7 @@ The `example` server component is a comprehensive implementation that orchestrat
 - Pub/sub message bus for inter-service communication
 - Service lifecycle management with context-based config propagation
 - HTTP API server setup with routers and middlewares
-- Built-in signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+- Built-in signal handling (SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2)
 - Health monitoring with liveness/readiness probes and auto-restart
 - Profiling support (pprof)
 
@@ -20,11 +20,12 @@ This component serves as the main entry point for your application and demonstra
 
 ```
 example/
-├── manager.go    # Server lifecycle (Init, Start, Stop) and service wiring
+├── manager.go    # Manager struct (fields for log, db, bus, repository, system/business services, api, supervisor)
 ├── model.go      # Server interface
 ├── config.go     # Viper configuration setup and loading
-├── service.go    # Service instance creation (logger, db, app manager, API)
-├── signal.go     # OS signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+├── service.go    # Service instance creation (logger, db, bus, repository, system services, business services, api)
+├── lifecycle.go  # Init/Start/Stop, supervisor registration order
+├── signal.go     # OS signal handling (SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2)
 └── api.go        # API router and middleware registration
 ```
 
@@ -52,30 +53,30 @@ Viper configuration setup and loading:
 
 ### [service.go](service.go)
 
-Service instance creation:
+Service instance creation (in `initServices`):
 - Logger initialization with file rotation
-- Database manager setup with connection pooling and migration
-- Service controller (`app.Manager`) creation
-- Pub/sub bus creation with configurable driver (memory, Redis, Kafka)
-- Business service creation (e.g. example service)
-- API server manager creation with per-server endpoint, throttle, and TLS configuration
+- Service controller (`supervisor.Manager`) creation
+- Infra services: database manager (with pooling/migration), pub/sub bus (memory/Redis/Kafka driver), repository
+- System services: `user`, `role`, `organization`, `certificate`, `auth` (DI wired — auth depends on user, all system services depend on repository)
+- Business services: `example` (depends on repository)
+- API server manager with per-server endpoint, throttle, and TLS configuration
 
-### [manager.go](manager.go)
+### [lifecycle.go](lifecycle.go)
 
 Server lifecycle orchestration:
-- Service registration and dependency resolution via topological sort
+- Service registration order: infra (`db`) → system (`bus`, `repository`, `user`, `role`, `organization`, `certificate`, `auth`) → business (`example`) → topo sort → `api` last
 - Pub/sub bus subscriptions for all services on hierarchical topics
-- Service initialization and post-initialization (API wiring)
+- Service initialization and post-initialization (API wiring via `initAPI`)
 - Startup flow with pprof and signal handling
 - Graceful shutdown
 
 ### [api.go](api.go)
 
 Handles API-specific initialization:
-- Middleware registration
-- Router registration
-- Integration with [pkg/middlewares](../../middlewares/example/)
-- Integration with [pkg/routers](../../routers/example/)
+- Middleware registration: `deflate`, `authnuser` (user JWT/session, needs `auth` + `role`), `authnagent`, `authz` (RBAC, needs `role`), `feature`
+- Router registration: `example`, `auth`, `user`, `role`, `certificate`
+- Integration with [pkg/middlewares](../../middlewares/)
+- Integration with [pkg/routers](../../routers/)
 
 ## Usage
 
@@ -170,14 +171,14 @@ The `Init(ctx)` method performs the following steps:
 
 2. **Create Service Instances** (via [service.go](service.go))
    - Initialize logger with file rotation
-   - Create database manager with connection pooling and migration
-   - Create service controller: `app.New(m.config, ...)`
-   - Create pub/sub bus with driver (memory by default)
-   - Create business services (e.g. example service with database dependency)
+   - Create service controller: `supervisor.New(m.config, ...)`
+   - Create infra services: database manager, pub/sub bus, repository
+   - Create system services: `user`, `role`, `organization`, `certificate`, `auth` (DI between them)
+   - Create business services (e.g. `example` with repository dependency)
    - Create API server manager with per-server endpoint, throttle, and TLS configuration
 
-3. **Register and Wire Services** (via [manager.go](manager.go))
-   - Register all services with controller
+3. **Register and Wire Services** (via [lifecycle.go](lifecycle.go))
+   - Register infra → system → business services in order with the supervisor
    - Perform topological sort for dependency resolution
    - Register API server last (after topo sort) to ensure latest start
    - Subscribe all services to the bus on hierarchical topics (`/`, `/components/{component}`, `/components/{component}/services/{service}`)
@@ -193,33 +194,43 @@ The `Init(ctx)` method performs the following steps:
 
 The `Start()` method:
 
-1. **Start All Services**
-   - Launches services in dependency order via the app manager
+1. **Guard Against Double Start**
+   - Returns early with a warning log if the manager has already been started and not stopped
 
 2. **Enable pprof (if configured)**
-   - Starts pprof HTTP server on configured port
+   - Starts pprof HTTP server on configured port in a background goroutine
 
-3. **Signal Handling**
-   - SIGINT/SIGTERM: Graceful shutdown
-   - SIGUSR1: Print service info to stdout
-   - SIGUSR2: Print goroutine stack traces
+3. **Start All Services**
+   - Launches services in dependency order via the supervisor
+   - Health monitoring (liveness/readiness probes, auto-restart) runs inside the supervisor once services are started
 
-4. **Health Monitoring (if configured)**
-   - Periodic liveness/readiness checks on all services
-   - Automatic restart on liveness failure with configurable retry policy
-
-5. **Block Until Shutdown**
-   - Waits for SIGINT/SIGTERM
-   - Handles shutdown gracefully with configurable timeout
+4. **Listen for Signals (blocks)**
+   - Derives a cancellable child context (`m.ctx`, `m.cancel`) from the caller's context
+   - Calls `listenSignals(m.ctx)` synchronously — this is the blocking call that keeps `Start()` running
+   - Returns when either a shutdown signal is received or `m.Stop()` is called programmatically
 
 ### Shutdown Flow
 
 The `Stop()` method:
 
-1. Stops all services in reverse dependency order
-2. Waits for all goroutines to complete
-3. Closes database connections
-4. Cleans up resources
+1. Stops all services in reverse dependency order via the supervisor (closes database connections and other resources owned by services)
+2. Cancels `m.cancel` to unblock `listenSignals` (and therefore `Start()`)
+3. Resets `m.cancel` to `nil` so the manager can be restarted
+
+Shutdown can be triggered in two ways:
+
+- **By signal**: `listenSignals` receives `SIGINT`/`SIGTERM` and calls `m.Stop(true)` itself, then returns.
+- **Programmatically**: external code calls `m.Stop(wait)`; the context cancellation wakes `listenSignals`, which logs the shutdown and returns.
+
+Both paths converge on the same `Stop()` logic — there is a single shutdown code path.
+
+### Restart Flow
+
+`SIGHUP` triggers `m.services.Restart(ctx)` on the supervisor (see [signal.go](signal.go)):
+
+1. Supervisor stops all services in reverse dependency order, then re-initializes and re-starts them.
+2. The api server rebuilds its underlying `echo` instance on each `Init` because `net/http` forbids reusing a `Server` after `Shutdown` — without this, the second start would fail with `http: Server closed`.
+3. Routers and middlewares are re-registered as part of the api server's re-init path.
 
 ## Service Dependencies
 
@@ -229,38 +240,52 @@ The server component manages several layers of services:
 - **Logger**: Application-wide logging
 - **Database Manager**: Connection pool and migrations
 
-### System Services
+### Infra Services
 - **Pub/Sub Bus**: Inter-service message bus ([pkg/services/pubsub](../../../../pkg/services/pubsub/))
+- **Repository**: Data access layer on top of the database manager (see [pkg/services/repository](../../services/repository/))
+
+### System Services
+- **User / Role / Organization / Certificate / Auth**: Identity, RBAC, org tree, cert storage, and authentication (see [pkg/services/system](../../services/system/))
 
 ### Business Services
 - **Example Service**: Custom business logic (see [pkg/services/example](../../services/example/))
 
 ### API Services
 - **Server Manager**: HTTP API server ([pkg/services/api/server](../../../../pkg/services/api/server/))
-- **Routers**: HTTP route handlers (see [pkg/routers/example](../../routers/example/))
-- **Middlewares**: Request processing pipeline (see [pkg/middlewares/example](../../middlewares/example/))
+- **Routers**: HTTP route handlers — `example`, `auth`, `user`, `role`, `certificate` (see [pkg/routers](../../routers/))
+- **Middlewares**: Request pipeline — `deflate`, `authnuser`, `authnagent`, `authz`, `feature` (see [pkg/middlewares](../../middlewares/))
 
 ### Service Controller
-- **Controller Manager**: Orchestrates service lifecycle ([pkg/services/app](../../../pkg/services/app/))
+- **Controller Manager**: Orchestrates service lifecycle ([pkg/services/supervisor](../../../pkg/services/supervisor/))
 
 The controller automatically resolves dependencies using topological sorting and manages health monitoring:
 
 ```go
 // Create service controller with config for propagation to services
-m.services = app.New(m.config,
-    app.WithLogger(m.log),
-    app.WithShutdownTimeout(30*time.Second),     // Graceful shutdown timeout
-    app.WithMonitorInterval(10*time.Second),      // Health check interval
-    app.WithRestartPolicy(3),                     // Max restart attempts
-    app.WithRestartDelay(5*time.Second),          // Delay between restarts
+m.services = supervisor.New(m.config,
+    supervisor.WithLogger(m.log),
+    supervisor.WithShutdownTimeout(30*time.Second),     // Graceful shutdown timeout
+    supervisor.WithMonitorInterval(10*time.Second),      // Health check interval
+    supervisor.WithRestartPolicy(3),                     // Max restart attempts
+    supervisor.WithRestartDelay(5*time.Second),          // Delay between restarts
 )
 
-// Register services
+// Register infra services
+m.services.Register(m.db)
+
+// Register system services
 m.services.Register(
-    m.db,
     m.bus,
-    m.example,
+    m.repository,
+    m.user,
+    m.role,
+    m.organization,
+    m.certificate,
+    m.auth,
 )
+
+// Register business services
+m.services.Register(m.example)
 
 // Automatically sort by dependencies
 if err := m.services.TopoSort(); err != nil {
@@ -284,29 +309,33 @@ The [api.go](api.go) file demonstrates how to wire up API components:
 
 ```go
 func (m *manager) initAPI() error {
-    // Register middlewares
     middlewares := []api.Middleware{
-        mwexample.New(),  // pkg/middlewares/example
+        deflate.New(),
+        authnuser.New(m.auth, m.role),
+        authz.New(m.role),
+        // authnagent.New(...), feature.New(...) — register as needed
     }
-    m.api.RegisterMiddlewares(middlewares...)
-
-    // Register routers
     routers := []api.Router{
-        example.New(m.example, m.log),  // pkg/routers/example
+        exampleRouter.New(m.example, m.log),
+        authRouter.New(m.auth, m.log),
+        userRouter.New(m.user, m.role, m.auth, m.log),
+        roleRouter.New(m.role, m.log),
+        certRouter.New(m.certificate, m.log),
     }
-    err := m.api.RegisterRouters(routers...)
-    if err != nil {
+    if err := m.api.RegisterMiddlewares(middlewares...); err != nil {
         return errors.Wrap(err)
     }
-
+    if err := m.api.RegisterRouters(routers...); err != nil {
+        return errors.Wrap(err)
+    }
     return nil
 }
 ```
 
 This connects:
-- Middlewares from [pkg/middlewares/example](../../middlewares/example/)
-- Routers from [pkg/routers/example](../../routers/example/)
-- Services from [pkg/services/example](../../services/example/)
+- Middlewares from [pkg/middlewares](../../middlewares/) (`deflate`, `authnuser`, `authnagent`, `authz`, `feature`)
+- Routers from [pkg/routers](../../routers/) (`example`, `auth`, `user`, `role`, `certificate`)
+- System services from [pkg/services/system](../../services/system/) and business services from [pkg/services/example](../../services/example/)
 
 ## Signal Handling
 
@@ -316,7 +345,8 @@ Signal handling is managed by the server component in [signal.go](signal.go).
 
 | Signal | Action |
 |--------|--------|
-| `SIGINT` / `SIGTERM` | Graceful shutdown (`services.Stop(true)`) |
+| `SIGINT` / `SIGTERM` | Graceful shutdown (calls `m.Stop(true)`, which stops all services and cancels the manager context) |
+| `SIGHUP` | Restart all services via `m.services.Restart(ctx)` (supervisor stops, re-initializes, and re-starts; api server rebuilds its echo instance) |
 | `SIGUSR1` | Print service info (name, state, alive/ready, uptime) |
 | `SIGUSR2` | Print all goroutine stack traces |
 
@@ -325,6 +355,9 @@ Signal handling is managed by the server component in [signal.go](signal.go).
 ```bash
 # Graceful shutdown
 kill -INT <pid>   # or press Ctrl+C
+
+# Restart all services (reload config + reinit)
+kill -HUP <pid>
 
 # Print service info (includes alive/ready/uptime)
 kill -USR1 <pid>
@@ -378,7 +411,7 @@ Configuration values are resolved in this order (highest to lowest priority):
 3. Default values in code
 
 The server uses **instance-based Viper** (not the global singleton). Configuration is:
-- Passed to the app manager: `app.New(m.config, ...)`
+- Passed to the supervisor: `supervisor.New(m.config, ...)`
 - Propagated to services via context during `Init(ctx)` using the `confutil` package
 - Services read dynamic config via `confutil.FromContext(ctx)`
 - Hot-reload supported via `config.WatchConfig()`
@@ -431,7 +464,7 @@ ca:
 - **Service Orchestration**: Automatic dependency resolution with topological sort
 - **Health Monitoring**: Periodic liveness/readiness probes with auto-restart on failure
 - **Graceful Shutdown**: Configurable timeout for cleanup on SIGINT/SIGTERM
-- **Signal Handling**: Built-in handlers for SIGINT, SIGTERM, SIGUSR1, SIGUSR2
+- **Signal Handling**: Built-in handlers for SIGINT, SIGTERM, SIGHUP (restart all services), SIGUSR1, SIGUSR2
 - **Per-Service Operations**: Init, start, stop, and restart individual services at runtime
 - **Pub/Sub Messaging**: Inter-service communication via hierarchical topic bus (memory, Redis, Kafka drivers)
 - **Database Integration**: Built-in migration and connection pooling
@@ -477,22 +510,24 @@ ca:
 
 ### Adding a New Router
 
-1. **Create the router** (see [pkg/routers](../../routers/example/))
+1. **Create the router** (see [pkg/routers](../../routers/))
 2. **Register in [api.go](api.go)**:
    ```go
    routers := []api.Router{
-       example.New(m.example, m.log),
+       exampleRouter.New(m.example, m.log),
        myrouter.New(m.myService, m.log),
    }
    ```
 
 ### Adding a New Middleware
 
-1. **Create the middleware** (see [pkg/middlewares](../../middlewares/example/))
+1. **Create the middleware** (see [pkg/middlewares](../../middlewares/))
 2. **Register in [api.go](api.go)**:
    ```go
    middlewares := []api.Middleware{
-       mwexample.New(),
+       deflate.New(),
+       authnuser.New(m.auth, m.role),
+       authz.New(m.role),
        mymiddleware.New(),
    }
    ```
@@ -500,10 +535,12 @@ ca:
 ## See Also
 
 - [Example Services](../../services/example/)
-- [Example Routers](../../routers/example/)
-- [Example Middlewares](../../middlewares/example/)
+- [System Services](../../services/system/)
+- [Repository Service](../../services/repository/)
+- [Routers](../../routers/)
+- [Middlewares](../../middlewares/)
 - [API Server Manager](../../../../pkg/services/api/server/)
-- [Service Controller](../../../../pkg/services/app/)
+- [Service Controller (supervisor)](../../../../pkg/services/supervisor/)
 - [Pub/Sub Bus](../../../../pkg/services/pubsub/)
 - [Database Manager](../../../../pkg/services/db/)
 - [Viper Configuration](https://github.com/spf13/viper)

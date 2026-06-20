@@ -1,12 +1,14 @@
-# Writing Services in Framingo
+# Supervisor Service
 
-This guide covers how to write a standard service and manage it using `pkg/services/app`.
+The `supervisor` service orchestrates the lifecycle of every other service in a Framingo application: registration, dependency resolution, initialization, startup, health monitoring, restart, and graceful shutdown.
+
+Import path: `github.com/xhanio/framingo/pkg/services/supervisor`
 
 ## Table of Contents
 
 - [Service Interfaces](#service-interfaces)
 - [Writing a Service](#writing-a-service)
-- [Managing Services with the App Manager](#managing-services-with-the-app-manager)
+- [Managing Services with the Supervisor](#managing-services-with-the-supervisor)
 - [Dynamic Configuration](#dynamic-configuration)
 - [Health Probes](#health-probes)
 - [Health Monitoring and Auto-Restart](#health-monitoring-and-auto-restart)
@@ -85,7 +87,7 @@ type Debuggable interface {
 
 ### Interface Combinations
 
-Not all interfaces are required. The app manager adapts its behavior based on what a service implements:
+Not all interfaces are required. The supervisor adapts its behavior based on what a service implements:
 
 | Interfaces | Behavior |
 |-----------|----------|
@@ -213,7 +215,7 @@ func (m *manager) Name() string {
     return m.name
 }
 
-// Dependencies declares required services. The app manager uses this
+// Dependencies declares required services. The supervisor uses this
 // for topological sorting — dependencies are always started first.
 func (m *manager) Dependencies() []common.Service {
     return []common.Service{m.db}
@@ -276,26 +278,26 @@ func (m *manager) DoWork(ctx context.Context, input string) (string, error) {
 6. **Idempotent Start/Stop** — guard against double-start and double-stop
 7. **`sync.WaitGroup` for graceful shutdown** — ensures goroutines finish before `Stop` returns
 
-## Managing Services with the App Manager
+## Managing Services with the Supervisor
 
-The `app.Manager` orchestrates service lifecycle: registration, dependency resolution, initialization, startup, health monitoring, and shutdown.
+The `supervisor.Manager` orchestrates service lifecycle: registration, dependency resolution, initialization, startup, health monitoring, and shutdown. Its business surface is published as [`model.Supervisor`](../../types/model/supervisor.go) so other packages can depend on the interface without importing the implementation.
 
-### Creating the Manager
+### Creating the Supervisor
 
-The app manager requires a `*viper.Viper` config instance. This config is propagated to all services during `Init(ctx)` via context.
+The supervisor requires a `*viper.Viper` config instance. This config is propagated to all services during `Init(ctx)` via context.
 
 ```go
 import (
     "github.com/spf13/viper"
-    "github.com/xhanio/framingo/pkg/services/app"
+    "github.com/xhanio/framingo/pkg/services/supervisor"
 )
 
 config := viper.New()
 config.SetConfigFile("config.yaml")
 config.ReadInConfig()
 
-services := app.New(config,
-    app.WithLogger(logger),
+services := supervisor.New(config,
+    supervisor.WithLogger(logger),
 )
 ```
 
@@ -326,7 +328,7 @@ if err := services.TopoSort(); err != nil {
 services.Register(apiServer)
 ```
 
-### Lifecycle: Init, Start, Stop
+### Lifecycle: Init, Start, Stop, Restart
 
 ```go
 // Init all services (in dependency order)
@@ -341,6 +343,12 @@ if err := services.Start(ctx); err != nil {
     log.Fatal(err)
 }
 
+// Restart the entire supervisor: Stop(true) → Init(ctx) → Start(ctx).
+// Useful for top-level config reload without exiting the process.
+if err := services.Restart(ctx); err != nil {
+    log.Error(err)
+}
+
 // Stop all services (in reverse dependency order)
 if err := services.Stop(true); err != nil {
     log.Error(err)
@@ -352,13 +360,20 @@ if err := services.Stop(true); err != nil {
 During `Init`:
 - Services are initialized in topological (dependency) order
 - If a dependency fails to initialize, dependent services are skipped
-- Services that don't implement `Initializable` are skipped
+- Services that don't implement `Initializable` are marked `Initialized=true` so dependents proceed
 - `*viper.Viper` config is injected into the context via `confutil.WrapContext`
 
 During `Start`:
 - Only services implementing `Daemon` are started
-- Health monitor starts if `WithMonitorInterval` is configured
+- Health monitor goroutine starts if `WithMonitorInterval` is configured
 - Double-start is a safe no-op
+
+During `Restart` (supervisor-level):
+- Calls `Stop(true)` to drain all services in reverse order — a `Stop` error is logged but does not abort the restart
+- Calls `Init(ctx)` to re-read dynamic config and re-initialize every service
+- Calls `Start(ctx)` to bring services back up
+- `Init` or `Start` errors abort and are returned to the caller
+- Per-service `Restarts` counters are not bumped (use `RestartService` for that)
 
 During `Stop`:
 - Services are stopped in **reverse** dependency order
@@ -367,7 +382,7 @@ During `Stop`:
 
 ## Dynamic Configuration
 
-Services read dynamic configuration from context during `Init(ctx)`. The app manager wraps the `*viper.Viper` instance into the context using `confutil.WrapContext`, and services extract it with `confutil.FromContext(ctx)`.
+Services read dynamic configuration from context during `Init(ctx)`. The supervisor wraps the `*viper.Viper` instance into the context using `confutil.WrapContext`, and services extract it with `confutil.FromContext(ctx)`.
 
 ```go
 import "github.com/xhanio/framingo/pkg/utils/confutil"
@@ -382,7 +397,7 @@ func (m *manager) Init(ctx context.Context) error {
 }
 ```
 
-Since `Init` is called on every restart, config changes take effect automatically when a service is restarted (either manually or by the health monitor).
+Since `Init` is called on every restart, config changes take effect automatically when a service is restarted — by the supervisor's `Restart`, by `RestartService`, or by the health monitor.
 
 Combined with `config.WatchConfig()` on the Viper instance, this enables hot-reload scenarios.
 
@@ -430,11 +445,11 @@ Health checks run recursively through dependencies — if a dependency fails its
 Configure the health monitor to periodically check services and automatically restart those that fail liveness:
 
 ```go
-services := app.New(config,
-    app.WithLogger(logger),
-    app.WithMonitorInterval(10*time.Second),  // check every 10s
-    app.WithRestartPolicy(3),                 // max 3 restart attempts
-    app.WithRestartDelay(5*time.Second),      // wait 5s before restart
+services := supervisor.New(config,
+    supervisor.WithLogger(logger),
+    supervisor.WithMonitorInterval(10*time.Second),  // check every 10s
+    supervisor.WithRestartPolicy(3),                 // max 3 restart attempts
+    supervisor.WithRestartDelay(5*time.Second),      // wait 5s before restart
 )
 ```
 
@@ -454,13 +469,11 @@ When a service fails its liveness check:
 2. Waits for `restartDelay` (if configured)
 3. Checks if `maxRetries` has been reached
 4. Calls `Stop` → `Init` → `Start` on the service
-5. Increments the restart counter
-
-The restart counter and timestamp are tracked in `Stats.Restarts` and `Stats.RestartedAt`.
+5. Increments `SupervisorStats.Restarts` and updates `SupervisorStats.RestartedAt`
 
 ## Per-Service Operations
 
-The app manager supports operating on individual services at runtime:
+The supervisor supports operating on individual services at runtime:
 
 ```go
 // Re-initialize a single service
@@ -472,11 +485,14 @@ err := services.StartService("myservice")
 // Stop a single service
 err := services.StopService("myservice", true)
 
-// Restart: stop → re-init → start (with restart counter)
+// Restart a single service: stop → re-init → start; bumps Restarts counter
 err := services.RestartService(ctx, "myservice")
+
+// Restart the whole supervisor: stop all → init all → start all
+err := services.Restart(ctx)
 ```
 
-These operations are useful for runtime management, debugging, or building admin APIs.
+`RestartService` targets one named service and bumps its `Restarts` counter; `Restart` cycles every registered service through `Stop` → `Init` → `Start` and does not bump per-service counters. Both are useful for runtime management, debugging, or building admin APIs.
 
 ## Service Stats and Debugging
 
@@ -498,10 +514,11 @@ for _, stat := range stats {
 }
 ```
 
-The `Stats` struct contains:
+`Stats()` returns `[]*entity.SupervisorStats` (defined in [`pkg/types/entity/supervisor.go`](../../types/entity/supervisor.go)):
 
 | Field | Description |
 |-------|-------------|
+| `Name` / `Source` | Service name and the underlying `common.Service` |
 | `Initialized` / `InitializedAt` / `InitDuration` | Init state and timing |
 | `InitializationErr` | Error from last `Init` call |
 | `Started` / `StartedAt` / `StartDuration` | Start state and timing |
@@ -513,6 +530,7 @@ The `Stats` struct contains:
 | `HealthcheckedAt` / `HealthcheckErr` | Last healthcheck timestamp and combined error |
 | `Restarts` / `RestartedAt` | Restart count and last restart time |
 | `Uptime()` | Duration since last start (0 if stopped) |
+| `Healthcheck()` | Combined error from stopped state, init error, and start error |
 
 ### Info / Debug Output
 
@@ -526,15 +544,15 @@ pkg/services/example            true    true    1h23m44s        <nil>      <nil>
 pkg/services/api/server         true    true    1h23m43s        <nil>      <nil>       <nil>
 ```
 
-After the table, each service that implements `Debuggable` has its `Info` method called to print additional details.
+After the table, each service that implements `Debuggable` has its own `Info` method called to print additional details.
 
 ## Shutdown Timeout
 
 Configure a timeout to prevent shutdown from hanging on stuck services:
 
 ```go
-services := app.New(config,
-    app.WithShutdownTimeout(30*time.Second),
+services := supervisor.New(config,
+    supervisor.WithShutdownTimeout(30*time.Second),
 )
 ```
 
@@ -564,11 +582,11 @@ func TestMyService(t *testing.T) {
 }
 ```
 
-### Testing with the App Manager
+### Testing with the Supervisor
 
 ```go
 func TestServiceLifecycle(t *testing.T) {
-    m := app.New(nil, app.WithName("test"))
+    m := supervisor.New(nil, supervisor.WithName("test"))
 
     db := newMockDB()
     svc := newMockService("svc")
@@ -594,10 +612,10 @@ func TestServiceLifecycle(t *testing.T) {
 
 ```go
 func TestLivenessRestart(t *testing.T) {
-    m := app.New(nil,
-        app.WithName("test"),
-        app.WithMonitorInterval(50*time.Millisecond),
-        app.WithRestartPolicy(2),
+    m := supervisor.New(nil,
+        supervisor.WithName("test"),
+        supervisor.WithMonitorInterval(50*time.Millisecond),
+        supervisor.WithRestartPolicy(2),
     )
 
     svc := newMockService("svc")
@@ -618,7 +636,7 @@ func TestLivenessRestart(t *testing.T) {
 
 ## Complete Example
 
-Putting it all together — a server component that wires services with the app manager:
+Putting it all together — a server component that wires services with the supervisor:
 
 ```go
 func (m *server) Init(ctx context.Context) error {
@@ -631,13 +649,13 @@ func (m *server) Init(ctx context.Context) error {
     // Create logger
     m.log = log.New(log.WithLevel(m.config.GetInt("log.level")))
 
-    // Create app manager with all options
-    m.services = app.New(m.config,
-        app.WithLogger(m.log),
-        app.WithShutdownTimeout(30*time.Second),
-        app.WithMonitorInterval(10*time.Second),
-        app.WithRestartPolicy(3),
-        app.WithRestartDelay(5*time.Second),
+    // Create supervisor with all options
+    m.services = supervisor.New(m.config,
+        supervisor.WithLogger(m.log),
+        supervisor.WithShutdownTimeout(30*time.Second),
+        supervisor.WithMonitorInterval(10*time.Second),
+        supervisor.WithRestartPolicy(3),
+        supervisor.WithRestartDelay(5*time.Second),
     )
 
     // Create services (required deps as args, optional as opts)
@@ -672,11 +690,11 @@ func (m *server) Stop(wait bool) error {
 
 ## API Reference
 
-### `app.New(config *viper.Viper, opts ...Option) Manager`
+### `supervisor.New(config *viper.Viper, opts ...Option) Manager`
 
-Creates a new app manager. Pass `nil` for config if no config propagation is needed.
+Creates a new supervisor. Pass `nil` for config if no config propagation is needed.
 
-### Manager Options
+### Options
 
 | Option | Description |
 |--------|-------------|
@@ -687,28 +705,39 @@ Creates a new app manager. Pass `nil` for config if no config propagation is nee
 | `WithRestartPolicy(int)` | Max restart attempts (0 = disabled, -1 = unlimited) |
 | `WithRestartDelay(time.Duration)` | Delay before restart attempt |
 
-### Manager Interface
+### Interfaces
 
 ```go
+// supervisor.Manager — the concrete supervisor service.
+// Composes the business surface (model.Supervisor) with the lifecycle
+// interfaces required to be a service itself.
 type Manager interface {
-    common.Service
+    model.Supervisor
     common.Initializable
     common.Daemon
     common.Debuggable
+}
+
+// model.Supervisor — the business surface used by callers (e.g. components).
+type Supervisor interface {
+    common.Service
     Register(services ...common.Service)
     TopoSort() error
     Services() []common.Service
-    Stats() ([]*Stats, error)
+    Stats() ([]*entity.SupervisorStats, error)
     InitService(ctx context.Context, name string) error
     StartService(name string) error
     StopService(name string, wait bool) error
     RestartService(ctx context.Context, name string) error
+    Restart(ctx context.Context) error
 }
 ```
 
 ## See Also
 
 - [Common Service Interfaces](../../types/common/service.go)
+- [Supervisor Model Interface](../../types/model/supervisor.go)
+- [Supervisor Stats Entity](../../types/entity/supervisor.go)
 - [Config Context Utility](../../utils/confutil/)
 - [Example Service](../../../example/pkg/services/example/)
 - [Example Server Component](../../../example/pkg/components/server/example/)
