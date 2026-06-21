@@ -7,12 +7,14 @@ require (
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
 	github.com/xhanio/errors v1.0.2
-	github.com/xhanio/framingo v0.3.20
+	github.com/xhanio/framingo v0.4.3
 )
 
+// remove this when you bootstrap your own project
 replace github.com/xhanio/framingo => ../
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/google/uuid v1.6.0
 	go.step.sm/crypto v0.83.0
 	go.uber.org/zap v1.27.0
@@ -33,7 +35,6 @@ require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/avast/retry-go/v4 v4.7.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.18.0 // indirect
