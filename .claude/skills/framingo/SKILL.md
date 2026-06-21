@@ -1,6 +1,6 @@
 ---
 name: framingo
-description: Use when working with Framingo (`github.com/xhanio/framingo`) Go code — creating services, registering with the supervisor, configuring HTTP servers/routers, the database service, pub/sub messaging, or implementing service lifecycle interfaces. Triggers on mentions of framingo, service lifecycle, supervisor, handler groups, or any framingo package imports.
+description: Use when working with Framingo (`github.com/xhanio/framingo`) Go code — bootstrapping a new framingo backend project, creating services, registering with the supervisor, configuring HTTP servers/routers, the database service, pub/sub messaging, or implementing service lifecycle interfaces. Triggers on mentions of framingo, "new Go backend", service lifecycle, supervisor, handler groups, or any framingo package imports.
 compatibility: Requires Go 1.24+. Framework module is github.com/xhanio/framingo.
 metadata:
   author: xhanio
@@ -15,6 +15,7 @@ Framingo is a modular, production-ready Go framework for building HTTP API appli
 
 ## When to Use
 
+- **Bootstrapping a new framingo backend project** (see [Starting a New Backend](#starting-a-new-backend) below)
 - Creating a new framingo service or `Manager` interface
 - Registering services with the supervisor or wiring service dependencies
 - Implementing the lifecycle interfaces (`Service`, `Initializable`, `Daemon`, `Liveness`, `Readiness`, `Debuggable`)
@@ -25,6 +26,16 @@ Framingo is a modular, production-ready Go framework for building HTTP API appli
 - Touching any `github.com/xhanio/framingo/...` import
 
 **When NOT to use**: generic Go questions, libraries unrelated to `xhanio/framingo`, or non-Go codebases.
+
+## Starting a New Backend
+
+**For any new framingo backend project, fork the `example/` folder.** Don't scaffold from scratch.
+
+`example/` is a self-contained Go module that ships a complete production-shaped service: supervisor wiring, PostgreSQL + migrations, pub/sub + message bus, WebSocket stream, RBAC (auth/user/role/organization/certificate), Echo router with auth & throttle middlewares, structured logging, pprof, signal handling, plus GoPro build templates, a CLI client, Docker image, and Kubernetes manifests.
+
+**Canonical recipe:** [example/QUICKSTART.md](../../example/QUICKSTART.md), sections **"Use This Folder as Your Starting Template"** and **"Forking the Example into Your Own Repo"**. That file owns the fork-and-rename steps (module path, `framingo-example`/`exampleapp`/`examplecli` → your names, directory renames under `build/`, `env/`, `kubernetes/`) and the "Keep vs. rip out" table for pruning system services you don't need.
+
+After forking, use the rest of this skill as the per-package reference for the work you do inside the new project.
 
 ## Quick Reference
 
