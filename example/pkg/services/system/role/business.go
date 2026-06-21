@@ -2,28 +2,13 @@ package role
 
 import (
 	"context"
-	"fmt"
-	"regexp"
-	"strings"
 
 	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
+	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 )
-
-// Register the required permissions for given router handler into the Role Manager.
-func (m *manager) RegisterHandlerPermission(action string, path string, permission string) error {
-	params := regexp.MustCompile(`:[^/]+`)
-	resource := fmt.Sprintf("^%s$", strings.TrimSuffix(params.ReplaceAllString(path, "[^/]+?"), "?"))
-	hp := handlerPermission{
-		Action:     action,
-		Resource:   resource,
-		Permission: permission,
-	}
-	m.handlerInfo = append(m.handlerInfo, hp)
-	return nil
-}
 
 func (m *manager) Create(ctx context.Context, opts entity.RoleCreateOptions) error {
 	if _, err := m.repository.CreateRole(ctx, opts); err != nil {
@@ -110,36 +95,21 @@ func (m *manager) GetPermissionsByName(ctx context.Context, roleName string) ([]
 	return permissions, nil
 }
 
-func (m *manager) CheckPermissionByName(ctx context.Context, roleName string, action string, resource string) (bool, error) {
-	// Grant all permissions for "admin" role
+// HasPermission reports whether the role identified by roleName holds the
+// given permission. The admin role implicitly holds every permission. An
+// empty permission string is treated as "no permission required" by callers
+// (e.g., the authz middleware skips the check entirely) and returns false
+// here as a defensive default.
+func (m *manager) HasPermission(ctx context.Context, roleName string, permission string) (bool, error) {
 	if roleName == rbac.RoleAdmin {
 		return true, nil
 	}
-
-	// Get the current user's role permissions
+	if permission == "" {
+		return false, nil
+	}
 	permissions, err := m.GetPermissionsByName(ctx, roleName)
 	if err != nil {
 		return false, errors.Forbidden.Wrap(err)
 	}
-	if len(permissions) == 0 {
-		return false, errors.Forbidden.Newf("No permission is set for role roleName %s", roleName)
-	}
-
-	// Get the required permission for the requested action and resource
-	var requiredPermission string
-	for _, hp := range m.handlerInfo {
-		if hp.Action == action && regexp.MustCompile(hp.Resource).MatchString(resource) {
-			requiredPermission = hp.Permission
-			break
-		}
-	}
-
-	// Check if the user's role permissions contains the required permission
-	for _, s := range permissions {
-		if s == requiredPermission {
-			return true, nil
-		}
-	}
-
-	return false, nil
+	return sliceutil.In(permission, permissions...), nil
 }

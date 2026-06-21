@@ -102,7 +102,7 @@ func (b *memoryDriver) Unsubscribe(name string, topic string) error {
 	return nil
 }
 
-func (b *memoryDriver) Publish(from string, topic string, kind string, payload any) error {
+func (b *memoryDriver) Publish(_ context.Context, from string, topic string, kind string, payload any) error {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 

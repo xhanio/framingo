@@ -1,9 +1,7 @@
 package pubsub
 
 import (
-	"context"
 	"path"
-	"sync"
 	"sync/atomic"
 
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
@@ -20,10 +18,6 @@ type manager struct {
 
 	bus driver.Driver
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     *sync.WaitGroup
-
 	published atomic.Uint64
 }
 
@@ -32,13 +26,9 @@ func New(b driver.Driver, opts ...Option) Manager {
 }
 
 func newManager(b driver.Driver, opts ...Option) *manager {
-	ctx, cancel := context.WithCancel(context.Background())
 	m := &manager{
-		log:    log.Default,
-		wg:     &sync.WaitGroup{},
-		bus:    b,
-		ctx:    ctx,
-		cancel: cancel,
+		log: log.Default,
+		bus: b,
 	}
 	m.apply(opts...)
 	m.log = m.log.By(m)

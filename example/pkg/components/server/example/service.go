@@ -8,6 +8,7 @@ import (
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/api/server"
 	"github.com/xhanio/framingo/pkg/services/db"
+	"github.com/xhanio/framingo/pkg/services/messagebus"
 	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
@@ -85,9 +86,14 @@ func (m *manager) initServices() error {
 		db.WithLogger(m.log),
 	)
 
-	m.bus = pubsub.New(
+	m.pubsub = pubsub.New(
 		driver.NewMemory(m.log),
 		pubsub.WithLogger(m.log),
+	)
+
+	m.messagebus = messagebus.New(
+		m.pubsub,
+		messagebus.WithLogger(m.log),
 	)
 
 	m.repository = repository.New(
@@ -128,6 +134,7 @@ func (m *manager) initServices() error {
 
 	m.example = example.New(
 		m.repository,
+		m.messagebus,
 		example.WithLogger(m.log),
 	)
 

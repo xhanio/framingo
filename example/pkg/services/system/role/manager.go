@@ -15,14 +15,6 @@ type manager struct {
 	log  log.Logger
 
 	repository repository.Repository
-
-	handlerInfo []handlerPermission
-}
-
-type handlerPermission struct {
-	Action     string
-	Resource   string
-	Permission string
 }
 
 func New(repo repository.Repository, opts ...Option) Manager {
@@ -32,8 +24,7 @@ func New(repo repository.Repository, opts ...Option) Manager {
 // For test use
 func newRole(repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
-		repository:  repo,
-		handlerInfo: make([]handlerPermission, 10),
+		repository: repo,
 	}
 	for _, opt := range opts {
 		opt(m)

@@ -31,7 +31,6 @@ type manager struct {
 	servers map[string]*server // map of server name to server instance
 
 	handlerFuncs    map[api.HandlerKey]echo.HandlerFunc
-	wsHandlerFuncs  map[api.HandlerKey]api.WebSocketHandlerFunc
 	middlewareFuncs map[string]echo.MiddlewareFunc
 
 	sync.Mutex // lock for rate limiters
@@ -48,7 +47,6 @@ func newManager(opts ...Option) *manager {
 		log:             log.Default,
 		servers:         make(map[string]*server),
 		handlerFuncs:    make(map[api.HandlerKey]echo.HandlerFunc),
-		wsHandlerFuncs:  make(map[api.HandlerKey]api.WebSocketHandlerFunc),
 		middlewareFuncs: make(map[string]echo.MiddlewareFunc),
 		limits:          make(map[string]*rate.Limiter),
 	}
@@ -196,24 +194,24 @@ func (m *manager) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 			return nil, errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
 		}
 		key := api.NewHandlerKey(group, handler)
-		if handler.Method == api.MethodWS {
-			switch f := fn.(type) {
-			case api.WebSocketHandlerFunc:
-				m.wsHandlerFuncs[key] = f
-			case func(echo.Context, *websocket.Conn) error:
-				m.wsHandlerFuncs[key] = f
-			default:
-				return nil, errors.Newf("handler %s declared as WS but is not api.WebSocketHandlerFunc", handler.Func)
+		switch f := fn.(type) {
+		case echo.HandlerFunc:
+			if handler.Method == api.MethodWS {
+				return nil, errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
 			}
-		} else {
-			switch f := fn.(type) {
-			case echo.HandlerFunc:
-				m.handlerFuncs[key] = f
-			case func(echo.Context) error:
-				m.handlerFuncs[key] = f
-			default:
-				return nil, errors.Newf("handler %s must be echo.HandlerFunc", handler.Func)
+			m.handlerFuncs[key] = f
+		case func(echo.Context) error:
+			if handler.Method == api.MethodWS {
+				return nil, errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
 			}
+			m.handlerFuncs[key] = f
+		case func(echo.Context, *websocket.Conn) error:
+			if handler.Method != api.MethodWS {
+				return nil, errors.Newf("handler %s has WebSocket signature but method is %s", handler.Func, handler.Method)
+			}
+			m.handlerFuncs[key] = m.wrapWebSocket(f)
+		default:
+			return nil, errors.Newf("handler %s has unsupported signature", handler.Func)
 		}
 	}
 	m.log.Debugf("registered router %s with %d handlers", router.Name(), len(group.Handlers))
@@ -274,24 +272,14 @@ func (m *manager) installHandler(s *server, g *api.HandlerGroup, h *api.Handler)
 	routePath := strings.TrimSuffix(h.Path, "/")
 	m.log.Infof("register handler %s %s", h.Method, path.Join(prefix, h.Path))
 
-	var hf echo.HandlerFunc
-	switch h.Method {
-	case api.MethodWS:
-		wsFunc, ok := m.wsHandlerFuncs[key]
-		if !ok {
-			return nil
-		}
-		hf = m.wrapWebSocket(wsFunc)
-	default:
-		var ok bool
-		hf, ok = m.handlerFuncs[key]
-		if !ok {
-			return nil
-		}
+	hf, ok := m.handlerFuncs[key]
+	if !ok {
+		return nil
 	}
 
 	switch h.Method {
 	case api.MethodWS:
+		// WebSocket handshake comes in as HTTP GET; the handler upgrades.
 		group.Add(http.MethodGet, routePath, hf, mwfuncs...)
 	case api.MethodAny:
 		group.Any(routePath, hf, mwfuncs...)
@@ -328,7 +316,7 @@ func (m *manager) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]ech
 
 // wrapWebSocket wraps a WebSocketHandlerFunc into an echo.HandlerFunc
 // that upgrades the HTTP connection and delegates to the WS handler.
-func (m *manager) wrapWebSocket(fn api.WebSocketHandlerFunc) echo.HandlerFunc {
+func (m *manager) wrapWebSocket(fn func(echo.Context, *websocket.Conn) error) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
 			InsecureSkipVerify: m.debug,

@@ -58,7 +58,7 @@ func TestMemoryPublish(t *testing.T) {
 	ch, err := b.Subscribe("sub", "topic")
 	require.NoError(t, err)
 
-	err = b.Publish("pub", "topic", "test-kind", "test-payload")
+	err = b.Publish(context.Background(), "pub", "topic", "test-kind", "test-payload")
 	require.NoError(t, err)
 
 	select {
@@ -77,7 +77,7 @@ func TestMemoryPublishSkipSelf(t *testing.T) {
 
 	ch, _ := b.Subscribe("svc", "topic")
 
-	_ = b.Publish("svc", "topic", "test", nil)
+	_ = b.Publish(context.Background(), "svc", "topic", "test", nil)
 
 	select {
 	case <-ch:
@@ -101,7 +101,7 @@ func TestMemoryUnsubscribe(t *testing.T) {
 	assert.Equal(t, "svc2", subs[0])
 
 	// svc2's channel should still work
-	_ = b.Publish("pub", "topic", "test", nil)
+	_ = b.Publish(context.Background(), "pub", "topic", "test", nil)
 	select {
 	case <-ch2:
 	case <-time.After(time.Second):

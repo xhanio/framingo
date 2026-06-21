@@ -2,9 +2,6 @@ package user
 
 import (
 	"net/http"
-	"reflect"
-
-	"github.com/labstack/echo/v4"
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
@@ -208,20 +205,5 @@ func (r *router) ResetPassword(c api.Context) error {
 }
 
 func (r *router) Handlers() map[string]any {
-	handlers := make(map[string]any)
-	rv := reflect.ValueOf(r)
-	rt := reflect.TypeOf(r)
-	for i := 0; i < rt.NumMethod(); i++ {
-		method := rt.Method(i)
-		if method.Name == "Handlers" {
-			continue
-		}
-		methodValue := rv.Method(i)
-		if handlerFunc, ok := methodValue.Interface().(func(echo.Context) error); ok {
-			handlers[method.Name] = echo.HandlerFunc(handlerFunc)
-		} else if handlerFunc, ok := methodValue.Interface().(func(api.Context) error); ok {
-			handlers[method.Name] = api.WrapHandler(handlerFunc)
-		}
-	}
-	return handlers
+	return api.DiscoverHandlers(r)
 }

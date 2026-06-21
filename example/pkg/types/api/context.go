@@ -93,11 +93,3 @@ func (c *ctx) BindForm() *echo.ValueBinder {
 func (c *ctx) BindAny(i any) error {
 	return c.Context.Bind(i)
 }
-
-type HandlerFunc func(Context) error
-
-func WrapHandler(hf HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		return hf(&ctx{c})
-	}
-}

@@ -115,7 +115,7 @@ func TestRedisCrossInstance(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Publish via b1
-	err = b1.Publish("publisher", "cross/topic", "cross-event", map[string]string{"key": "value"})
+	err = b1.Publish(context.Background(), "publisher", "cross/topic", "cross-event", map[string]string{"key": "value"})
 	require.NoError(t, err)
 
 	select {

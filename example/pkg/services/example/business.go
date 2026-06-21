@@ -26,10 +26,12 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 	}
 	m.log.Infof("saved helloworld message %s to database with ID: %d", message, ormModel.ID)
 
-	return &entity.HelloWorld{
+	result := &entity.HelloWorld{
 		ID:        ormModel.ID,
 		Message:   ormModel.Message,
 		CreatedAt: ormModel.CreatedAt,
 		UpdatedAt: ormModel.UpdatedAt,
-	}, nil
+	}
+	m.mb.SendRawMessage(ctx, m, "helloworld", result)
+	return result, nil
 }

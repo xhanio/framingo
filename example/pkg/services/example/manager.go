@@ -17,6 +17,7 @@ type manager struct {
 	name string
 
 	repository repository.Repository
+	mb         common.RawMessageSender
 
 	greeting string
 
@@ -25,10 +26,11 @@ type manager struct {
 	wg     *sync.WaitGroup
 }
 
-func New(repo repository.Repository, opts ...Option) Manager {
+func New(repo repository.Repository, mb common.RawMessageSender, opts ...Option) Manager {
 	m := &manager{
 		log:        log.Default,
 		repository: repo,
+		mb:         mb,
 		wg:         &sync.WaitGroup{},
 	}
 	m.apply(opts...)
@@ -47,5 +49,9 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	return []common.Service{m.repository}
+	deps := []common.Service{m.repository}
+	if s, ok := m.mb.(common.Service); ok {
+		deps = append(deps, s)
+	}
+	return deps
 }

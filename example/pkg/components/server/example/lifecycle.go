@@ -26,7 +26,8 @@ func (m *manager) Init(ctx context.Context) error {
 
 	// register system services
 	m.services.Register(
-		m.bus,
+		m.pubsub,
+		m.messagebus,
 		m.repository,
 		m.user,
 		m.role,
@@ -50,11 +51,10 @@ func (m *manager) Init(ctx context.Context) error {
 		m.api,
 	)
 
-	// subscribe all services to the service bus
+	// register all services with messagebus; modules without MessageHandler /
+	// RawMessageHandler are skipped automatically.
 	for _, svc := range m.services.Services() {
-		m.bus.Subscribe(svc, "/")
-		m.bus.Subscribe(svc, fmt.Sprintf("/components/%s", m.Name()))
-		m.bus.Subscribe(svc, fmt.Sprintf("/components/%s/services/%s", m.Name(), svc.Name()))
+		m.messagebus.Register(svc)
 	}
 
 	/* pre initialization */

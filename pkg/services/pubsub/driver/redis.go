@@ -119,7 +119,7 @@ func (b *redisDriver) Unsubscribe(name string, topic string) error {
 		pattern := b.getTopicPattern(topic)
 		delete(b.patterns, pattern)
 		if b.pubsub != nil {
-			_ = b.pubsub.PUnsubscribe(b.ctx, pattern)
+			return b.pubsub.PUnsubscribe(b.ctx, pattern)
 		}
 	}
 
@@ -174,7 +174,7 @@ func (b *redisDriver) Stop(wait bool) error {
 }
 
 // Publish dispatches locally and sends to Redis for cross-instance delivery.
-func (b *redisDriver) Publish(from string, topic string, kind string, payload any) error {
+func (b *redisDriver) Publish(ctx context.Context, from string, topic string, kind string, payload any) error {
 	b.mu.RLock()
 	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
 	for subTopic, subs := range b.topics {
@@ -209,7 +209,6 @@ func (b *redisDriver) Publish(from string, topic string, kind string, payload an
 		return errors.Wrapf(err, "failed to marshal event message")
 	}
 
-	ctx := b.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}

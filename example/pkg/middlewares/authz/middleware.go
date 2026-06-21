@@ -47,13 +47,25 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 		if cred.RequirePasswordReset {
 			return errors.Forbidden.Newf("password reset required")
 		}
-
-		if sliceutil.In(cred.Source, preset.AuthSourceLdapUser, preset.AuthSourceLocalUser) {
-			if ok, err := m.role.CheckPermissionByName(c.Request().Context(), cred.Role, c.Request().Method, c.Request().URL.EscapedPath()); err != nil {
-				return errors.Forbidden.Wrap(err)
-			} else if !ok {
-				return errors.Forbidden.Newf("no permission for role %s on request %s %s", c.Request().Method, c.Request().URL.EscapedPath())
-			}
+		if !sliceutil.In(cred.Source, preset.AuthSourceLdapUser, preset.AuthSourceLocalUser) {
+			return next(c)
+		}
+		// The Info middleware runs upstream and resolves the matched Handler
+		// (and its declared Permission) onto the request context.
+		req, ok := c.Get(fapi.ContextKeyRequestInfo).(*fapi.RequestInfo)
+		if !ok || req == nil || req.Handler == nil {
+			return errors.Forbidden.Newf("no handler info for request %s %s", c.Request().Method, c.Request().URL.EscapedPath())
+		}
+		required := req.Handler.Permission
+		if required == "" {
+			return next(c) // public endpoint
+		}
+		allowed, err := m.role.HasPermission(c.Request().Context(), cred.Role, required)
+		if err != nil {
+			return errors.Forbidden.Wrap(err)
+		}
+		if !allowed {
+			return errors.Forbidden.Newf("role %s lacks permission %s for %s %s", cred.Role, required, c.Request().Method, c.Request().URL.EscapedPath())
 		}
 		return next(c)
 	}

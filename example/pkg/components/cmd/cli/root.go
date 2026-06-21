@@ -56,5 +56,6 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(NewLogoutCmd())
 	root.AddCommand(NewHelloworldCmd())
 	root.AddCommand(NewCertGenCmd())
+	root.AddCommand(NewMessageStreamCmd())
 	return root
 }

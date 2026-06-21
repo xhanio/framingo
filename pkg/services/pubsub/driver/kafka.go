@@ -136,7 +136,7 @@ func (b *kafkaDriver) Unsubscribe(name string, topic string) error {
 	return nil
 }
 
-func (b *kafkaDriver) Publish(from string, topic string, kind string, payload any) error {
+func (b *kafkaDriver) Publish(ctx context.Context, from string, topic string, kind string, payload any) error {
 	// Local delivery
 	b.mu.RLock()
 	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
@@ -173,7 +173,6 @@ func (b *kafkaDriver) Publish(from string, topic string, kind string, payload an
 		return errors.Wrapf(err, "failed to marshal event message")
 	}
 
-	ctx := b.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}

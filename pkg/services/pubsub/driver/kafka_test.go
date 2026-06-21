@@ -119,7 +119,7 @@ func TestKafkaCrossInstance(t *testing.T) {
 	// Give Kafka time to set up consumer groups
 	time.Sleep(5 * time.Second)
 
-	err = b1.Publish("publisher", "cross/topic", "cross-event", map[string]string{"key": "value"})
+	err = b1.Publish(context.Background(), "publisher", "cross/topic", "cross-event", map[string]string{"key": "value"})
 	require.NoError(t, err)
 
 	select {

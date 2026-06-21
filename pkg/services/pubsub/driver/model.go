@@ -1,6 +1,8 @@
 package driver
 
 import (
+	"context"
+
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
@@ -24,7 +26,10 @@ type Driver interface {
 	// Publish dispatches an event to local subscribers and handles
 	// cross-instance delivery (e.g., via Redis).
 	// The from parameter is the publisher's name, used to skip self-delivery.
-	Publish(from string, topic string, kind string, payload any) error
+	// ctx applies only to the cross-instance hop; local fan-out runs to
+	// completion regardless, so partial delivery is possible if ctx is
+	// canceled mid-publish.
+	Publish(ctx context.Context, from string, topic string, kind string, payload any) error
 
 	// lifecycle
 	common.Daemon

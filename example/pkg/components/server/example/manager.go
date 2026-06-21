@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/xhanio/framingo/pkg/services/api/server"
 	"github.com/xhanio/framingo/pkg/services/db"
+	"github.com/xhanio/framingo/pkg/services/messagebus"
 	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
 	"github.com/xhanio/framingo/pkg/utils/log"
@@ -30,7 +31,8 @@ type manager struct {
 
 	// infra services
 	db         db.Manager
-	bus        pubsub.Manager
+	pubsub     pubsub.Manager
+	messagebus messagebus.Manager
 	repository repository.Repository
 
 	// system services

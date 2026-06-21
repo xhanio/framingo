@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
@@ -290,7 +289,7 @@ handlers:
 // ============================================================================
 
 func TestWebSocket_Echo(t *testing.T) {
-	echoWS := api.WebSocketHandlerFunc(func(c echo.Context, conn *websocket.Conn) error {
+	echoWS := func(c echo.Context, conn *websocket.Conn) error {
 		ctx := c.Request().Context()
 		for {
 			typ, msg, err := conn.Read(ctx)
@@ -301,7 +300,7 @@ func TestWebSocket_Echo(t *testing.T) {
 				return nil
 			}
 		}
-	})
+	}
 
 	base, cleanup := startServer(t, &mockRouter{
 		name: "test",
@@ -363,13 +362,13 @@ handlers:
 		handlers: map[string]any{"Bad": okHandler},
 	})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not api.WebSocketHandlerFunc")
+	assert.Contains(t, err.Error(), "declared as WS but signature is not WebSocket")
 }
 
 func TestWebSocket_NonWSRequestRejected(t *testing.T) {
-	echoWS := api.WebSocketHandlerFunc(func(c echo.Context, conn *websocket.Conn) error {
+	echoWS := func(c echo.Context, conn *websocket.Conn) error {
 		return nil
-	})
+	}
 
 	base, cleanup := startServer(t, &mockRouter{
 		name: "test",
@@ -389,9 +388,9 @@ handlers:
 }
 
 func TestWebSocket_HandlerError(t *testing.T) {
-	failWS := api.WebSocketHandlerFunc(func(c echo.Context, conn *websocket.Conn) error {
+	failWS := func(c echo.Context, conn *websocket.Conn) error {
 		return fmt.Errorf("something went wrong")
-	})
+	}
 
 	base, cleanup := startServer(t, &mockRouter{
 		name: "test",

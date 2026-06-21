@@ -21,12 +21,8 @@ func (m *manager) Start(ctx context.Context) error {
 }
 
 func (m *manager) Stop(wait bool) error {
-	m.cancel()
 	if err := m.bus.Stop(wait); err != nil {
 		return errors.Wrap(err)
-	}
-	if wait {
-		m.wg.Wait()
 	}
 	return nil
 }

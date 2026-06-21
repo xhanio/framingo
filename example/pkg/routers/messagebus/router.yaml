@@ -1,0 +1,8 @@
+server: http
+prefix: /messages
+handlers:
+  - method: WS
+    path: /stream
+    func: Stream
+    middlewares:
+      - authnuser
