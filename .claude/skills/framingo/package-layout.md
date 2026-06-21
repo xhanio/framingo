@@ -90,12 +90,13 @@ func (User) TableName() string { return "users" }
 
 ```
 components/server/myapp/
-├── model.go    # Server interface definition (Named + Daemon + Initializable + Debuggable)
-├── manager.go  # Main struct, New(), Init(), Start(), Stop(), Info() — orchestrates everything
-├── config.go   # Viper config creation (newConfig) and loading (initConfig)
-├── service.go  # initServices() — creates ALL service instances in layered order
-├── api.go      # initAPI() — registers middlewares and routers with the API server
-└── signal.go   # listenSignals() — OS signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
+├── model.go     # Server interface definition (Named + Daemon + Initializable + Debuggable)
+├── manager.go   # Main struct, New(), Name() — struct fields and construction only
+├── lifecycle.go # Init(), Start(), Stop(), Info() — orchestrates everything in order
+├── config.go    # Viper config creation (newConfig) and loading (initConfig)
+├── service.go   # initServices() — creates ALL service instances in layered order
+├── api.go       # initAPI() — registers middlewares and routers with the API server
+└── signal.go    # listenSignals() — OS signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
 ```
 
 ### `model.go` — Server Interface
@@ -109,9 +110,9 @@ type Server interface {
 }
 ```
 
-### `manager.go` — Orchestrator
+### `manager.go` — Struct and Construction
 
-The manager holds all service references and implements the `Server` interface. `Init()` calls `initConfig()` → `initServices()` → registers services with supervisor → `TopoSort()` → `services.Init()` → `initAPI()`. `Start()` starts all services and blocks on `<-ctx.Done()`.
+`manager.go` holds the struct definition and the `New()`/`Name()` methods only. Lifecycle methods live in `lifecycle.go`.
 
 ```go
 type manager struct {
@@ -119,21 +120,20 @@ type manager struct {
     config *viper.Viper
     log    log.Logger
 
-    // utility services
-    db db.Manager
-
-    // system services
-    bus pubsub.Manager
+    // infra services
+    db         db.Manager
+    pubsub     pubsub.Manager
+    messagebus messagebus.Manager
 
     // business services
     userSvc user.Manager
 
     // api services
-    mws []api.Middleware
     api server.Manager
 
     // service controller
     services supervisor.Manager
+    ctx      context.Context
     cancel   context.CancelFunc
 }
 
@@ -141,6 +141,10 @@ func New(configPath string) Server {
     return &manager{config: newConfig(configPath)}
 }
 ```
+
+### `lifecycle.go` — Orchestration
+
+Implements `Init`, `Start`, `Stop`, `Info`. `Init()` calls `initConfig()` → `initServices()` → registers services with supervisor in dependency layers → `TopoSort()` → registers `m.api` AFTER the sort so it starts last → registers all services with the messagebus → `services.Init()` → `initAPI()`. `Start()` starts all services and blocks on `<-ctx.Done()`.
 
 ### `service.go` — Service Creation (Layered Order)
 
@@ -151,21 +155,19 @@ func (m *manager) initServices() error {
     // 1. Logger — first, everything depends on it
     m.log = log.New(...)
 
-    // 2. Database
-    m.db = db.New(db.WithType(...), db.WithDataSource(...), db.WithLogger(m.log))
-
-    // 3. Supervisor (service controller)
+    // 2. Supervisor (service controller)
     m.services = supervisor.New(m.config, supervisor.WithLogger(m.log))
 
-    // 4. System services (pubsub, etc.)
-    m.bus = pubsub.New(driver.NewMemory(m.log), pubsub.WithLogger(m.log))
+    // 3. Infra services: database, pubsub, messagebus
+    m.db = db.New(db.WithType(...), db.WithDataSource(...), db.WithLogger(m.log))
+    m.pubsub = pubsub.New(driver.NewMemory(m.log), pubsub.WithLogger(m.log))
+    m.messagebus = messagebus.New(m.pubsub, messagebus.WithLogger(m.log))
 
-    // 5. Business services
+    // 4. Business services
     m.userSvc = user.New(m.db, user.WithLogger(m.log))
 
-    // 6. API server (created last, started last)
+    // 5. API server (created last, started last)
     m.api = server.New(server.WithLogger(m.log))
-    // Add server instances from config
     servers := m.config.GetStringMap("api")
     for name := range servers {
         m.api.Add(name, server.WithEndpoint(...))
@@ -204,26 +206,27 @@ func (m *manager) listenSignals(ctx context.Context) {
 }
 ```
 
-### Registration Order in `manager.go Init()`
+### Registration Order in `lifecycle.go Init()`
 
 ```go
 func (m *manager) Init(ctx context.Context) error {
     m.initConfig()
     m.initServices()
 
-    // Register services in dependency layers
-    m.services.Register(m.db)                    // basic services
-    m.services.Register(m.bus, m.userSvc)        // system + business services
-    m.services.TopoSort()                        // resolve dependency order
-    m.services.Register(m.api)                   // API registered AFTER sort to ensure it starts last
+    // Register in dependency layers
+    m.services.Register(m.db)                                // basic infra
+    m.services.Register(m.pubsub, m.messagebus, m.userSvc)   // system + business
+    m.services.TopoSort()                                    // resolve dependency order
+    m.services.Register(m.api)                               // API registered AFTER sort to ensure it starts last
 
-    // Subscribe all services to pubsub bus
+    // Register all services with the messagebus. Services that don't implement
+    // MessageHandler / RawMessageHandler are skipped automatically.
     for _, svc := range m.services.Services() {
-        m.bus.Subscribe(svc, "/")
+        m.messagebus.Register(svc)
     }
 
-    m.services.Init(ctx)                         // init all services in dependency order
-    m.initAPI()                                  // wire routes after services are initialized
+    m.services.Init(ctx)                                     // init all services in dependency order
+    m.initAPI()                                              // wire routes after services are initialized
     return nil
 }
 ```

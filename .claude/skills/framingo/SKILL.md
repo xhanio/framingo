@@ -33,7 +33,12 @@ Framingo is a modular, production-ready Go framework for building HTTP API appli
 | Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` |
 | Database | `pkg/services/db` | `db.Manager` |
 | HTTP API server | `pkg/services/api/server` | `server.Manager`, `api.Router`, `api.Middleware` |
-| Pub/Sub | `pkg/services/pubsub` | `pubsub.Manager`, `pubsub.Message` |
+| HTTP client | `pkg/services/api/client` | `client.Client` |
+| Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers |
+| Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` |
+| Task planner | `pkg/services/planner` | `planner.Manager`, `model.Planner` |
+| Message interfaces | `pkg/types/common` | `Message`, `MessageSender`, `MessageHandler`, `RawMessageHandler` |
+| Service interfaces | `pkg/types/model` | `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Planner` |
 | Logging | `pkg/utils/log` | `log.Logger` |
 | Errors | `github.com/xhanio/errors` | `errors.Newf`, `errors.Wrap`, category sentinels |
 | Config | `pkg/utils/confutil` | `confutil.FromContext(ctx)` |
@@ -51,9 +56,9 @@ CLI / Config (cobra + viper)
     |
 Supervisor (lifecycle orchestration, dependency resolution, health monitoring)
     |
-Services (DB, API Server, PubSub, Planner, custom services)
+Services (DB, API Server, PubSub, MessageBus, Planner, custom services)
     |
-Types (common interfaces, API types, ORM base types)
+Types (common interfaces, api types, model interfaces, entity data, orm base)
 ```
 
 **Module**: `github.com/xhanio/framingo`
@@ -246,9 +251,45 @@ For the full registration flow, router/middleware contracts, YAML format, handle
 
 ## Pub/Sub Messaging
 
-Located in `pkg/services/pubsub`. Supports Memory, Redis, and Kafka backends.
+Two layers: the low-level pub/sub primitive (`pkg/services/pubsub`) and a higher-level message bus (`pkg/services/messagebus`) that routes module messages through a single topic on top of it.
+
+### Pub/Sub Primitive
+
+`pkg/services/pubsub` with pluggable drivers under `pkg/services/pubsub/driver/` (Memory, Redis, Kafka).
+
+```go
+import (
+    "github.com/xhanio/framingo/pkg/services/pubsub"
+    "github.com/xhanio/framingo/pkg/services/pubsub/driver"
+)
+
+ps := pubsub.New(driver.NewMemory(logger), pubsub.WithLogger(logger))
+// ps.Publish(topic, msg); ps.Subscribe(topic, handler); ps.Unsubscribe(topic, handler)
+```
+
+Features: hierarchical topic subscriptions, non-self-delivery, both typed and raw dispatch.
+
+### Message Bus
+
+`pkg/services/messagebus` wraps a `model.Pubsub` and dispatches via a single well-known topic (`/messages` by default). Modules register once and receive typed (`common.Message`) or raw (`kind`, payload) messages.
+
+```go
+import "github.com/xhanio/framingo/pkg/services/messagebus"
+
+mb := messagebus.New(ps, messagebus.WithLogger(logger))
+
+// Register any service: modules implementing common.MessageHandler /
+// common.RawMessageHandler are auto-subscribed; others are no-op.
+mb.Register(someService)
+
+// Direct channel access (e.g. WebSocket bridge)
+messenger, _ := mb.NewMessenger("ws:user-123")
+mb.AttachWebSocket(messenger, wsConn) // blocks until conn closes
+```
 
 ### Message Interfaces
+
+Defined in `pkg/types/common` (not in `pubsub`/`messagebus`):
 
 ```go
 // Typed messages
@@ -257,12 +298,11 @@ type MessageHandler interface { HandleMessage(ctx context.Context, e Message) er
 
 // Raw messages
 type RawMessageHandler interface { HandleRawMessage(ctx context.Context, kind string, payload any) error }
-```
 
-### Features
-- Hierarchical topic subscriptions
-- Non-self-delivery (publishers don't receive their own messages)
-- Both typed (`Message`) and raw `(kind, payload)` dispatch
+// Senders
+type MessageSender    interface { SendMessage(ctx context.Context, m Message) error }
+type RawMessageSender interface { SendRawMessage(ctx context.Context, kind string, payload any) error }
+```
 
 ## Logging
 
@@ -284,6 +324,7 @@ Defined in `pkg/types/common/context.go`:
 - `_tx` - Database transaction (`*gorm.DB`)
 - `_db` - Database reference
 - `_logger` - Logger instance
+- `_trace` - Trace context
 - `_credential`, `_session`, `_namespace` - Auth context
 - `_api_request_info`, `_api_response_info`, `_api_error` - API context
 
@@ -364,11 +405,11 @@ For the full category table, wrapping rules, combining, checking, and custom cat
 All application packages MUST follow the categorized `pkg/` layout. Every category directory is a grouping folder only — Go source files always live in subdirectories, never at a category root.
 
 Categories:
-- `components/` — application wiring (cmd, server daemons)
+- `components/` — application wiring (cmd, server daemons, client SDKs)
 - `services/` — business logic, one `Manager` interface per service
 - `routers/` — HTTP route handlers (`router.go`, `router.yaml`, `handler.go`)
 - `middlewares/` — `api.Middleware` implementations
-- `types/api/`, `types/entity/`, `types/orm/` — request, business, and DB types kept strictly separate
+- `types/api/`, `types/entity/`, `types/model/`, `types/orm/`, `types/repo/` — request DTOs, domain entities, service interfaces, DB models, and repo interfaces, kept strictly separate
 - `utils/` — stateless shared helpers
 
 For the full category rules, type-separation example, server component file structure, and import organization, see [package-layout.md](package-layout.md).
@@ -390,7 +431,7 @@ For the full category rules, type-separation example, server component file stru
 3. **Context Propagation** - Config and transactions flow through `context.Context`
 4. **Dependency Declaration** - Services declare dependencies via `Dependencies()`, manager resolves order
 5. **Categorized Packages** - ALL code under `pkg/` must follow the category structure above
-6. **Type Separation** - Each domain concept has `api/`, `entity/`, and `orm/` representations
+6. **Type Separation** - Each domain concept has `api/` (wire), `entity/` (domain), `orm/` (DB), plus `model/` (service interfaces) and `repo/` (repository interfaces)
 7. **Error Handling** - ALWAYS use `github.com/xhanio/errors`, NEVER use `fmt.Errorf` or stdlib `errors`
 8. **Import Order** - Three groups: stdlib, third-party, project — always separated by blank lines
 

@@ -10,10 +10,10 @@ Full reference for the Framingo API server (`pkg/services/api/server`): the decl
 3. Routers registered         →  srvMgr.RegisterRouters(myRouter)
    a. Router.Config() called  →  returns embedded YAML ([]byte)
    b. YAML unmarshaled        →  produces HandlerGroup with Handlers
-   c. Router.Handlers() called →  returns map[string]any (echo.HandlerFunc or api.WebSocketHandlerFunc)
+   c. Router.Handlers() called →  returns map[string]any (echo.HandlerFunc or func(echo.Context, *websocket.Conn) error)
    d. For each YAML handler:
       - Func name looked up in Handlers() map
-      - Type asserted based on method (WS → WebSocketHandlerFunc, others → echo.HandlerFunc)
+      - Type asserted based on method (WS → func(echo.Context, *websocket.Conn) error, others → echo.HandlerFunc)
       - HandlerKey struct generated: {Server, Method, Path}
       - Handler func stored in manager.handlerFuncs[key] or wsHandlerFuncs[key]
    e. Server matched by HandlerGroup.Server field
@@ -98,7 +98,8 @@ func (r *router) Config() []byte { return config }
 
 // Handlers returns func-name → implementation mapping
 // Keys MUST match the "func" field in router.yaml
-// Values must be echo.HandlerFunc for HTTP or api.WebSocketHandlerFunc for WS
+// Values must be echo.HandlerFunc for HTTP or func(echo.Context, *websocket.Conn) error for WS
+// (there is no exported WebSocketHandlerFunc alias — use the literal func type)
 func (r *router) Handlers() map[string]any {
     return map[string]any{
         "ListUsers":  echo.HandlerFunc(r.listUsers),
@@ -147,7 +148,7 @@ handlers:
       burst_size: 20
   - method: WS            # WebSocket handler — registered as GET, server upgrades automatically
     path: /feed
-    func: Feed            # must be api.WebSocketHandlerFunc in Handlers() map
+    func: Feed            # must be func(echo.Context, *websocket.Conn) error in Handlers() map
 ```
 
 ## Handler Key Format
@@ -179,12 +180,10 @@ Root paths (`/`) are normalized by trimming the trailing slash, so both `/api/v1
 
 ```go
 // pkg/types/api/model.go
-type WebSocketHandlerFunc func(ctx context.Context, conn *websocket.Conn) error
-
 type Router interface {
     common.Service
     Config() []byte                    // YAML config bytes (typically //go:embed)
-    Handlers() map[string]any          // func name → echo.HandlerFunc or WebSocketHandlerFunc
+    Handlers() map[string]any          // func name → echo.HandlerFunc or func(echo.Context, *websocket.Conn) error
 }
 
 type Middleware interface {
@@ -193,19 +192,27 @@ type Middleware interface {
 }
 ```
 
+The server type-switches over the values in `Handlers()` and accepts these signatures:
+
+- `echo.HandlerFunc` / `func(echo.Context) error` — for HTTP methods
+- `func(echo.Context, *websocket.Conn) error` — for `method: WS`
+
+There is no exported `WebSocketHandlerFunc` alias; use the literal func type. Mismatched method/signature combinations fail at `RegisterRouters` time.
+
 ## WebSocket Handlers
 
-Declare WebSocket routes with `method: WS` in YAML. The server automatically upgrades the connection and passes it to the handler. Uses `github.com/coder/websocket`.
+Declare WebSocket routes with `method: WS` in YAML. The server automatically upgrades the connection (uses `github.com/coder/websocket`) and invokes the handler with the live `echo.Context` and the upgraded `*websocket.Conn`.
 
 ```go
 func (r *router) Handlers() map[string]any {
     return map[string]any{
         "ListUsers": echo.HandlerFunc(r.listUsers),
-        "Feed":      api.WebSocketHandlerFunc(r.feed),
+        "Feed":      r.feed, // func(echo.Context, *websocket.Conn) error — stored as `any`
     }
 }
 
-func (r *router) feed(ctx context.Context, conn *websocket.Conn) error {
+func (r *router) feed(c echo.Context, conn *websocket.Conn) error {
+    ctx := c.Request().Context()
     for {
         typ, msg, err := conn.Read(ctx)
         if err != nil {
@@ -218,7 +225,7 @@ func (r *router) feed(ctx context.Context, conn *websocket.Conn) error {
 }
 ```
 
-**Lifecycle**: Middleware stack runs before upgrade (auth, logging, throttle all apply). Once upgraded, errors are logged and the connection is closed with the appropriate status code. The handler receives a `context.Context` from the original HTTP request.
+**Lifecycle**: Middleware stack runs before upgrade (auth, logging, throttle all apply). Once upgraded, the server invokes the handler; on return, it closes the connection with the appropriate status (normal close on `nil`, `StatusGoingAway` if the request context was cancelled, `StatusInternalError` otherwise). Errors are logged via the server logger.
 
 ## Middleware Resolution
 

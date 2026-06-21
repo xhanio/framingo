@@ -3,31 +3,29 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8.svg)](https://go.dev/)
 
-**Framingo** is a modular, service-oriented Go framework for building production-ready HTTP API applications. It provides a comprehensive set of tools, utilities, and architectural patterns to help you quickly develop scalable, maintainable backend services.
+**Framingo** is a modular, service-oriented Go framework for building production-ready HTTP API applications. It provides service lifecycle management, dependency resolution, a declarative HTTP router, database integration, pub/sub messaging, and health monitoring — all wired together by a supervisor that handles graceful startup, shutdown, and automatic restart.
 
 ## Features
 
-- **Service-Oriented Architecture** - Built-in service lifecycle management with automatic dependency resolution
+- **Service-Oriented Architecture** — Compose applications from small services with automatic dependency resolution via topological sort
 
-- **Health Monitoring** - Kubernetes-style liveness/readiness probes with automatic restart on failure
+- **Supervisor Lifecycle** — Centralized orchestration with init, start, stop, and per-service runtime restart
 
-- **HTTP API Server** - Production-ready API server with routing, middleware, and rate limiting
+- **Health Monitoring** — Kubernetes-style liveness/readiness probes with automatic restart on liveness failure
 
-- **Rich Utilities** - Extensive collection of utility packages for common operations
+- **HTTP API Server** — Echo-based server with declarative YAML routing, middleware pipeline, throttling, TLS, and WebSocket support
 
-- **Pub/Sub Messaging** - Event-driven messaging with multiple backends (Memory, Redis, Kafka)
+- **Database Integration** — GORM-backed manager for PostgreSQL, MySQL, SQLite, and ClickHouse with connection pooling, migrations, and context-aware transactions
 
-- **Modular Design** - Pick and choose components based on your needs
+- **Pub/Sub Messaging** — Hierarchical topic dispatch with pluggable Memory, Redis, and Kafka drivers, plus a higher-level message bus with WebSocket bridging
 
-- **Configuration Management** - Instance-based Viper configuration with context propagation and hot-reload support
+- **Task Planning** — Concurrent task scheduler with priority, retry, and result tracking
 
-- **Database Integration** - Database manager with connection pooling and migrations
+- **Instance-Based Configuration** — Viper instance propagated through `context.Context` (no global singletons), with hot-reload
 
-- **CLI Support** - Built-in command-line interface framework integration
+- **Structured Logging** — Zap-based logger with file rotation and per-service scoping
 
-- **Signal Handling** - Built-in OS signal management with customizable handlers (SIGINT, SIGUSR1, SIGUSR2)
-
-- **Production Ready** - Error handling, logging, graceful shutdown, and profiling support
+- **Production Ready** — Built-in OS signal handling (SIGINT/SIGTERM/SIGUSR1/SIGUSR2), pprof profiling, graceful shutdown, and error categorization via `xhanio/errors`
 
 ## Table of Contents
 
@@ -37,6 +35,10 @@
 - [Building Your First Application](#building-your-first-application)
 - [Documentation](#documentation)
 - [Examples](#examples)
+- [Key Concepts](#key-concepts)
+- [Configuration](#configuration)
+- [Production Deployment](#production-deployment)
+- [Best Practices](#best-practices)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -48,55 +50,30 @@
 go get github.com/xhanio/framingo
 ```
 
-### Your First Application
+### Running the Bundled Example
 
-Create a simple HTTP API server in minutes:
-
-```go
-// cmd/myapp/main.go
-package main
-
-import (
-    "fmt"
-    "os"
-
-    "github.com/xhanio/framingo/example/pkg/components/cmd/app"
-)
-
-func main() {
-    rootCmd := app.NewRootCmd()
-    if err := rootCmd.Execute(); err != nil {
-        fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-        os.Exit(1)
-    }
-}
-```
-
-```yaml
-# config.yaml
-log:
-  level: 0  # 0=Debug, 1=Info, 2=Warn, 3=Error
-
-api:
-  http:
-    host: 0.0.0.0
-    port: 8080
-    prefix: /api/v1
-```
+The fastest path to a working server is the example app under [example/](example/), which uses [GoPro](https://github.com/xhanio/gopro) for builds.
 
 ```bash
-# Build and run
-go build -o myapp cmd/myapp/main.go
-./myapp daemon -c config.yaml
+go install github.com/xhanio/gopro@latest
 
-# Test the API
-curl -X POST -H 'Content-Type: application/json' \
-  -d '{"message":"Hello"}' \
-  http://localhost:8080/api/v1/example/helloworld
-# Response: {"id":1,"message":"Hello","created_at":"...","updated_at":"..."}
+cd example
+gopro build binary -e local
+
+./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
 
-**For a complete tutorial**, see the [Building Your First Application](#building-your-first-application) section and [Complete Application Guide](example/README.md).
+In another terminal:
+
+```bash
+# Log in first — the helloworld endpoint is protected by authnuser middleware
+./bin/examplecli -e http://localhost:8080 login            # default admin / admin
+
+./bin/examplecli -e http://localhost:8080 helloworld "Hello"
+# {"id":1,"message":"hello world!!! Hello","created_at":"...","updated_at":"..."}
+```
+
+See [example/QUICKSTART.md](example/QUICKSTART.md) for the full walkthrough.
 
 ## Architecture
 
@@ -110,7 +87,7 @@ graph TB
     end
 
     subgraph "Service Orchestration"
-        Sup[Supervisor<br/>Lifecycle & Dependencies]
+        Sup[Supervisor<br/>Lifecycle &amp; Dependencies]
     end
 
     subgraph "Core Components"
@@ -146,7 +123,7 @@ sequenceDiagram
 
     Client->>APIServer: HTTP Request
     APIServer->>Middleware: Process Request
-    Note over Middleware: Authentication<br/>Logging<br/>Rate Limiting
+    Note over Middleware: Recover<br/>Info<br/>Throttle<br/>Logger<br/>Auth/Custom
     Middleware->>Router: Validated Request
     Router->>Service: Business Operation
     Service->>DB: Data Access
@@ -159,145 +136,130 @@ sequenceDiagram
 
 ## Core Modules
 
-Framingo is organized into four core module categories under `pkg/`:
+Framingo is organized into four module categories under `pkg/`:
 
 ### Services (`pkg/services/`)
 
-Production-ready service implementations that provide core functionality:
+Production-ready service implementations:
 
-- **[api/server](pkg/services/api/server/)** - HTTP API server with Echo framework integration
-  - Route management and handler registration
-  - Built-in middleware (error handling, logging, rate limiting)
-  - Multiple server support with TLS
-  - YAML-based route configuration
-  - Request/response lifecycle management
+- **[supervisor](pkg/services/supervisor/)** — Service lifecycle orchestration
+  - Topologically sorts registered services by `Dependencies()`
+  - Calls `Init(ctx)` and `Start(ctx)` in dependency order, `Stop()` in reverse
+  - Monitors `Liveness`/`Readiness` probes and auto-restarts services that fail liveness
+  - Per-service runtime control (`InitService`, `StartService`, `StopService`, `RestartService`)
+  - Whole-graph `Restart(ctx)` and OS signal handling
 
-- **[api/client](pkg/services/api/client/)** - HTTP client utilities for making API requests
+- **[api/server](pkg/services/api/server/)** — HTTP API server
+  - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithThrottle(...))`
+  - Declarative YAML routing via `api.Router`
+  - Middleware pipeline with name-based resolution
+  - WebSocket handlers (use method `WS` in router YAML)
+  - Built-in middlewares: recover, info, throttle, logger, error
 
-- **[supervisor](pkg/services/supervisor/)** - Service lifecycle orchestration
-  - Automatic dependency resolution via topological sort
-  - Service registration and initialization with context-based configuration
-  - Graceful startup and shutdown with configurable timeout
-  - Built-in OS signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
-  - Health monitoring with Kubernetes-style liveness/readiness probes
-  - Automatic service restart on liveness failure with configurable retry policy
-  - Per-service lifecycle operations (init, start, stop, restart)
+- **[api/client](pkg/services/api/client/)** — HTTP client with TLS, headers, cookies, retries, and JSON helpers
 
-- **[db](pkg/services/db/)** - Database manager with GORM integration
-  - Connection pooling with configurable limits
-  - Migration support
-  - Multiple database types (PostgreSQL, MySQL, SQLite)
-  - Context-aware operations
+- **[db](pkg/services/db/)** — Database manager (GORM)
+  - Drivers: PostgreSQL, MySQL, SQLite, ClickHouse
+  - Connection pooling (`WithConnection(maxOpen, maxIdle, maxLifetime, maxIdleTime)`)
+  - Migrations via `WithMigration(dir, version)`
+  - Context-aware queries: `FromContext(ctx)` auto-extracts an active transaction
+  - `Transaction(ctx, fn, opts...)` wraps `fn` in a TX with rollback-on-error
 
-- **[planner](pkg/services/planner/)** - Task scheduling and planning service
+- **[pubsub](pkg/services/pubsub/)** — Publish-subscribe primitive
+  - Hierarchical topic subscriptions, non-self-delivery
+  - Pluggable backends under [pubsub/driver/](pkg/services/pubsub/driver/): Memory, Redis, Kafka
+  - `Publish(topic, msg)`, `Subscribe(topic, handler)`, `Unsubscribe(topic, handler)`
 
-- **[pubsub](pkg/services/pubsub/)** - Publish-subscribe messaging
-  - Hierarchical topic-based subscriptions
-  - Multiple driver backends: Memory, Redis, Kafka
-  - Non-self-delivery (publishers don't receive own messages)
-  - `MessageHandler` and `RawMessageHandler` dispatch
-  - Synchronous message handling with ordering guarantees and backpressure
+- **[messagebus](pkg/services/messagebus/)** — Higher-level dispatch on top of `pubsub`
+  - Single well-known topic with module-centric routing
+  - Typed (`common.Message`) and raw (`kind`, payload) handlers
+  - `NewMessenger()` for direct channel access, `AttachWebSocket()` to bridge a connection
+
+- **[planner](pkg/services/planner/)** — Task scheduling
+  - Concurrent execution with priority, cancel, and result lookup
+  - Emits task lifecycle events through a `MessageSender`
 
 ### Types (`pkg/types/`)
 
-Core interfaces and type definitions used throughout the framework:
+Interface contracts and shared types:
 
-- **[common](pkg/types/common/)** - Common interfaces
-  - Service lifecycle ([`service.go`](pkg/types/common/service.go)):
-    - `Service` - Base service interface with name and dependencies
-    - `Daemon` - Start/Stop lifecycle methods
-    - `Initializable` - Context-aware initialization (`Init(ctx context.Context) error`)
-    - `Liveness` - Health probe for automatic restart (`Alive() error`)
-    - `Readiness` - Readiness probe for traffic gating (`Ready() error`)
-    - `Debuggable` - Debug info output
-  - General-purpose ([`common.go`](pkg/types/common/common.go)):
-    - `Named`, `Unique`, `Weighted` - Utility interfaces
-  - Messaging ([`message.go`](pkg/types/common/message.go)):
-    - `Message`, `MessageSender`, `RawMessageSender` - Messaging interfaces
-    - `MessageHandler`, `RawMessageHandler` - Message consumption interfaces
+- **[common](pkg/types/common/)** — Service lifecycle and utility interfaces
+  - Lifecycle ([`service.go`](pkg/types/common/service.go)): `Service`, `Initializable`, `Daemon`, `Liveness`, `Readiness`, `Debuggable`
+  - Utility ([`common.go`](pkg/types/common/common.go)): `Named`, `Unique`, `Weighted`
+  - Messaging ([`message.go`](pkg/types/common/message.go)): `Message`, `MessageSender`, `RawMessageSender`, `MessageHandler`, `RawMessageHandler`
+  - Context keys ([`context.go`](pkg/types/common/context.go)): `_config`, `_logger`, `_db`, `_tx`, `_credential`, `_session`, `_namespace`, `_trace`, `_api_request_info`, `_api_response_info`, `_api_error`
 
-- **[api](pkg/types/api/)** - HTTP API related types
-  - `Router`, `Middleware` interfaces
-  - `Handler`, `HandlerGroup` route configuration types
-  - `ThrottleConfig` for rate limiting
+- **[api](pkg/types/api/)** — HTTP types: `Router`, `Middleware`, `Handler`, `HandlerGroup`, `HandlerKey`, `Endpoint`, `ThrottleConfig`, `TLS`
 
-- **[orm](pkg/types/orm/)** - ORM base types
-  - `Record[T]` - Generic record interface with ID, versioning, and soft delete
-  - `Referenced[T]` - Cross-table reference support
+- **[model](pkg/types/model/)** — Behavioral contracts for framework services: `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Messenger`, `Planner`
 
-- **[info](pkg/types/info/)** - Application metadata (version, build info, commit hash)
+- **[entity](pkg/types/entity/)** — Data carriers (POJOs) emitted by framework services: `SupervisorStats`, `Plan`, `PlannerStats`, `PubsubMessage`
+
+- **[orm](pkg/types/orm/)** — Generic ORM base types: `Record[T]`, `Referenced[T]`, `Reference[T]`
+
+- **[info](pkg/types/info/)** — Build metadata (product name, version, git tag/branch, build date) injected at link time
 
 ### Data Structures (`pkg/structs/`)
 
-Efficient, generic data structures for common algorithms:
-
-- **[buffer](pkg/structs/buffer/)** - Ring buffer implementation with fixed capacity
-- **[graph](pkg/structs/graph/)** - Generic graph structure with topological sort (used by app)
-- **[lease](pkg/structs/lease/)** - Time-based lease management for resource allocation
-- **[queue](pkg/structs/queue/)** - FIFO queue implementation
-- **[staque](pkg/structs/staque/)** - Hybrid stack/queue data structure
-- **[trie](pkg/structs/trie/)** - Prefix tree for efficient string matching
+- **[buffer](pkg/structs/buffer/)** — Generic object pool and pooled read/write/seek buffer
+- **[graph](pkg/structs/graph/)** — Topologically-sortable directed graph (used by the supervisor)
+- **[lease](pkg/structs/lease/)** — Time-based lease manager with renewal hooks
+- **[queue](pkg/structs/queue/)** — Double-buffered queue with auto-swap intervals
+- **[staque](pkg/structs/staque/)** — Hybrid stack/queue with priority and blocking variants
+- **[trie](pkg/structs/trie/)** — Prefix tree with fuzzy and prefix search (UTF-8 friendly)
 
 ### Utilities (`pkg/utils/`)
 
-Helper packages for common tasks:
-
-- **[certutil](pkg/utils/certutil/)** - Certificate and TLS utilities
-- **[cmdutil](pkg/utils/cmdutil/)** - Command execution helpers
-- **[confutil](pkg/utils/confutil/)** - Configuration context utilities (pass `*viper.Viper` via `context.Context`)
-- **[envutil](pkg/utils/envutil/)** - Environment variable helpers
-- **[infra](pkg/utils/infra/)** - Infrastructure helpers (signals, profiling, pprof)
-- **[ioutil](pkg/utils/ioutil/)** - I/O operations and file utilities
-- **[job](pkg/utils/job/)** - Background job execution framework
-- **[log](pkg/utils/log/)** - Structured logging with zap integration and file rotation
-- **[maputil](pkg/utils/maputil/)** - Map and set utilities
-- **[netutil](pkg/utils/netutil/)** - Network utilities
-- **[pageutil](pkg/utils/pageutil/)** - Pagination utilities
-- **[pathutil](pkg/utils/pathutil/)** - Path manipulation helpers
-- **[printutil](pkg/utils/printutil/)** - Pretty printing and table formatting
-- **[reflectutil](pkg/utils/reflectutil/)** - Reflection helpers
-- **[sliceutil](pkg/utils/sliceutil/)** - Slice manipulation utilities
-- **[strutil](pkg/utils/strutil/)** - String utilities
-- **[task](pkg/utils/task/)** - Task management with concurrency control
-- **[timeutil](pkg/utils/timeutil/)** - Time-related utilities
+| Package | Purpose |
+| --- | --- |
+| **[certutil](pkg/utils/certutil/)** | X.509 CA/server/client cert generation and TLS config |
+| **[cmdutil](pkg/utils/cmdutil/)** | Context-aware external command execution with I/O capture |
+| **[confutil](pkg/utils/confutil/)** | Viper instance propagated via `context.Context` |
+| **[envutil](pkg/utils/envutil/)** | Prefixed environment variable helpers |
+| **[infra](pkg/utils/infra/)** | OS-level helpers (timezone detection and loading) |
+| **[ioutil](pkg/utils/ioutil/)** | File copy/compress/encrypt with progress tracking and limits |
+| **[job](pkg/utils/job/)** | Job model with state, labels, results, statistics |
+| **[job/executor](pkg/utils/job/executor/)** | Executor with retry, timeout, cooldown, and stop control |
+| **[log](pkg/utils/log/)** | Zap-based logger with file rotation, custom levels, per-service scoping |
+| **[maputil](pkg/utils/maputil/)** | Map and set helpers (copy, diff, keys, membership) |
+| **[netutil](pkg/utils/netutil/)** | MAC/CIDR/IP helpers |
+| **[pageutil](pkg/utils/pageutil/)** | Pagination wrapper (items, total, params) |
+| **[pathutil](pkg/utils/pathutil/)** | Path shortening |
+| **[printutil](pkg/utils/printutil/)** | Console table formatting |
+| **[reflectutil](pkg/utils/reflectutil/)** | Type location, byte conversion, field scan/apply |
+| **[sliceutil](pkg/utils/sliceutil/)** | Membership, dedupe, diff, copy, change tracking |
+| **[strutil](pkg/utils/strutil/)** | Validation, join, clean, random, hex format |
+| **[task](pkg/utils/task/)** | Task manager with concurrency control and priority queue |
+| **[testutil](pkg/utils/testutil/)** | Test database setup helpers |
+| **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
 
 ## Building Your First Application
 
 ### Step 1: Project Setup
 
 ```bash
-# Create your project structure
 mkdir -p myapp/{cmd/myapp,pkg/{services,routers,middlewares,types/{api,entity,orm},components/{cmd,server},utils}}
 cd myapp
 
-# Initialize Go module
 go mod init github.com/yourorg/myapp
-
-# Get Framingo
 go get github.com/xhanio/framingo
 
-# Your project structure should look like:
+# Resulting layout:
 # myapp/
-# ├── cmd/
-# │   └── myapp/           # Application entry point
+# ├── cmd/myapp/                # binary entry point
 # ├── pkg/
 # │   ├── components/
-# │   │   ├── cmd/         # CLI commands
-# │   │   └── server/      # Server orchestration
-# │   ├── services/        # Business logic
-# │   ├── routers/         # HTTP handlers
-# │   ├── middlewares/     # HTTP middleware
-# │   ├── types/           # Type definitions
-# │   │   ├── api/         # API request/response types with validation
-# │   │   ├── entity/      # Business entities (pure domain models)
-# │   │   └── orm/         # ORM models for database operations
-# │   └── utils/           # Utilities
-# └── config.yaml          # Configuration
+# │   │   ├── cmd/              # Cobra commands
+# │   │   └── server/           # supervisor + wiring
+# │   ├── services/             # business logic
+# │   ├── routers/              # HTTP routes (router.go + router.yaml)
+# │   ├── middlewares/          # api.Middleware implementations
+# │   ├── types/{api,entity,orm}/
+# │   └── utils/
+# └── config.yaml
 ```
 
-### Step 2: Define Your Service
-
-Services contain your business logic with lifecycle management.
+### Step 2: Define a Service
 
 ```go
 // pkg/services/hello/model.go
@@ -305,6 +267,7 @@ package hello
 
 import (
     "context"
+
     "github.com/xhanio/framingo/pkg/types/common"
 )
 
@@ -323,15 +286,18 @@ package hello
 import (
     "context"
     "fmt"
+    "path"
+
     "github.com/xhanio/framingo/pkg/types/common"
     "github.com/xhanio/framingo/pkg/utils/log"
+    "github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 type manager struct {
-    log log.Logger
+    name string
+    log  log.Logger
 }
 
-// Option pattern for optional dependencies
 type Option func(*manager)
 
 func WithLogger(logger log.Logger) Option {
@@ -339,40 +305,33 @@ func WithLogger(logger log.Logger) Option {
 }
 
 func New(opts ...Option) Manager {
-    m := &manager{}
+    m := &manager{log: log.Default}
     for _, opt := range opts {
         opt(m)
     }
-    if m.log == nil {
-        m.log = log.Default
-    }
+    m.log = m.log.By(m)
     return m
 }
 
-func (m *manager) Name() string { return "hello-service" }
-func (m *manager) Dependencies() []common.Service { return nil }
-func (m *manager) Init(ctx context.Context) error {
-    m.log.Info("Initializing hello service")
-    return nil
-}
-func (m *manager) Start(ctx context.Context) error {
-    m.log.Info("Starting hello service")
-    return nil
-}
-func (m *manager) Stop(wait bool) error {
-    m.log.Info("Stopping hello service")
-    return nil
+func (m *manager) Name() string {
+    if m.name == "" {
+        m.name = path.Join(reflectutil.Locate(m))
+    }
+    return m.name
 }
 
+func (m *manager) Dependencies() []common.Service { return nil }
+func (m *manager) Init(ctx context.Context) error { return nil }
+func (m *manager) Start(ctx context.Context) error { return nil }
+func (m *manager) Stop(wait bool) error            { return nil }
+
 func (m *manager) SayHello(ctx context.Context, name string) (string, error) {
-    m.log.Infof("Saying hello to %s", name)
+    m.log.Infof("saying hello to %s", name)
     return fmt.Sprintf("Hello, %s!", name), nil
 }
 ```
 
-### Step 3: Create HTTP Router
-
-Routers define HTTP endpoints and handlers using YAML configuration.
+### Step 3: Create an HTTP Router
 
 ```go
 // pkg/routers/hello/router.go
@@ -382,9 +341,11 @@ import (
     _ "embed"
 
     "github.com/labstack/echo/v4"
+
     "github.com/xhanio/framingo/pkg/types/api"
     "github.com/xhanio/framingo/pkg/types/common"
-    "myapp/pkg/services/hello"
+
+    "github.com/yourorg/myapp/pkg/services/hello"
 )
 
 //go:embed router.yaml
@@ -398,9 +359,9 @@ func New(svc hello.Manager) api.Router {
     return &router{helloSvc: svc}
 }
 
-func (r *router) Name() string { return "hello-router" }
-func (r *router) Dependencies() []common.Service { return []common.Service{r.helloSvc} }
-func (r *router) Config() []byte { return config }
+func (r *router) Name() string                    { return "hello-router" }
+func (r *router) Dependencies() []common.Service  { return []common.Service{r.helloSvc} }
+func (r *router) Config() []byte                  { return config }
 
 func (r *router) Handlers() map[string]any {
     return map[string]any{
@@ -413,12 +374,10 @@ func (r *router) Hello(c echo.Context) error {
     if name == "" {
         name = "World"
     }
-
     msg, err := r.helloSvc.SayHello(c.Request().Context(), name)
     if err != nil {
         return err
     }
-
     return c.JSON(200, map[string]string{"message": msg})
 }
 ```
@@ -433,9 +392,7 @@ handlers:
     func: Hello
 ```
 
-### Step 4: Wire It All Together
-
-Create a server component to orchestrate your services and routers.
+### Step 4: Wire It Together
 
 ```go
 // pkg/components/server/myapp/manager.go
@@ -443,21 +400,21 @@ package myapp
 
 import (
     "context"
-    "fmt"
-    "os"
 
     "github.com/spf13/viper"
+
     "github.com/xhanio/framingo/pkg/services/api/server"
     "github.com/xhanio/framingo/pkg/services/supervisor"
     "github.com/xhanio/framingo/pkg/types/common"
     "github.com/xhanio/framingo/pkg/utils/log"
 
-    "myapp/pkg/services/hello"
-    helloRouter "myapp/pkg/routers/hello"
+    helloRouter "github.com/yourorg/myapp/pkg/routers/hello"
+    "github.com/yourorg/myapp/pkg/services/hello"
 )
 
 type Manager interface {
     common.Daemon
+    Init(ctx context.Context) error
 }
 
 type manager struct {
@@ -473,16 +430,11 @@ func New(config *viper.Viper) Manager {
 }
 
 func (m *manager) Init(ctx context.Context) error {
-    // Initialize logger
     m.log = log.New(log.WithLevel(m.config.GetInt("log.level")))
-
-    // Initialize service controller (requires *viper.Viper for config propagation)
     m.services = supervisor.New(m.config, supervisor.WithLogger(m.log))
 
-    // Create API server
     m.api = server.New(server.WithLogger(m.log))
-    httpConfig := m.config.Sub("api.http")
-    if httpConfig != nil {
+    if httpConfig := m.config.Sub("api.http"); httpConfig != nil {
         m.api.Add("http",
             server.WithEndpoint(
                 httpConfig.GetString("host"),
@@ -492,37 +444,24 @@ func (m *manager) Init(ctx context.Context) error {
         )
     }
 
-    // Initialize your service (with optional logger)
     m.helloSvc = hello.New(hello.WithLogger(m.log))
-
-    // Register services
     m.services.Register(m.helloSvc)
 
-    // Resolve dependencies
     if err := m.services.TopoSort(); err != nil {
         return err
     }
 
-    // Add API server (must be last)
     m.services.Register(m.api)
 
-    // Initialize all services (config is propagated to services via context)
     if err := m.services.Init(ctx); err != nil {
         return err
     }
 
-    // Register routers
     return m.api.RegisterRouters(helloRouter.New(m.helloSvc))
 }
 
-func (m *manager) Start(ctx context.Context) error {
-    // Start all services (signal handling is built into the supervisor)
-    return m.services.Start(ctx)
-}
-
-func (m *manager) Stop(wait bool) error {
-    return m.services.Stop(wait)
-}
+func (m *manager) Start(ctx context.Context) error { return m.services.Start(ctx) }
+func (m *manager) Stop(wait bool) error            { return m.services.Stop(wait) }
 ```
 
 ```go
@@ -536,7 +475,7 @@ import (
     "github.com/spf13/cobra"
     "github.com/spf13/viper"
 
-    "myapp/pkg/components/server/myapp"
+    "github.com/yourorg/myapp/pkg/components/server/myapp"
 )
 
 func main() {
@@ -547,18 +486,15 @@ func main() {
     daemonCmd := &cobra.Command{
         Use: "daemon",
         RunE: func(cmd *cobra.Command, args []string) error {
-            // Load configuration (instance-based, not global)
             config := viper.New()
             config.SetConfigFile(configFile)
             config.SetEnvPrefix("MYAPP")
             config.AutomaticEnv()
-
             if err := config.ReadInConfig(); err != nil {
-                return fmt.Errorf("failed to read config: %w", err)
+                return fmt.Errorf("read config: %w", err)
             }
-            config.WatchConfig() // Enable hot-reload
+            config.WatchConfig()
 
-            // Initialize and start server
             mgr := myapp.New(config)
             if err := mgr.Init(cmd.Context()); err != nil {
                 return err
@@ -579,161 +515,115 @@ func main() {
 ### Step 5: Run and Test
 
 ```bash
-# Build your application
 go build -o myapp cmd/myapp/main.go
-
-# Run the server
 ./myapp daemon -c config.yaml
 
-# Test the endpoint
-curl http://localhost:8080/api/v1/hello?name=Framingo
-# Response: {"message": "Hello, Framingo!"}
+curl 'http://localhost:8080/api/v1/hello?name=Framingo'
+# {"message":"Hello, Framingo!"}
 ```
-
-**For more details**, see the [Complete Application Guide](example/README.md) with comprehensive examples of all components.
 
 ## Documentation
 
-### Comprehensive Guides
+- **[example/QUICKSTART.md](example/QUICKSTART.md)** — Build, run, and exercise the bundled example with GoPro
+- **[example/](example/)** — Full reference application (supervisor, db, pubsub, messagebus, RBAC, CLI client)
+- **Framework packages**:
+  - **[pkg/services/](pkg/services/)** — supervisor, api server/client, db, pubsub, messagebus, planner
+  - **[pkg/types/](pkg/types/)** — common, api, model, entity, orm, info
+  - **[pkg/utils/](pkg/utils/)** — log, infra, and the utility packages listed above
+  - **[pkg/structs/](pkg/structs/)** — graph, queue, buffer, trie, lease, staque
 
-- **[Complete Application Guide](example/README.md)** - Full tutorial with all components and production deployment
-- **[Type Separation Guide](example/pkg/types/README.md)** - Understanding API, Entity, and ORM type separation
-- **[Service Layer](example/pkg/services/README.md)** - Building business logic services with lifecycle management
-- **[HTTP Routers](example/pkg/routers/README.md)** - Creating API endpoints with YAML-based configuration
-- **[Middleware](example/pkg/middlewares/README.md)** - Request processing pipeline and custom middleware
-- **[Server Component](example/pkg/components/server/README.md)** - Application orchestration and dependency management
-- **[CLI Component](example/pkg/components/cmd/README.md)** - Command-line interface with Cobra
-
-### Framework API Reference
-
-Browse the framework source code:
-
-- **[Services API](pkg/services/)** - API server, app controller, database, planner, pubsub
-- **[Types](pkg/types/)** - Common interfaces and API types
-- **[Utilities](pkg/utils/)** - Logger, infrastructure, and helper packages
-- **[Data Structures](pkg/structs/)** - Graph, queue, buffer, trie implementations
-
-### Go Documentation
-
-View package documentation using go doc:
+View package docs locally:
 
 ```bash
-# View package documentation
-go doc github.com/xhanio/framingo/pkg/services/api/server
 go doc github.com/xhanio/framingo/pkg/services/supervisor
-go doc github.com/xhanio/framingo/pkg/utils/log
+go doc github.com/xhanio/framingo/pkg/services/api/server
+go doc github.com/xhanio/framingo/pkg/services/messagebus
 ```
 
 ## Examples
 
-The `example/` directory contains a complete, production-ready application demonstrating all framework features:
+The [example/](example/) directory contains a production-shaped reference app demonstrating most framework features:
 
 ```
 example/
-+-- pkg/
-    +-- components/
-    |   +-- cmd/app/            # CLI with Cobra (daemon, version commands)
-    |   +-- server/example/     # Server orchestration and lifecycle management
-    +-- services/example/       # Business service with lifecycle methods
-    +-- routers/example/        # HTTP routes with YAML configuration
-    +-- middlewares/example/    # Custom middleware (deflate compression)
-    +-- types/                  # Type definitions (separated by purpose)
-    |   +-- api/                # API request/response types with validation
-    |   +-- entity/             # Business entities (pure domain models)
-    |   +-- orm/                # ORM models for database operations
-    +-- utils/                  # Utility modules
-        +-- infra/              # Infrastructure utilities
-+-- README.md                   # Complete application guide
+├── pkg/
+│   ├── components/
+│   │   ├── cmd/
+│   │   │   ├── app/                 # daemon CLI (daemon, version)
+│   │   │   └── cli/                 # client CLI (login, helloworld, certutil)
+│   │   ├── server/example/          # supervisor wiring for the daemon
+│   │   └── client/example/          # HTTP client SDK
+│   ├── services/
+│   │   ├── example/                 # business service (HelloWorld)
+│   │   ├── repository/              # GORM repositories per domain
+│   │   └── system/                  # auth, user, role, organization, certificate
+│   ├── routers/                     # auth, certificate, example, messagebus, role, user
+│   ├── middlewares/                 # authnagent, authnuser, authz, deflate, feature
+│   └── types/                       # api, entity, model, orm, message, rbac, preset, repo, infra
+├── build/                           # GoPro build templates (binary, image)
+├── env/local/                       # local-env config, docker-compose, kubernetes
+├── dist/                            # generated outputs (configs, migrations, manifests)
+└── QUICKSTART.md
 ```
 
-### Running the Example
+Build it via GoPro:
 
 ```bash
-# Clone the repository
-git clone https://github.com/xhanio/framingo.git
-cd framingo
+cd example
+gopro build binary -e local             # cgo-enabled local build
+# gopro build binary -e prod            # static binary for production
+# gopro build image -e local            # docker image
 
-# Create a config file
-cat > config.yaml <<EOF
-log:
-  level: 0
-api:
-  http:
-    host: 0.0.0.0
-    port: 8080
-    prefix: /api/v1
-EOF
-
-# Create a main.go that uses the example components
-cat > cmd/app/main.go <<EOF
-package main
-
-import (
-    "fmt"
-    "os"
-    "github.com/xhanio/framingo/example/pkg/components/cmd/app"
-)
-
-func main() {
-    rootCmd := app.NewRootCmd()
-    if err := rootCmd.Execute(); err != nil {
-        fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-        os.Exit(1)
-    }
-}
-EOF
-
-# Build and run
-go build -o myapp cmd/app/main.go
-./myapp daemon -c config.yaml
-
-# Test the API
-curl -X POST -H 'Content-Type: application/json' \
-  -d '{"message":"Hello World"}' \
-  http://localhost:8080/api/v1/example/helloworld
-# Response: {"id":1,"message":"Hello World","created_at":"...","updated_at":"..."}
+./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
 
-**For detailed setup and configuration**, see [example/README.md](example/README.md)
+### Features Demonstrated
 
-### Example Features Demonstrated
-
-- ✅ Service lifecycle management with dependency injection
-- ✅ HTTP API with routing and request validation
-- ✅ Type separation (API/Entity/ORM) for clean architecture
-- ✅ Database integration with ORM models
-- ✅ Custom middleware (deflate compression)
-- ✅ Instance-based Viper configuration with hot-reload and context propagation
-- ✅ CLI with multiple commands (daemon, version)
-- ✅ Built-in signal handling (SIGINT, SIGTERM, SIGUSR1, SIGUSR2)
-- ✅ Health monitoring with liveness/readiness probes
-- ✅ Automatic service restart on liveness failure
-- ✅ Structured logging with file rotation
-- ✅ Service dependencies with automatic resolution
-- ✅ Multiple API servers support
-- ✅ Configurable shutdown timeout
+- Supervisor-orchestrated lifecycle with topological dependency resolution
+- Multiple services: database, pubsub, message bus, RBAC, business logic
+- HTTP routes with YAML configuration, middlewares (auth, deflate, feature flags), and a WebSocket endpoint via the message-bus router
+- Type separation: `api/` (DTOs), `entity/` (domain), `orm/` (database), `model/` (interfaces)
+- Database migrations and ClickHouse-/Postgres-/MySQL-/SQLite-compatible drivers
+- Pub/sub with pluggable Memory/Redis/Kafka backends
+- CLI client with credential persistence and certificate helpers
+- GoPro-driven build, image, and Kubernetes manifest generation
 
 ## Key Concepts
 
-### Type Separation
-
-Framingo promotes clean architecture through type separation:
+### Service Lifecycle Interfaces
 
 ```go
-// API Types - Request/response with validation
+type Service interface {
+    Named                          // Name() string
+    Dependencies() []Service       // startup ordering
+}
+
+type Initializable interface { Init(ctx context.Context) error }       // setup; called on start AND restart
+type Daemon        interface { Start(ctx context.Context) error; Stop(wait bool) error }
+type Liveness      interface { Alive() error }                         // failure triggers auto-restart
+type Readiness     interface { Ready() error }                         // failure reported but not actioned
+type Debuggable    interface { Info(w io.Writer, debug bool) }
+```
+
+Compose only the interfaces a service needs. The supervisor inspects each registered service at runtime to determine which lifecycle hooks to invoke.
+
+### Type Separation
+
+```go
+// api — wire format with validation
 type CreateUserRequest struct {
     Username string `json:"username" validate:"required"`
-    Email    string `json:"email" validate:"required,email"`
+    Email    string `json:"email"    validate:"required,email"`
 }
 
-// Entity Types - Pure business models
+// entity — pure domain model
 type User struct {
-    ID       int64  `json:"id"`
-    Username string `json:"username"`
-    Email    string `json:"email"`
+    ID       int64
+    Username string
+    Email    string
 }
 
-// ORM Types - Database models
+// orm — persistence model
 type User struct {
     ID       int64  `gorm:"primaryKey"`
     Username string `gorm:"type:varchar(100);not null"`
@@ -743,56 +633,13 @@ type User struct {
 func (User) TableName() string { return "users" }
 ```
 
-**Benefits:**
-- API contracts independent of storage
-- Business logic isolated from infrastructure
-- Easy to test and maintain
-- Flexibility to change database without affecting API
-
-### Service Lifecycle
-
-All services implement a standard lifecycle:
-
-```go
-type Service interface {
-    Name() string
-    Dependencies() []common.Service
-}
-
-type Initializable interface {
-    Init(ctx context.Context) error  // Called on startup and on every restart
-}
-
-type Daemon interface {
-    Start(context.Context) error
-    Stop(wait bool) error
-}
-
-type Debuggable interface {
-    Info(w io.Writer, debug bool)
-}
-```
-
-### Health Probes
-
-Services can optionally implement health probe interfaces for automatic monitoring:
-
-```go
-type Liveness interface {
-    Alive() error  // Liveness failure triggers automatic restart
-}
-
-type Readiness interface {
-    Ready() error  // Readiness failure is reported but does not trigger restart
-}
-```
+The service layer converts between representations, keeping API contracts independent of storage and business logic independent of either.
 
 ### Dependency Management
 
-Services declare their dependencies via constructor arguments (required) and options (optional):
+Required dependencies become constructor arguments; optional config flows through functional options. The supervisor uses `Dependencies()` to topologically sort startup and shutdown.
 
 ```go
-// Required dependencies as constructor arguments
 func New(database db.Manager, opts ...Option) Manager {
     m := &manager{db: database}
     for _, opt := range opts {
@@ -801,21 +648,16 @@ func New(database db.Manager, opts ...Option) Manager {
     return m
 }
 
-// Service declares dependencies for lifecycle management
 func (s *myService) Dependencies() []common.Service {
     return []common.Service{s.database}
 }
-
-// App controller automatically starts: database -> myService
 ```
 
 ### Router Configuration
 
-Routers use YAML configuration for declarative route definition:
-
 ```yaml
 server: http
-prefix: /api/users
+prefix: /users
 handlers:
   - method: GET
     path: /:id
@@ -823,39 +665,70 @@ handlers:
   - method: POST
     path: /
     func: CreateUser
-    middlewares: [auth]
+    middlewares: [authnuser]
+  - method: WS
+    path: /events
+    func: Events
 ```
+
+Each router embeds its `router.yaml` and exposes a `Handlers() map[string]any` that maps the `func:` key to either an `echo.HandlerFunc` or a WebSocket handler.
 
 ### Middleware Pipeline
 
-Middlewares process requests in order:
-
 ```
-Request -> Recover -> Info -> Throttle -> Logger -> Custom -> Handler -> Response
+Request → Recover → Info → Throttle → Logger → custom (auth, deflate, …) → Handler → Response
+```
+
+Middlewares are resolved by name from the set registered with `srv.RegisterMiddlewares(...)`. Always register middlewares before routers.
+
+### Error Handling
+
+Use [`github.com/xhanio/errors`](https://github.com/xhanio/errors) exclusively. The API server's error handler routes by error category to set the HTTP status.
+
+```go
+return errors.NotFound.Newf("user %s not found", id)
+if err := s.db.FromContext(ctx).Create(u).Error; err != nil {
+    return errors.Wrapf(err, "create user %s", u.Name)
+}
 ```
 
 ## Configuration
 
-Framingo uses instance-based Viper (not the global singleton) for configuration management, with support for hot-reload via `WatchConfig()`. Configuration is propagated to services through `context.Context` during initialization, enabling dynamic configuration at restart time.
+Framingo uses an **instance-based** Viper (not the global singleton) propagated through `context.Context`. Services read live config in `Init(ctx)` via `confutil.FromContext(ctx)`.
 
-Configuration priority:
+Priority (high → low):
 
-1. **Command-line flags** (highest)
-2. **Environment variables**
-3. **YAML configuration file**
-4. **Default values** (lowest)
+1. Command-line flags
+2. Environment variables
+3. YAML configuration file
+4. Default values
 
 ```yaml
 # config.yaml
 log:
-  level: 0  # 0=Debug, 1=Info, 2=Warn, 3=Error
+  level: -1               # -1=Debug, 0=Info, 1=Warn, 2=Error
   file: /var/log/app.log
+  rotation:
+    max_size: 100         # MB
+    max_backups: 3
+    max_age: 7            # days
 
 db:
-  type: postgres
+  type: postgres          # postgres | mysql | sqlite | clickhouse
   source:
     host: localhost
     port: 5432
+    user: app
+    password: secret
+    dbname: app
+  migration:
+    dir: ./migrations
+    version: 0            # 0 = latest
+  connection:
+    max_open: 10
+    max_idle: 5
+    max_lifetime: 1h
+    exec_timeout: 30s
 
 api:
   http:
@@ -865,11 +738,16 @@ api:
     throttle:
       rps: 100.0
       burst_size: 200
+
+pprof:
+  port: 6060              # optional
 ```
 
-Environment variable override:
+Override at runtime:
+
 ```bash
-export FRAMINGO_API_HTTP_PORT=9090
+export MYAPP_API_HTTP_PORT=9090
+./myapp daemon -c config.yaml
 ```
 
 ## Production Deployment
@@ -890,21 +768,7 @@ CMD ["app", "daemon", "-c", "/etc/app/config.yaml"]
 
 ### Kubernetes
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: myapp
-spec:
-  replicas: 3
-  template:
-    spec:
-      containers:
-      - name: myapp
-        image: myapp:latest
-        ports:
-        - containerPort: 8080
-```
+The example ships generated manifests at [example/env/local/kubernetes/exampleapp/](example/env/local/kubernetes/exampleapp/) (`deployment.yaml`, `service.yaml`, `configmap.yaml`). Use `gopro generate kubernetes` to regenerate for your environment.
 
 ### Systemd
 
@@ -923,74 +787,66 @@ WantedBy=multi-user.target
 ## Best Practices
 
 1. **Architecture & Types**
-   - Separate types by purpose: `api/` for requests, `entity/` for business, `orm/` for database
-   - Pass required dependencies as constructor arguments, not options
-   - Keep business logic independent of infrastructure concerns
-   - Use interfaces for testability and flexibility
+   - Separate `api/`, `entity/`, `orm/` and convert between them in the service layer
+   - Pass required dependencies as constructor arguments, optional config as `Option`s
+   - Keep business logic independent of HTTP and persistence
 
 2. **Service Design**
-   - Keep services focused and single-purpose
-   - Declare dependencies explicitly in `Dependencies()` method
-   - Implement standard lifecycle methods (`Init`, `Start`, `Stop`)
-   - Convert between ORM and entity types in service layer
+   - One `Manager` interface per service in a dedicated package
+   - Use an **unexported struct** and **exported interface + factory** — strict convention throughout the framework
+   - Declare dependencies explicitly via `Dependencies()`; the supervisor handles ordering
+   - Read dynamic config in `Init(ctx)` via `confutil.FromContext(ctx)` so restarts pick it up
 
 3. **Error Handling**
-   - Use error wrapping for context (`errors.Wrap`)
-   - Return appropriate HTTP status codes (BadRequest, NotFound, etc.)
-   - Log errors at service boundaries
-   - Validate requests using API types with validation tags
+   - Always use `github.com/xhanio/errors` — never `fmt.Errorf` or stdlib `errors`
+   - Always wrap with `errors.Wrap`/`errors.Wrapf` instead of returning raw `err`
+   - Pick the category (`NotFound`, `BadRequest`, `Internal`, …) that should map to the HTTP status
 
 4. **Configuration**
-   - Use YAML for structure and hierarchy
-   - Use env vars for secrets and environment-specific values
-   - Validate configuration on startup
-   - Follow configuration priority: flags > env vars > file > defaults
+   - Use YAML for hierarchy; env vars for secrets and per-environment overrides
+   - Never reach for `viper.GetXxx` globals; take the instance from context
 
 5. **Testing**
-   - Test services independently with mocked dependencies
-   - Test handlers with API type validation
-   - Integration tests for full request flow
-   - Test ORM to entity conversions
+   - Mock collaborators through the `Manager` interface
+   - Use `testutil` to spin up an isolated DB for integration tests
+   - Test ORM ↔ entity conversions explicitly
 
 6. **Performance**
-   - Enable database connection pooling
-   - Configure rate limiting per endpoint or server-wide
-   - Use pprof for profiling bottlenecks
-   - Cache frequently accessed data when appropriate
+   - Tune `db.connection.*` for your workload
+   - Apply throttling per server (`WithThrottle`) or per handler in `router.yaml`
+   - Enable pprof during incidents (`pprof.port`)
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 ## Resources & Support
 
-### Documentation
-
-- **[Complete Application Guide](example/README.md)** - Full tutorial and production deployment guide
-- **[Example Components](example/pkg/)** - Reference implementations of all components
-
-### Community
-
-- **[Issue Tracker](https://github.com/xhanio/framingo/issues)** - Bug reports and feature requests
-- **[Discussions](https://github.com/xhanio/framingo/discussions)** - Questions and community support
+- **[example/QUICKSTART.md](example/QUICKSTART.md)** — build & run the bundled example
+- **[example/](example/)** — reference implementations
+- **[Issues](https://github.com/xhanio/framingo/issues)** — bug reports and feature requests
+- **[Discussions](https://github.com/xhanio/framingo/discussions)** — questions and community
 
 ## Acknowledgments
 
 Built with:
-- [Echo](https://echo.labstack.com/) - High performance HTTP framework
-- [Cobra](https://github.com/spf13/cobra) - CLI framework
-- [Viper](https://github.com/spf13/viper) - Configuration management
-- [GORM](https://gorm.io/) - ORM library
+
+- [Echo](https://echo.labstack.com/) — HTTP framework
+- [Cobra](https://github.com/spf13/cobra) — CLI framework
+- [Viper](https://github.com/spf13/viper) — configuration management
+- [GORM](https://gorm.io/) — ORM
+- [zap](https://github.com/uber-go/zap) — structured logging
+- [xhanio/errors](https://github.com/xhanio/errors) — categorized error handling
 
 ---
 

@@ -7,7 +7,7 @@ Reference config structure for all framework services. Use this as a template wh
 ```yaml
 # Logging — used by log.New() in service.go
 log:
-  level: 0                    # 0=Debug, 1=Info, 2=Warn, 3=Error
+  level: 0                    # zapcore.Level: -1=Debug, 0=Info, 1=Warn, 2=Error (raise/lower to filter)
   file: /var/log/myapp/app.log
   rotation:
     max_size: 100             # MB per log file
@@ -74,4 +74,4 @@ pprof:
 - TLS is enabled per-server when `api.<name>.cert` is set
 - Throttle is enabled per-server when `api.<name>.throttle` is set
 - Custom service config keys are accessed in `Init(ctx)` via `confutil.FromContext(ctx).GetString("myservice.key")`
-- Pubsub and planner services are configured entirely via functional options, not YAML keys
+- Pubsub, messagebus, and planner services are configured entirely via functional options, not YAML keys
