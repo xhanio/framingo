@@ -36,6 +36,7 @@ func (mw *middlewares) Error(next echo.HandlerFunc) echo.HandlerFunc {
 		err := next(c)
 		if err != nil {
 			apiError := api.WrapError(err, c)
+			apiError.Source = mw.server.Name()
 			c.Set(api.ContextKeyError, apiError)
 			return apiError
 		}

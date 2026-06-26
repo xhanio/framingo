@@ -20,6 +20,7 @@ func (s *server) errorHandler(err error, c echo.Context) {
 	resp, ok := c.Get(common.ContextKeyAPIResponseInfo).(*api.ResponseInfo)
 	if !ok || resp == nil {
 		ae := api.WrapError(err, c)
+		ae.Source = s.Name()
 		resp = &api.ResponseInfo{
 			Status: ae.Status,
 			Error:  ae,
