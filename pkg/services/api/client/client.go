@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/labstack/echo/v4"
-
 	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/pkg/types/api"
@@ -97,7 +95,8 @@ func (c *client) SetCookies(cookies ...*http.Cookie) {
 	}
 }
 
-func (c *client) NewRequest(ctx context.Context, request *Request) (*http.Request, error) {
+func (c *client) NewRequest(ctx context.Context, request *Request, opts ...RequestOption) (*http.Request, error) {
+	request.apply(opts...)
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(c.endpoint.String(), "/"), strings.TrimPrefix(request.Path, "/"))
 	body, err := request.ParseBody()
 	if err != nil {
@@ -171,38 +170,10 @@ func (c *client) Do(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-func (c *client) Get(ctx context.Context, path string, opts ...RequestOption) (*http.Response, error) {
-	r := &Request{
-		Method: http.MethodGet,
-		Path:   path,
-	}
-	r.apply(opts...)
-	req, err := c.NewRequest(ctx, r)
+func (c *client) Send(ctx context.Context, r *Request, opts ...RequestOption) (*http.Response, error) {
+	req, err := c.NewRequest(ctx, r, opts...)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
-func (c *client) PostJSON(ctx context.Context, path string, body any, opts ...RequestOption) (*http.Response, error) {
-	r := &Request{
-		Method:      http.MethodPost,
-		Path:        path,
-		ContentType: echo.MIMEApplicationJSON,
-		Body:        body,
-	}
-	r.apply(opts...)
-	req, err := c.NewRequest(ctx, r)
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	resp, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
+	return c.Do(req)
 }
