@@ -264,7 +264,7 @@ The server's built-in error middleware runs every handler error through [`api.Wr
 
 ```go
 type ErrorBody struct {
-    Source  string     `json:"source,omitempty"`
+    Source  string     `json:"source,omitempty"`  // server instance name (from srvMgr.Add("<name>", ...))
     Status  int        `json:"status,omitempty"`  // HTTP status
     Code    string     `json:"code,omitempty"`    // app-defined error code (optional)
     Kind    string     `json:"kind,omitempty"`    // xhanio/errors category name (e.g. "NotFound")
@@ -276,6 +276,8 @@ type ErrorBody struct {
 Returning `errors.NotFound.Newf(...)` from a handler sets `Status: 404` and `Kind: "NotFound"`. The `Kind` field is the wire-level signal that lets Go clients recover the original `xhanio/errors` category without rebuilding it from `Status` — see the next section.
 
 A bare `errors.Category` returned from a handler (e.g. `return errors.NotImplemented.New()`) emits the status + `Kind` with no message. Non-`xhanio/errors` errors fall through to `500` with the raw `Error()` string as `Message`.
+
+`Source` is populated automatically by the server's built-in error middleware with the name passed to `srvMgr.Add("<name>", ...)` (e.g. `"http"`, `"admin"`). It is informational — useful when a caller talks to multiple framingo servers or when a gateway aggregates errors from several upstreams. Clients SHOULD NOT branch logic on `Source` value (the server name is a deployment detail, not part of the API contract). Its main practical use is the client-side check at [`pkg/services/api/client/client.go`](../../../pkg/services/api/client/client.go) where an empty `Source` after a successful JSON parse signals "this response did not originate from a framingo server" — for example, a load balancer's 503 page or an HTML error from an upstream proxy.
 
 ## Consuming the Server with `pkg/services/api/client`
 
