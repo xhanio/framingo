@@ -12,7 +12,7 @@ import (
 )
 
 func (r *router) Login(c api.Context) error {
-	var body api.LoginBody
+	var body api.LoginRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
@@ -61,8 +61,4 @@ func (r *router) Session(c api.Context) error {
 		return errors.Unauthorized.New()
 	}
 	return c.JSON(http.StatusOK, credential)
-}
-
-func (r *router) Handlers() map[string]any {
-	return api.DiscoverHandlers(r)
 }

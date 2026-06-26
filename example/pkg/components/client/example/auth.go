@@ -3,10 +3,13 @@ package example
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 
+	"github.com/labstack/echo/v4"
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/services/api/client"
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 
@@ -46,11 +49,16 @@ func (c *Credential) Load(path string) error {
 }
 
 func (c *cli) Login(ctx context.Context, username, password string) error {
-	body := &api.LoginBody{
+	body := &api.LoginRequest{
 		Username: username,
 		Password: password,
 	}
-	resp, err := c.cli.PostJSON(ctx, "/auth/login", body)
+	resp, err := c.cli.Send(ctx, &client.Request{
+		Method:      http.MethodPost,
+		Path:        "/auth/login",
+		ContentType: echo.MIMEApplicationJSON,
+		Body:        body,
+	})
 	if err != nil {
 		return errors.Wrap(err)
 	}
@@ -70,7 +78,11 @@ func (c *cli) Login(ctx context.Context, username, password string) error {
 }
 
 func (c *cli) Logout(ctx context.Context) error {
-	resp, err := c.cli.PostJSON(ctx, "/auth/logout", nil)
+	resp, err := c.cli.Send(ctx, &client.Request{
+		Method:      http.MethodPost,
+		Path:        "/auth/logout",
+		ContentType: echo.MIMEApplicationJSON,
+	})
 	if err != nil {
 		return errors.Wrap(err)
 	}

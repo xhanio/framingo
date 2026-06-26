@@ -16,7 +16,7 @@ import (
 )
 
 func (r *router) Upload(c api.Context) error {
-	var body api.CertUploadBody
+	var body api.CertificateUploadRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
@@ -119,7 +119,7 @@ func (r *router) Upload(c api.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	return c.JSON(http.StatusOK, api.CertUploadGenerateResponse{CertID: result.ID})
+	return c.JSON(http.StatusOK, api.CertificateCreateResponse{CertificateID: result.ID})
 }
 
 func (r *router) List(c api.Context) error {
@@ -173,7 +173,7 @@ func (r *router) Update(c api.Context) error {
 	if err := c.BindPath().MustInt32("id", &certID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
-	var body api.CertUpdateBody
+	var body api.CertificateUpdateRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
@@ -243,7 +243,7 @@ func (r *router) Download(c api.Context) error {
 }
 
 func (r *router) Generate(c api.Context) error {
-	var body api.CertGenerateBody
+	var body api.CertificateGenerateRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
@@ -260,9 +260,5 @@ func (r *router) Generate(c api.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	return c.JSON(http.StatusOK, api.CertUploadGenerateResponse{CertID: cert.ID})
-}
-
-func (r *router) Handlers() map[string]any {
-	return api.DiscoverHandlers(r)
+	return c.JSON(http.StatusOK, api.CertificateCreateResponse{CertificateID: cert.ID})
 }

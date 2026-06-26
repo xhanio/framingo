@@ -4,15 +4,16 @@ import (
 	_ "embed"
 	"path"
 
-	"github.com/xhanio/framingo/pkg/types/api"
+	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 
+	"github.com/xhanio/framingo/example/pkg/types/api"
 	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
-var _ api.Router = (*router)(nil)
+var _ fapi.Router = (*router)(nil)
 
 //go:embed router.yaml
 var config []byte
@@ -24,7 +25,7 @@ type router struct {
 	em model.Example
 }
 
-func New(em model.Example, log log.Logger) api.Router {
+func New(em model.Example, log log.Logger) fapi.Router {
 	return &router{
 		em:  em,
 		log: log,
@@ -46,4 +47,10 @@ func (r *router) Dependencies() []common.Service {
 
 func (r *router) Config() []byte {
 	return config
+}
+
+func (r *router) Handlers() map[string]any {
+	handlers := api.DiscoverHandlers(r)
+	r.log.Debugf("router %s parsed %d handler(s)", r.Name(), len(handlers))
+	return handlers
 }

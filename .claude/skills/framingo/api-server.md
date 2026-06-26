@@ -51,36 +51,45 @@ srvMgr.RegisterRouters(myRouter)
 
 A Router provides two things: a YAML config declaring routes, and a map of handler function implementations. The YAML `func` field is the lookup key into the `Handlers()` map.
 
+**Recommended handler signature**: `func(c api.Context) error`, where `api.Context` is a *project-defined* interface (e.g., `myapp/pkg/types/api`) that embeds `echo.Context` and `context.Context`. This gives you:
+
+- One context value that satisfies both `echo.Context` (handler binding/response) and `context.Context` (timeout/cancellation propagation into services).
+- A natural home for project helpers — credential/session/trace-id accessors, custom binders — without rewriting every handler signature when you add one.
+
+The framework still accepts raw `echo.HandlerFunc` / `func(echo.Context) error` for HTTP, but **for new projects prefer `func(c api.Context) error`** and let a small `DiscoverHandlers` reflection helper wrap them into echo signatures at registration time. See [`example/pkg/types/api/api.go`](../../../example/pkg/types/api/api.go) for the canonical wrapper used in the example project.
+
+**File layout convention** (used throughout `example/pkg/routers/`): split each router into two files in the same package — `router.go` for wiring (factory, `Name`/`Dependencies`/`Config`/`Handlers`) and `handler.go` for the actual handler method bodies. Within a router package, import the framework `api` package as `fapi` and the project `api.Context` wrapper unaliased as `api`.
+
 ```go
+// pkg/routers/user/router.go
 package user
 
 import (
     _ "embed"
     "path"
 
-    "github.com/labstack/echo/v4"
-
-    "github.com/xhanio/framingo/pkg/types/api"
+    fapi "github.com/xhanio/framingo/pkg/types/api"
     "github.com/xhanio/framingo/pkg/types/common"
     "github.com/xhanio/framingo/pkg/utils/log"
     "github.com/xhanio/framingo/pkg/utils/reflectutil"
 
     "myapp/pkg/services/user"
+    "myapp/pkg/types/api"
 )
 
-var _ api.Router = (*router)(nil) // compile-time interface check
+var _ fapi.Router = (*router)(nil) // compile-time interface check
 
 //go:embed router.yaml
 var config []byte
 
-// Unexported struct — returns api.Router interface via factory
+// Unexported struct — returns fapi.Router interface via factory
 type router struct {
     name string
     log  log.Logger
     svc  user.Manager
 }
 
-func New(svc user.Manager, log log.Logger) api.Router {
+func New(svc user.Manager, log log.Logger) fapi.Router {
     return &router{svc: svc, log: log}
 }
 
@@ -96,21 +105,31 @@ func (r *router) Dependencies() []common.Service { return []common.Service{r.svc
 // Config returns the embedded YAML that declares handler groups
 func (r *router) Config() []byte { return config }
 
-// Handlers returns func-name → implementation mapping
-// Keys MUST match the "func" field in router.yaml
-// Values must be echo.HandlerFunc for HTTP or func(echo.Context, *websocket.Conn) error for WS
-// (there is no exported WebSocketHandlerFunc alias — use the literal func type)
+// Handlers returns func-name → implementation mapping.
+// Keys MUST match the "func" field in router.yaml. DiscoverHandlers reflects
+// over the router's methods and wraps any `func(api.Context) error` into
+// echo.HandlerFunc automatically (and similarly for WS handlers).
+// The debug log makes route registration visible during startup.
 func (r *router) Handlers() map[string]any {
-    return map[string]any{
-        "ListUsers":  echo.HandlerFunc(r.listUsers),
-        "CreateUser": echo.HandlerFunc(r.createUser),
-        "GetUser":    echo.HandlerFunc(r.getUser),
-    }
+    handlers := api.DiscoverHandlers(r)
+    r.log.Debugf("router %s parsed %d handler(s)", r.Name(), len(handlers))
+    return handlers
 }
+```
 
-func (r *router) listUsers(c echo.Context) error  { /* ... */ }
-func (r *router) createUser(c echo.Context) error { /* ... */ }
-func (r *router) getUser(c echo.Context) error    { /* ... */ }
+```go
+// pkg/routers/user/handler.go
+package user
+
+import (
+    "myapp/pkg/types/api"
+)
+
+// Recommended: handlers take the project-defined api.Context (which embeds
+// echo.Context + context.Context). Pass `c` directly to any context-aware API.
+func (r *router) ListUsers(c api.Context) error  { /* ... */ }
+func (r *router) CreateUser(c api.Context) error { /* ... */ }
+func (r *router) GetUser(c api.Context) error    { /* ... */ }
 ```
 
 ## Router YAML Config Format (`router.yaml`)
@@ -197,28 +216,29 @@ The server type-switches over the values in `Handlers()` and accepts these signa
 - `echo.HandlerFunc` / `func(echo.Context) error` — for HTTP methods
 - `func(echo.Context, *websocket.Conn) error` — for `method: WS`
 
-There is no exported `WebSocketHandlerFunc` alias; use the literal func type. Mismatched method/signature combinations fail at `RegisterRouters` time.
+The framework does not export an alias for the WS signature — use the literal `func(echo.Context, *websocket.Conn) error` when returning it directly. (Project wrappers like `example/pkg/types/api` define their own `WebSocketHandlerFunc` over the project `Context` and convert via `DiscoverHandlers`.) Mismatched method/signature combinations fail at `RegisterRouters` time.
+
+**Recommended**: declare handlers as `func(c api.Context) error` (and `func(c api.Context, conn *websocket.Conn) error` for WS) where `api.Context` is your project-defined wrapper, then let `DiscoverHandlers` reflect over the router and convert them to the echo signatures above. This keeps the framework contract intact while giving handlers richer context.
 
 ## WebSocket Handlers
 
 Declare WebSocket routes with `method: WS` in YAML. The server automatically upgrades the connection (uses `github.com/coder/websocket`) and invokes the handler with the live `echo.Context` and the upgraded `*websocket.Conn`.
 
-```go
-func (r *router) Handlers() map[string]any {
-    return map[string]any{
-        "ListUsers": echo.HandlerFunc(r.listUsers),
-        "Feed":      r.feed, // func(echo.Context, *websocket.Conn) error — stored as `any`
-    }
-}
+The recommended signature is `func(c api.Context, conn *websocket.Conn) error` (using your project-defined `api.Context`); `DiscoverHandlers` (called from `router.go`'s `Handlers()`) wraps it into the framework-expected `func(echo.Context, *websocket.Conn) error`. The method body lives in the package's `handler.go`.
 
-func (r *router) feed(c echo.Context, conn *websocket.Conn) error {
-    ctx := c.Request().Context()
+```go
+// pkg/routers/feed/handler.go — Feed is picked up automatically by
+// DiscoverHandlers and routed wherever router.yaml maps func: Feed.
+//
+// Take the project api.Context — c is also a context.Context, so you
+// can pass it straight to conn.Read / conn.Write.
+func (r *router) Feed(c api.Context, conn *websocket.Conn) error {
     for {
-        typ, msg, err := conn.Read(ctx)
+        typ, msg, err := conn.Read(c)
         if err != nil {
             return nil // client disconnected
         }
-        if err := conn.Write(ctx, typ, msg); err != nil {
+        if err := conn.Write(c, typ, msg); err != nil {
             return err
         }
     }

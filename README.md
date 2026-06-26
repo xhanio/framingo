@@ -156,7 +156,7 @@ Production-ready service implementations:
   - WebSocket handlers (use method `WS` in router YAML)
   - Built-in middlewares: recover, info, throttle, logger, error
 
-- **[api/client](pkg/services/api/client/)** — HTTP client with TLS, headers, cookies, retries, and JSON helpers
+- **[api/client](pkg/services/api/client/)** — HTTP client with TLS, headers, cookies, body encoding (deflate), and structured error parsing — `NewRequest` builds, `Do` executes an `*http.Request`, `Send` does both in one shot
 
 - **[db](pkg/services/db/)** — Database manager (GORM)
   - Drivers: PostgreSQL, MySQL, SQLite, ClickHouse
@@ -333,6 +333,12 @@ func (m *manager) SayHello(ctx context.Context, name string) (string, error) {
 
 ### Step 3: Create an HTTP Router
 
+**Recommended handler signature**: `func(c api.Context) error`, where `api.Context` is a project-defined interface that embeds `echo.Context` (see [`example/pkg/types/api/api.go`](example/pkg/types/api/api.go) for the canonical wrapper). This signature gives you a single context value that satisfies both `echo.Context` and `context.Context`, plus a natural home for project-wide helpers (credential, session, trace-id, custom binders) without touching every call site later.
+
+You can still register raw `echo.HandlerFunc` if you prefer; the framework accepts both. But for new projects, prefer `api.Context` so the door is open for future extension.
+
+The example project splits each router into two files — `router.go` for wiring (config, dependencies, `Handlers()`) and `handler.go` for the handler method bodies. Within the package, files share the same `import` aliases by convention: the framework `api` package is aliased as `fapi`, and the project's `api.Context` wrapper is imported unaliased as `api`.
+
 ```go
 // pkg/routers/hello/router.go
 package hello
@@ -340,45 +346,60 @@ package hello
 import (
     _ "embed"
 
-    "github.com/labstack/echo/v4"
-
-    "github.com/xhanio/framingo/pkg/types/api"
+    fapi "github.com/xhanio/framingo/pkg/types/api"
     "github.com/xhanio/framingo/pkg/types/common"
+    "github.com/xhanio/framingo/pkg/utils/log"
 
     "github.com/yourorg/myapp/pkg/services/hello"
+    "github.com/yourorg/myapp/pkg/types/api"
 )
 
 //go:embed router.yaml
 var config []byte
 
 type router struct {
+    log      log.Logger
     helloSvc hello.Manager
 }
 
-func New(svc hello.Manager) api.Router {
-    return &router{helloSvc: svc}
+func New(svc hello.Manager, log log.Logger) fapi.Router {
+    return &router{helloSvc: svc, log: log}
 }
 
 func (r *router) Name() string                    { return "hello-router" }
 func (r *router) Dependencies() []common.Service  { return []common.Service{r.helloSvc} }
 func (r *router) Config() []byte                  { return config }
 
+// DiscoverHandlers reflects over r's methods and wraps any
+// `func(api.Context) error` into an echo.HandlerFunc automatically.
+// The debug log makes route registration visible during startup.
 func (r *router) Handlers() map[string]any {
-    return map[string]any{
-        "Hello": echo.HandlerFunc(r.Hello),
-    }
+    handlers := api.DiscoverHandlers(r)
+    r.log.Debugf("router %s parsed %d handler(s)", r.Name(), len(handlers))
+    return handlers
 }
+```
 
-func (r *router) Hello(c echo.Context) error {
+```go
+// pkg/routers/hello/handler.go
+package hello
+
+import (
+    "net/http"
+
+    "github.com/yourorg/myapp/pkg/types/api"
+)
+
+func (r *router) Hello(c api.Context) error {
     name := c.QueryParam("name")
     if name == "" {
         name = "World"
     }
-    msg, err := r.helloSvc.SayHello(c.Request().Context(), name)
+    msg, err := r.helloSvc.SayHello(c, name) // c is also a context.Context
     if err != nil {
         return err
     }
-    return c.JSON(200, map[string]string{"message": msg})
+    return c.JSON(http.StatusOK, map[string]string{"message": msg})
 }
 ```
 
@@ -671,7 +692,17 @@ handlers:
     func: Events
 ```
 
-Each router embeds its `router.yaml` and exposes a `Handlers() map[string]any` that maps the `func:` key to either an `echo.HandlerFunc` or a WebSocket handler.
+Each router embeds its `router.yaml` and exposes a `Handlers() map[string]any` that maps each `func:` key to a handler implementation. The framework accepts `echo.HandlerFunc` (or `func(echo.Context) error`) for HTTP and `func(echo.Context, *websocket.Conn) error` for WebSocket — but the **recommended** pattern is `func(c api.Context) error` (and `func(c api.Context, conn *websocket.Conn) error` for WS), where `api.Context` is a project-defined interface that embeds `echo.Context` and `context.Context`. A small `DiscoverHandlers` helper (see [`example/pkg/types/api/api.go`](example/pkg/types/api/api.go)) reflects over the router's methods and wraps the project-context signature into the echo signature the server expects. This keeps handlers free to evolve (extra binders, session/credential accessors, trace propagation) without rewriting every signature.
+
+The conventional file layout splits each router into `router.go` (factory + `Name`/`Dependencies`/`Config`/`Handlers`) and `handler.go` (the handler method bodies). The standard `Handlers()` implementation just delegates and emits a debug log so route registration is visible at startup:
+
+```go
+func (r *router) Handlers() map[string]any {
+    handlers := api.DiscoverHandlers(r)
+    r.log.Debugf("router %s parsed %d handler(s)", r.Name(), len(handlers))
+    return handlers
+}
+```
 
 ### Middleware Pipeline
 

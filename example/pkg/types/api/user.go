@@ -1,6 +1,6 @@
 package api
 
-type UserCreateBody struct {
+type UserCreateRequest struct {
 	Username       string `json:"username" validate:"required"`
 	Password       string `json:"password" validate:"required"`
 	Title          string `json:"title"`
@@ -15,7 +15,7 @@ type UserCreateResponse struct {
 	UserID int32 `json:"user_id"`
 }
 
-type UserUpdateBody struct {
+type UserUpdateRequest struct {
 	Username       *string `json:"username,omitempty"`
 	Title          *string `json:"title,omitempty"`
 	FirstName      *string `json:"first_name,omitempty"`
@@ -25,7 +25,7 @@ type UserUpdateBody struct {
 	ChangePassword bool    `json:"change_password"`
 }
 
-type UserResetPasswordBody struct {
+type UserResetPasswordRequest struct {
 	Password    string `json:"password" validate:"required"`
 	OldPassword string `json:"old_password"`
 }

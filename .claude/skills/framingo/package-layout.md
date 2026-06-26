@@ -25,7 +25,7 @@ pkg/
 ├── middlewares/         # HTTP middlewares (implement api.Middleware)
 │   └── auth/            # middleware.go
 ├── types/               # Pure data types — NO logic, NO imports from services
-│   ├── api/             # Request/response structs (json + form + query + validate tags)
+│   ├── api/             # Request/response structs (json + form + query + validate tags), plus the project's api.Context wrapper in api.go
 │   ├── entity/          # Business domain models (json tags only)
 │   ├── model/           # Service interfaces — one file per domain (e.g., user.go declares model.User)
 │   ├── orm/             # Database table models (gorm tags only; must implement TableName())
@@ -44,7 +44,7 @@ pkg/
 | `components/server/` | Application daemon — owns the supervisor, wires all services, handles signals | Only place that knows about ALL services; one file per concern (see Server Component below) |
 | `components/client/` | Go client SDK exposing typed methods over HTTP for the daemon's API | Consumed by `components/cmd/cli/` and external callers; depends only on `types/api/` and `types/entity/`, never on services |
 | `services/` | Business logic — each service is a self-contained unit with its own `Manager` interface | Must declare dependencies via `Dependencies()`, never import other services directly; implementation is unexported, exposed via interface from `types/model/` |
-| `routers/` | HTTP handlers — each router owns a `router.yaml` + `Handlers()` map | Delegates business logic to services, never contains domain logic itself |
+| `routers/` | HTTP handlers — each router owns a `router.yaml` + `Handlers()` map (typically `return api.DiscoverHandlers(r)` with a debug log) | Split per package into `router.go` (wiring) + `handler.go` (handler bodies). Delegates business logic to services, never contains domain logic itself |
 | `middlewares/` | Request processing — each middleware implements `api.Middleware` | Stateless request/response transformations only |
 | `types/api/` | API request/response structs | Tags: `json`, `form`, `query`, `validate`. NO gorm tags |
 | `types/entity/` | Pure business domain models | Tags: `json` only. Returned from services to callers |

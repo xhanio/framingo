@@ -246,7 +246,7 @@ type Referenced[T comparable] interface {
 
 ## API Server
 
-Located in `pkg/services/api/server`. Built on Echo. Routes are defined declaratively: each `api.Router` ships an embedded `router.yaml` plus a `Handlers()` map; the server manager binds them at registration time.
+Located in `pkg/services/api/server`. Built on Echo. Routes are defined declaratively: each `api.Router` ships an embedded `router.yaml` plus a `Handlers()` map; the server manager binds them at registration time. The recommended router layout splits each package into `router.go` (factory + `Handlers()` boilerplate, which typically just calls `api.DiscoverHandlers(r)` and debug-logs the handler count) and `handler.go` (handler bodies taking the project's `api.Context` wrapper — `echo.Context` + `context.Context` + project helpers). See [api-server.md](api-server.md) for the full pattern.
 
 ```go
 import "github.com/xhanio/framingo/pkg/services/api/server"

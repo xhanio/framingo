@@ -98,7 +98,3 @@ func (r *router) SetPermissions(c api.Context) error {
 	}
 	return c.NoContent(http.StatusOK)
 }
-
-func (r *router) Handlers() map[string]any {
-	return api.DiscoverHandlers(r)
-}

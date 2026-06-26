@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 
+	"github.com/labstack/echo/v4"
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/api/client"
 	fapi "github.com/xhanio/framingo/pkg/types/api"
@@ -13,9 +15,13 @@ import (
 )
 
 func (c *cli) HelloWorld(ctx context.Context, message string) error {
-	path := "/example/helloworld"
-	body := &api.CreateHelloWorldMessage{Message: message}
-	resp, err := c.cli.PostJSON(ctx, path, body, client.WithRequestEncoding(fapi.EncodingDeflate))
+	body := &api.HelloWorldCreateRequest{Message: message}
+	resp, err := c.cli.Send(ctx, &client.Request{
+		Method:      http.MethodPost,
+		Path:        "/example/helloworld",
+		ContentType: echo.MIMEApplicationJSON,
+		Body:        body,
+	}, client.WithRequestEncoding(fapi.EncodingDeflate))
 	if err != nil {
 		return errors.Wrap(err)
 	}

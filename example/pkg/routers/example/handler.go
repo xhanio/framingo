@@ -9,7 +9,7 @@ import (
 )
 
 func (r *router) Example(c api.Context) error {
-	var req api.CreateHelloWorldMessage
+	var req api.HelloWorldCreateRequest
 	if err := c.BindAny(&req); err != nil {
 		return errors.BadRequest.Newf("invalid request: %v", err)
 	}
@@ -21,8 +21,4 @@ func (r *router) Example(c api.Context) error {
 		return errors.Wrap(err)
 	}
 	return c.JSON(http.StatusOK, body)
-}
-
-func (r *router) Handlers() map[string]any {
-	return api.DiscoverHandlers(r)
 }

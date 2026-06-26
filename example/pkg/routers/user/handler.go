@@ -17,7 +17,7 @@ func (r *router) Create(c api.Context) error {
 	if !ok || credential == nil {
 		return errors.Unauthorized.New()
 	}
-	var body api.UserCreateBody
+	var body api.UserCreateRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
@@ -117,7 +117,7 @@ func (r *router) Update(c api.Context) error {
 	if credential.Role != rbac.RoleAdmin && credential.UserID != userID {
 		return errors.Forbidden.Newf("no access to other user's information")
 	}
-	var body api.UserUpdateBody
+	var body api.UserUpdateRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
@@ -187,7 +187,7 @@ func (r *router) ResetPassword(c api.Context) error {
 	if credential.Role != rbac.RoleAdmin && !isOwn {
 		return errors.Forbidden.Newf("no access to other user's information")
 	}
-	var body api.UserResetPasswordBody
+	var body api.UserResetPasswordRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
@@ -202,8 +202,4 @@ func (r *router) ResetPassword(c api.Context) error {
 		return errors.Wrap(err)
 	}
 	return c.NoContent(http.StatusOK)
-}
-
-func (r *router) Handlers() map[string]any {
-	return api.DiscoverHandlers(r)
 }

@@ -28,7 +28,3 @@ func (r *router) Stream(c api.Context, conn *websocket.Conn) error {
 	r.mb.AttachWebSocket(messenger, conn)
 	return nil
 }
-
-func (r *router) Handlers() map[string]any {
-	return api.DiscoverHandlers(r)
-}
