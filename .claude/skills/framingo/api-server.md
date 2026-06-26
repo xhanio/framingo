@@ -257,3 +257,88 @@ Middlewares are registered by name via `RegisterMiddlewares()`. The YAML config 
 
 Built-in server middlewares (applied to all routes automatically):
 `Request → CORS (debug only) → Recover → Logger → Info → Error → Throttle → [Custom middlewares] → Handler → Response`
+
+## Error Response Format
+
+The server's built-in error middleware runs every handler error through [`api.WrapError`](../../../pkg/types/api/error.go) and emits the wire-level [`api.ErrorBody`](../../../pkg/types/api/error.go):
+
+```go
+type ErrorBody struct {
+    Source  string     `json:"source,omitempty"`
+    Status  int        `json:"status,omitempty"`  // HTTP status
+    Code    string     `json:"code,omitempty"`    // app-defined error code (optional)
+    Kind    string     `json:"kind,omitempty"`    // xhanio/errors category name (e.g. "NotFound")
+    Message string     `json:"message,omitempty"` // human-readable; handlers may sanitize for security
+    Details labels.Set `json:"details,omitempty"`
+}
+```
+
+Returning `errors.NotFound.Newf(...)` from a handler sets `Status: 404` and `Kind: "NotFound"`. The `Kind` field is the wire-level signal that lets Go clients recover the original `xhanio/errors` category without rebuilding it from `Status` — see the next section.
+
+A bare `errors.Category` returned from a handler (e.g. `return errors.NotImplemented.New()`) emits the status + `Kind` with no message. Non-`xhanio/errors` errors fall through to `500` with the raw `Error()` string as `Message`.
+
+## Consuming the Server with `pkg/services/api/client`
+
+The framingo HTTP client decodes any 4xx/5xx response into a `*api.ErrorBody` and returns it as the error from `Do`/`Send`. On the error path the response body is replaced with an `io.NopCloser`, so callers can `defer resp.Body.Close()` unconditionally — there is no separate cleanup branch.
+
+**Recommended error-handling pattern** (requires `github.com/xhanio/errors` v1.0.3+ for `LookupCategory`):
+
+```go
+import (
+    stderrors "errors"
+
+    "github.com/labstack/echo/v4"
+    "github.com/xhanio/errors"
+    "github.com/xhanio/framingo/pkg/services/api/client"
+    "github.com/xhanio/framingo/pkg/types/api"
+)
+
+func (c *myClient) doJSON(ctx context.Context, method, path string, in, out any) error {
+    resp, err := c.cli.Send(ctx, &client.Request{
+        Method:      method,
+        Path:        path,
+        ContentType: echo.MIMEApplicationJSON,
+        Body:        in,
+    })
+    defer resp.Body.Close()
+    if err != nil {
+        var eb *api.ErrorBody
+        if stderrors.As(err, &eb) {
+            // Recover the category from the wire's Kind so callers can use errors.Is.
+            if cat := errors.LookupCategory(eb.Kind); cat != nil {
+                return cat.Wrap(eb)
+            }
+            return eb // unknown category — preserve the structured payload
+        }
+        return errors.Wrap(err) // transport / non-API error
+    }
+    if out != nil {
+        return json.NewDecoder(resp.Body).Decode(out)
+    }
+    return nil
+}
+```
+
+Callers then get both checking idioms for free:
+
+```go
+// Category check — the Kind came from the server, not a client-side guess.
+if errors.Is(err, errors.Conflict) {
+    return nil // e.g. duplicate, swallow
+}
+
+// Structured access — full server payload.
+var eb *api.ErrorBody
+if stderrors.As(err, &eb) {
+    log.Printf("backend status=%d kind=%s code=%s details=%v",
+        eb.Status, eb.Kind, eb.Code, eb.Details)
+}
+```
+
+Note `errors.As` is `stdlib`-only; alias the stdlib package (e.g. `stderrors "errors"`) when you also import `github.com/xhanio/errors`, since the two packages cannot share the bare `errors` name.
+
+**Anti-patterns**:
+
+- **Don't write `IsNotFound` / `IsConflict` wrappers** around `errors.As` + status compare. They add a per-client vocabulary without buying anything over the standard `errors.Is(err, errors.NotFound)` / `errors.As(err, &eb)` idioms.
+- **Don't rebuild the category from `Status`** with a hardcoded `switch` (`case 404: return errors.NotFound.Wrap(err)`). The server already wrote the category name in `Kind`; `LookupCategory(eb.Kind)` is authoritative. Status-based reconstruction is cargo-cult and loses precision when multiple categories share a status (e.g. `Conflict` vs `AlreadyExist` both 409).
+- **Don't reformat or drop `Message`** when wrapping. Servers often sanitize it for security; the durable signal is in `Status`/`Kind`/`Code`/`Details`. Preserve `*api.ErrorBody` (via `cat.Wrap(eb)` or by returning it directly) so callers can still read those fields via `errors.As`.

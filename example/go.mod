@@ -6,7 +6,7 @@ require (
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
-	github.com/xhanio/errors v1.0.2
+	github.com/xhanio/errors v1.0.3
 	github.com/xhanio/framingo v0.4.3
 )
 

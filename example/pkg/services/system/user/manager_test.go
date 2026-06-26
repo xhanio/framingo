@@ -11,6 +11,8 @@ import (
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/orm"
+	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
 var usersTable = map[string]interface{}{
@@ -33,15 +35,16 @@ var usersTable = map[string]interface{}{
 
 var (
 	testUser    = "johndoe"
-	testUserIDs = []int32{1, 2}
+	testUserIDs = []int32{2, 3}
 
 	createOpts = entity.UserCreateOptions{
-		Username:  testUser,
-		FirstName: "John",
-		LastName:  "Doe",
-		Email:     "johndoe@example.com",
-		Password:  "password123",
-		Role:      "admin",
+		OrganizationID: preset.DefaultOrganizationID,
+		Username:       testUser,
+		FirstName:      "John",
+		LastName:       "Doe",
+		Email:          "johndoe@example.com",
+		Password:       "password123",
+		Role:           "admin",
 	}
 
 	createOpts2 = entity.UserCreateOptions{
@@ -78,6 +81,16 @@ func stringPointer(s string) *string {
 func setup() (*manager, model.Database, error) {
 	db, err := testutil.SetupDB()
 	if err != nil {
+		return nil, nil, errors.Wrap(err)
+	}
+	if err := db.ORM().AutoMigrate(
+		&orm.Organization{},
+		&orm.Role{},
+		&orm.RolePermission{},
+		&orm.Contact{},
+		&orm.User{},
+		&orm.Certificate{},
+	); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}
 	m := newUser(repository.New(db))
@@ -275,13 +288,18 @@ func TestUpdate(t *testing.T) {
 	} else if len(users) != 2 {
 		t.Errorf("Expected number of users: got = %v; expected %v", len(users), 2)
 	} else {
-		user := users[1]
-		if user.Username != *updateOpts.Username {
+		var updated *entity.User
+		for _, u := range users {
+			if u.ID == 2 {
+				updated = u
+				break
+			}
+		}
+		if updated == nil {
+			t.Errorf("Updated user with ID 2 not found in list")
+		} else if updated.Username != *updateOpts.Username {
 			t.Errorf("Updated username does not match expected values.")
 		}
-		// if user.Role != *updateOpts.Role {
-		// 	t.Errorf("Updated role does not match expected values.")
-		// }
 	}
 
 	if user, err := m.Get(context.Background(), 2); err != nil {

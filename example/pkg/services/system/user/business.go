@@ -65,7 +65,9 @@ func (m *manager) Delete(ctx context.Context, userIDs []int32) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	m.sender.SendMessage(ctx, m, msg)
+	if m.sender != nil {
+		m.sender.SendMessage(ctx, m, msg)
+	}
 	return nil
 }
 
@@ -115,7 +117,9 @@ func (m *manager) ResetPassword(ctx context.Context, isResetOwnPwd bool, userID 
 		return errors.Wrapf(err, "failed to reset user password")
 	}
 	// Send event to auth service to logout the user's active sessions
-	m.sender.SendMessage(ctx, m, msg)
+	if m.sender != nil {
+		m.sender.SendMessage(ctx, m, msg)
+	}
 	return nil
 }
 

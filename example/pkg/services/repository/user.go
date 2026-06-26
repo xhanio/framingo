@@ -192,7 +192,7 @@ func (m *manager) deleteContact(tx *gorm.DB, contactID int32) (*orm.Contact, err
 
 func (m *manager) getContact(tx *gorm.DB, contactID int32) (*orm.Contact, error) {
 	var contact *orm.Contact
-	if err := tx.Model(contact).Where("id = ?", contactID).First(contact).Error; err != nil {
+	if err := tx.Model(&contact).Where("id = ?", contactID).First(&contact).Error; err != nil {
 		switch err {
 		case gorm.ErrRecordNotFound:
 			return nil, errors.NotFound.Wrapf(err, "contact id %d not found", contactID)

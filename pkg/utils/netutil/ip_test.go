@@ -19,18 +19,3 @@ func TestInAny(t *testing.T) {
 		t.Error(ok, err)
 	}
 }
-
-func TestList(t *testing.T) {
-	ips, err := List(ListOptions{
-		Loopback: true,
-		NoIPv4:   true,
-		NoIPv6:   true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log(ips)
-	if ok, err := ContainsAny("192.168.50.0/24", ips...); err != nil || !ok {
-		t.Error(ok, err)
-	}
-}

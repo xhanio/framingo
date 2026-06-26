@@ -239,7 +239,7 @@ func (m *manager) ListRolePermissionsByName(ctx context.Context, roleName string
 	var permissions []orm.RolePermission
 	if err := tx.Model(&orm.RolePermission{}).
 		Joins("JOIN roles ON role_permissions.role_id = roles.id").
-		Where("roles.roleName = ?", roleName).
+		Where("roles.name = ?", roleName).
 		Find(&permissions).Error; err != nil {
 		return nil, errors.DBFailed.Wrapf(err, "failed to list permissions for role %s", roleName)
 	}

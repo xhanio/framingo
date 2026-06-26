@@ -10,6 +10,7 @@ import (
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/orm"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
@@ -27,6 +28,16 @@ var (
 func setup() (*manager, model.Database, error) {
 	db, err := testutil.SetupDB()
 	if err != nil {
+		return nil, nil, errors.Wrap(err)
+	}
+	if err := db.ORM().AutoMigrate(
+		&orm.Organization{},
+		&orm.Role{},
+		&orm.RolePermission{},
+		&orm.Contact{},
+		&orm.User{},
+		&orm.Certificate{},
+	); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}
 	m := newRole(repository.New(db))

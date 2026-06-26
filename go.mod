@@ -19,7 +19,7 @@ require (
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	github.com/xhanio/errors v1.0.2
+	github.com/xhanio/errors v1.0.3
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d
 	go.uber.org/zap v1.27.0
 	golang.org/x/time v0.14.0
