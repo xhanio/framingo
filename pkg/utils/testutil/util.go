@@ -5,6 +5,7 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/db"
+	_ "github.com/xhanio/framingo/pkg/services/db/drivers/sqlite"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 

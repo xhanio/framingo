@@ -6,28 +6,20 @@ import (
 
 	"github.com/xhanio/errors"
 	"go.uber.org/zap/zapcore"
-	"gorm.io/driver/clickhouse"
-	"gorm.io/driver/mysql"
-	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"moul.io/zapgorm2"
 )
 
 func (m *manager) use(dbtype string, dsn string) (gorm.Dialector, error) {
-	switch dbtype {
-	case SQLite:
-		return sqlite.Open(dsn), nil
-	case MySQL:
-		return mysql.Open(dsn), nil
-	case Postgres:
-		return postgres.Open(dsn), nil
-	case Clickhouse:
-		return clickhouse.Open(dsn), nil
-	default:
-		return nil, errors.Newf("unsupported db type:%s", dbtype)
+	d, err := lookupDriver(dbtype)
+	if err != nil {
+		return nil, errors.Wrap(err)
 	}
+	if d.Dialector == nil {
+		return nil, errors.Newf("driver %s does not provide a GORM dialector", dbtype)
+	}
+	return d.Dialector(dsn), nil
 }
 
 func (m *manager) connect(dbtype string, s Source) error {
@@ -72,19 +64,14 @@ func (m *manager) DB() *sql.DB {
 }
 
 func (m *manager) Cleanup(schema bool) error {
-	db := m.ormDB
-	switch m.dbtype {
-	case Postgres:
-		return m.cleanupPostgres(db, schema)
-	case MySQL:
-		return m.cleanupMySQL(db, schema)
-	case SQLite:
-		return m.cleanupSQLite(db, schema)
-	case Clickhouse:
-		return m.cleanupClickhouse(db, schema)
-	default:
+	d, err := lookupDriver(m.dbtype)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	if d.Cleanup == nil {
 		return errors.Newf("cleanup operation not supported for database type: %s", m.dbtype)
 	}
+	return d.Cleanup(m.ormDB, m.source.DBName, schema)
 }
 
 func (m *manager) Reload() error {

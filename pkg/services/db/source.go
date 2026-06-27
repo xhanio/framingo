@@ -25,54 +25,31 @@ type Source struct {
 	Params   map[string]string
 }
 
-func (s *Source) getParams() map[string]string {
+// GetParams returns a defensive copy of s.Params so drivers can mutate it
+// while building a DSN without affecting the caller's Source.
+func (s *Source) GetParams() map[string]string {
 	params := make(map[string]string)
 	maps.Copy(params, s.Params)
 	return params
 }
 
+// DSN resolves the driver registered for dbtype and asks it to format the DSN.
+// The driver subpackage must be blank-imported for this to succeed.
 func (s *Source) DSN(dbtype string) (string, error) {
-	params := s.getParams()
-
-	switch dbtype {
-	case MySQL:
-		if s.Secure {
-			if _, ok := params["tls"]; !ok {
-				params["tls"] = "true"
-			}
-		}
-		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=True&loc=Local", s.User, s.Password, s.Host, s.Port, s.DBName)
-		return s.appendParams(dsn, params, "&", "&"), nil
-	case Postgres:
-		if _, ok := params["sslmode"]; !ok {
-			if s.Secure {
-				params["sslmode"] = "require"
-			} else {
-				params["sslmode"] = "disable"
-			}
-		}
-		dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s", s.Host, s.Port, s.User, s.Password, s.DBName)
-		return s.appendParams(dsn, params, " ", " "), nil
-	case SQLite:
-		dsn := s.DBName
-		if dsn == "" {
-			dsn = ":memory:"
-		}
-		return s.appendParams(dsn, params, "?", "&"), nil
-	case Clickhouse:
-		if s.Secure {
-			if _, ok := params["secure"]; !ok {
-				params["secure"] = "true"
-			}
-		}
-		dsn := fmt.Sprintf("clickhouse://%s:%s@%s:%d/%s?", s.User, s.Password, s.Host, s.Port, s.DBName)
-		return s.appendParams(dsn, params, "&", "&"), nil
-	default:
-		return "", errors.Newf("unsupported db type %s", dbtype)
+	d, err := lookupDriver(dbtype)
+	if err != nil {
+		return "", errors.Wrap(err)
 	}
+	if d.DSN == nil {
+		return "", errors.Newf("driver %s does not provide a DSN builder", dbtype)
+	}
+	return d.DSN(*s)
 }
 
-func (s *Source) appendParams(dsn string, params map[string]string, firstSep, sep string) string {
+// AppendParams formats params as key=value pairs joined by sep and prefixed by
+// firstSep, producing a deterministic ordering. Exported so driver subpackages
+// can share the formatting logic.
+func AppendParams(dsn string, params map[string]string, firstSep, sep string) string {
 	if len(params) == 0 {
 		return dsn
 	}

@@ -1,34 +1,40 @@
-package db
+package db_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/xhanio/framingo/pkg/services/db"
+	_ "github.com/xhanio/framingo/pkg/services/db/drivers/clickhouse"
+	_ "github.com/xhanio/framingo/pkg/services/db/drivers/mysql"
+	_ "github.com/xhanio/framingo/pkg/services/db/drivers/postgres"
+	_ "github.com/xhanio/framingo/pkg/services/db/drivers/sqlite"
 )
 
 func TestSource_DSN(t *testing.T) {
 	tests := []struct {
 		name    string
-		source  Source
+		source  db.Source
 		dbtype  string
 		want    string
 		wantErr bool
 	}{
 		{
 			name: "Postgres default",
-			source: Source{
+			source: db.Source{
 				Host:     "localhost",
 				Port:     5432,
 				User:     "user",
 				Password: "password",
 				DBName:   "mydb",
 			},
-			dbtype: Postgres,
+			dbtype: db.Postgres,
 			want:   "host=localhost port=5432 user=user password=password dbname=mydb sslmode=disable",
 		},
 		{
 			name: "Postgres with SSL",
-			source: Source{
+			source: db.Source{
 				Host:     "localhost",
 				Port:     5432,
 				User:     "user",
@@ -36,26 +42,26 @@ func TestSource_DSN(t *testing.T) {
 				DBName:   "mydb",
 				Secure:   true,
 			},
-			dbtype: Postgres,
+			dbtype: db.Postgres,
 			want:   "host=localhost port=5432 user=user password=password dbname=mydb sslmode=require",
 		},
 		{
 			name:   "SQLite memory",
-			source: Source{},
-			dbtype: SQLite,
+			source: db.Source{},
+			dbtype: db.SQLite,
 			want:   ":memory:",
 		},
 		{
 			name: "SQLite file",
-			source: Source{
+			source: db.Source{
 				DBName: "/tmp/test.db",
 			},
-			dbtype: SQLite,
+			dbtype: db.SQLite,
 			want:   "/tmp/test.db",
 		},
 		{
 			name: "Postgres with Params override",
-			source: Source{
+			source: db.Source{
 				Host:     "localhost",
 				Port:     5432,
 				User:     "user",
@@ -64,12 +70,12 @@ func TestSource_DSN(t *testing.T) {
 				Secure:   true,
 				Params:   map[string]string{"sslmode": "verify-full"},
 			},
-			dbtype: Postgres,
+			dbtype: db.Postgres,
 			want:   "host=localhost port=5432 user=user password=password dbname=mydb sslmode=verify-full",
 		},
 		{
 			name: "MySQL with SSL and Params",
-			source: Source{
+			source: db.Source{
 				Host:     "localhost",
 				Port:     3306,
 				User:     "root",
@@ -78,12 +84,12 @@ func TestSource_DSN(t *testing.T) {
 				Secure:   true,
 				Params:   map[string]string{"timeout": "5s"},
 			},
-			dbtype: MySQL,
+			dbtype: db.MySQL,
 			want:   "root:password@tcp(localhost:3306)/mydb?charset=utf8&parseTime=True&loc=Local&timeout=5s&tls=true",
 		},
 		{
 			name: "MySQL with Params override",
-			source: Source{
+			source: db.Source{
 				Host:     "localhost",
 				Port:     3306,
 				User:     "root",
@@ -92,12 +98,12 @@ func TestSource_DSN(t *testing.T) {
 				Secure:   true,
 				Params:   map[string]string{"tls": "skip-verify"},
 			},
-			dbtype: MySQL,
+			dbtype: db.MySQL,
 			want:   "root:password@tcp(localhost:3306)/mydb?charset=utf8&parseTime=True&loc=Local&tls=skip-verify",
 		},
 		{
 			name: "ClickHouse with SSL and Params",
-			source: Source{
+			source: db.Source{
 				Host:     "localhost",
 				Port:     9000,
 				User:     "default",
@@ -106,12 +112,12 @@ func TestSource_DSN(t *testing.T) {
 				Secure:   true,
 				Params:   map[string]string{"debug": "true"},
 			},
-			dbtype: Clickhouse,
+			dbtype: db.Clickhouse,
 			want:   "clickhouse://default:@localhost:9000/default?&debug=true&secure=true",
 		},
 		{
 			name: "ClickHouse with Params override",
-			source: Source{
+			source: db.Source{
 				Host:     "localhost",
 				Port:     9000,
 				User:     "default",
@@ -120,17 +126,23 @@ func TestSource_DSN(t *testing.T) {
 				Secure:   true,
 				Params:   map[string]string{"secure": "false"},
 			},
-			dbtype: Clickhouse,
+			dbtype: db.Clickhouse,
 			want:   "clickhouse://default:@localhost:9000/default?&secure=false",
 		},
 		{
 			name: "SQLite with Params",
-			source: Source{
+			source: db.Source{
 				DBName: "/tmp/test.db",
 				Params: map[string]string{"_foreign_keys": "on"},
 			},
-			dbtype: SQLite,
+			dbtype: db.SQLite,
 			want:   "/tmp/test.db?_foreign_keys=on",
+		},
+		{
+			name:    "unregistered driver",
+			source:  db.Source{},
+			dbtype:  "duckdb",
+			wantErr: true,
 		},
 	}
 
@@ -142,16 +154,6 @@ func TestSource_DSN(t *testing.T) {
 				return
 			}
 			assert.NoError(t, err)
-			// For Postgres with multiple params, the order might vary.
-			// If we have multiple params in the map, we should check containment instead of equality.
-			// But for the cases above with single param in map, it should be deterministic.
-			// Wait, "Postgres with Params override" has 2 params. This will be flaky.
-			// I should fix the test case to have only 1 param or handle it.
-			// Let's fix the test case in the struct above to have only 1 param for stability.
-			if tt.name == "Postgres with Params override" {
-				// Special handling or just simplify the test case?
-				// Let's simplify the test case in the replacement content to use 1 param.
-			}
 			assert.Equal(t, tt.want, got)
 		})
 	}

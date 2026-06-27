@@ -4,28 +4,19 @@ import (
 	"os"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database"
-	"github.com/golang-migrate/migrate/v4/database/clickhouse"
-	"github.com/golang-migrate/migrate/v4/database/mysql"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/xhanio/errors"
 )
 
 func (m *manager) migrate(url string, version uint) error {
-	var driver database.Driver
-	var err error
-	switch m.dbtype {
-	case SQLite:
-		driver, err = sqlite.WithInstance(m.sqlDB, &sqlite.Config{})
-	case Postgres:
-		driver, err = postgres.WithInstance(m.sqlDB, &postgres.Config{})
-	case MySQL:
-		driver, err = mysql.WithInstance(m.sqlDB, &mysql.Config{})
-	case Clickhouse:
-		driver, err = clickhouse.WithInstance(m.sqlDB, &clickhouse.Config{})
+	d, err := lookupDriver(m.dbtype)
+	if err != nil {
+		return errors.Wrap(err)
 	}
+	if d.Migration == nil {
+		return errors.Newf("driver %s does not provide a migration driver", m.dbtype)
+	}
+	driver, err := d.Migration(m.sqlDB)
 	if err != nil {
 		return errors.Wrap(err)
 	}
