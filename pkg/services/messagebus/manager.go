@@ -4,6 +4,7 @@ import (
 	"context"
 	"path"
 	"sync"
+	"time"
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
@@ -22,6 +23,9 @@ type manager struct {
 	bus   model.Pubsub
 	topic string
 
+	pingInterval time.Duration
+	pingTimeout  time.Duration
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -37,10 +41,12 @@ func New(bus model.Pubsub, opts ...Option) Manager {
 
 func newManager(bus model.Pubsub, opts ...Option) *manager {
 	m := &manager{
-		log:     log.Default,
-		bus:     bus,
-		topic:   DefaultTopic,
-		modules: make(map[string]common.Named),
+		log:          log.Default,
+		bus:          bus,
+		topic:        DefaultTopic,
+		pingInterval: DefaultPingInterval,
+		pingTimeout:  DefaultPingTimeout,
+		modules:      make(map[string]common.Named),
 	}
 	m.apply(opts...)
 	m.log = m.log.By(m)

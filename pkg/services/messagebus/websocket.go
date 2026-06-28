@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -25,6 +26,9 @@ func (m *manager) AttachWebSocket(messenger model.Messenger, ws *websocket.Conn)
 	defer cancel()
 
 	go m.pumpOutbound(ctx, messenger, ws)
+	if m.pingInterval > 0 {
+		go m.pumpPing(ctx, cancel, messenger, ws)
+	}
 
 	for {
 		typ, data, err := ws.Read(ctx)
@@ -53,6 +57,31 @@ func (m *manager) AttachWebSocket(messenger model.Messenger, ws *websocket.Conn)
 		}
 		if err := messenger.Send(ctx, msg.Kind, msg.Payload); err != nil && ctx.Err() == nil {
 			m.log.Errorf("failed to relay inbound message from %s: %v", messenger.Name(), err)
+		}
+	}
+}
+
+// pumpPing periodically sends WebSocket ping frames to the peer and waits for
+// a pong within pingTimeout. On failure (timeout, write error, or the peer
+// going away) it cancels ctx so the read loop and outbound pump tear down.
+func (m *manager) pumpPing(ctx context.Context, cancel context.CancelFunc, messenger model.Messenger, ws *websocket.Conn) {
+	ticker := time.NewTicker(m.pingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingCtx, pingCancel := context.WithTimeout(ctx, m.pingTimeout)
+			err := ws.Ping(pingCtx)
+			pingCancel()
+			if err != nil {
+				if ctx.Err() == nil {
+					m.log.Infof("message session %s ping failed: %v", messenger.Name(), err)
+					cancel()
+				}
+				return
+			}
 		}
 	}
 }
