@@ -159,6 +159,11 @@ func (m *manager) initServices() error {
     m.services = supervisor.New(m.config, supervisor.WithLogger(m.log))
 
     // 3. Infra services: database, pubsub, messagebus
+    //    NOTE: blank-import the db driver subpackage(s) this binary supports —
+    //    e.g. `_ "github.com/xhanio/framingo/pkg/services/db/drivers/postgres"` —
+    //    at the top of this file. The core `db` package no longer imports any
+    //    concrete driver, so unimported engines fail at Init with
+    //    "driver not registered".
     m.db = db.New(db.WithType(...), db.WithDataSource(...), db.WithLogger(m.log))
     m.pubsub = pubsub.New(driver.NewMemory(m.log), pubsub.WithLogger(m.log))
     m.messagebus = messagebus.New(m.pubsub, messagebus.WithLogger(m.log))

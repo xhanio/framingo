@@ -42,7 +42,7 @@ After forking, use the rest of this skill as the per-package reference for the w
 | Concern | Package | Interface / Key Type |
 |---|---|---|
 | Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` |
-| Database | `pkg/services/db` | `db.Manager` |
+| Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse) |
 | HTTP API server | `pkg/services/api/server` | `server.Manager`, `api.Router`, `api.Middleware` |
 | HTTP client | `pkg/services/api/client` | `client.Client` |
 | Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers |
@@ -150,12 +150,20 @@ For the full annotated YAML template (log, db, api, pprof, custom service keys) 
 
 ## Database Service
 
-Located in `pkg/services/db`. Supports PostgreSQL, MySQL, SQLite, ClickHouse.
+Located in `pkg/services/db`. Each engine (PostgreSQL, MySQL, SQLite, ClickHouse) lives in its own subpackage under `pkg/services/db/drivers/` and self-registers via `db.Register` in `init()`. The core `db` package does not import any concrete GORM/migrate driver — **blank-import the driver subpackage(s) your binary actually needs**, so SQLite-only binaries don't drag in the Postgres/MySQL/ClickHouse client libraries (~17MB saving).
 
 ### Creating a DB Manager
 
 ```go
-import "github.com/xhanio/framingo/pkg/services/db"
+import (
+    "github.com/xhanio/framingo/pkg/services/db"
+
+    // Blank-import only the engines this binary supports.
+    _ "github.com/xhanio/framingo/pkg/services/db/drivers/postgres"
+    // _ "github.com/xhanio/framingo/pkg/services/db/drivers/mysql"
+    // _ "github.com/xhanio/framingo/pkg/services/db/drivers/sqlite"
+    // _ "github.com/xhanio/framingo/pkg/services/db/drivers/clickhouse"
+)
 
 dbMgr := db.New(
     db.WithType(db.Postgres),       // or db.MySQL, db.SQLite, db.Clickhouse
@@ -173,6 +181,8 @@ dbMgr := db.New(
     db.WithLogger(logger),
 )
 ```
+
+If `WithType` names a driver that hasn't been blank-imported, `db.Manager` startup fails with `unsupported db type: <name> (driver not registered — blank-import the corresponding pkg/services/db/drivers/* package)`.
 
 ### Manager Interface
 

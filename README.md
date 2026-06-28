@@ -159,7 +159,7 @@ Production-ready service implementations:
 - **[api/client](pkg/services/api/client/)** — HTTP client with TLS, headers, cookies, body encoding (deflate), and structured error parsing — `NewRequest` builds, `Do` executes an `*http.Request`, `Send` does both in one shot
 
 - **[db](pkg/services/db/)** — Database manager (GORM)
-  - Drivers: PostgreSQL, MySQL, SQLite, ClickHouse
+  - Pluggable drivers under [db/drivers/](pkg/services/db/drivers/): PostgreSQL, MySQL, SQLite, ClickHouse — blank-import only the ones your binary needs (a SQLite-only binary drops ~17MB)
   - Connection pooling (`WithConnection(maxOpen, maxIdle, maxLifetime, maxIdleTime)`)
   - Migrations via `WithMigration(dir, version)`
   - Context-aware queries: `FromContext(ctx)` auto-extracts an active transaction
@@ -604,7 +604,7 @@ gopro build binary -e local             # cgo-enabled local build
 - Multiple services: database, pubsub, message bus, RBAC, business logic
 - HTTP routes with YAML configuration, middlewares (auth, deflate, feature flags), and a WebSocket endpoint via the message-bus router
 - Type separation: `api/` (DTOs), `entity/` (domain), `orm/` (database), `model/` (interfaces)
-- Database migrations and ClickHouse-/Postgres-/MySQL-/SQLite-compatible drivers
+- Database migrations and pluggable PostgreSQL/MySQL/SQLite/ClickHouse driver subpackages (blank-imported in [example/pkg/components/server/example/service.go](example/pkg/components/server/example/service.go))
 - Pub/sub with pluggable Memory/Redis/Kafka backends
 - CLI client with credential persistence and certificate helpers
 - GoPro-driven build, image, and Kubernetes manifest generation

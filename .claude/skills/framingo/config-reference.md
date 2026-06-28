@@ -16,7 +16,7 @@ log:
 
 # Database — used by db.New() options + dynamic config in db.Manager.Init()
 db:
-  type: postgres              # postgres | mysql | sqlite | clickhouse
+  type: postgres              # postgres | mysql | sqlite | clickhouse (the chosen type's driver subpackage must be blank-imported)
   source:
     host: localhost
     port: 5432
@@ -69,6 +69,7 @@ pprof:
 ```
 
 **Notes**:
+- `db.type` is matched against the driver registry; the corresponding `pkg/services/db/drivers/{postgres,mysql,sqlite,clickhouse}` subpackage must be blank-imported by the binary or `db.Manager.Init` returns `unsupported db type: <name> (driver not registered ...)`
 - `db.connection.*` keys are read dynamically during `db.Manager.Init(ctx)` via `confutil.FromContext(ctx)`, allowing values to change on service restart
 - `api.*` is iterated as a string map — each top-level key under `api` becomes a named server instance
 - TLS is enabled per-server when `api.<name>.cert` is set
