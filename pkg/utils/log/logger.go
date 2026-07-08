@@ -15,6 +15,7 @@ type logger struct {
 	level      zapcore.Level
 	timeFormat string
 	fileWriter io.Writer
+	noStdout   bool
 
 	core *zap.SugaredLogger
 }
@@ -44,14 +45,16 @@ func (l *logger) newCores(w io.Writer) []zapcore.Core {
 		jsonCore := zapcore.NewCore(zapcore.NewJSONEncoder(jsonEncoder), zapcore.AddSync(w), l.level)
 		cores = append(cores, jsonCore)
 	}
-	consoleEncoder := zap.NewProductionEncoderConfig()
-	if l.level == zapcore.DebugLevel {
-		consoleEncoder = zap.NewDevelopmentEncoderConfig()
+	if !l.noStdout {
+		consoleEncoder := zap.NewProductionEncoderConfig()
+		if l.level == zapcore.DebugLevel {
+			consoleEncoder = zap.NewDevelopmentEncoderConfig()
+		}
+		consoleEncoder.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		consoleEncoder.EncodeTime = zapcore.TimeEncoderOfLayout(l.timeFormat)
+		consoleCore := zapcore.NewCore(zapcore.NewConsoleEncoder(consoleEncoder), zapcore.AddSync(os.Stdout), l.level)
+		cores = append(cores, consoleCore)
 	}
-	consoleEncoder.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	consoleEncoder.EncodeTime = zapcore.TimeEncoderOfLayout(l.timeFormat)
-	consoleCore := zapcore.NewCore(zapcore.NewConsoleEncoder(consoleEncoder), zapcore.AddSync(os.Stdout), l.level)
-	cores = append(cores, consoleCore)
 	return cores
 }
 
