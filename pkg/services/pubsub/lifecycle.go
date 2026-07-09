@@ -6,6 +6,8 @@ import (
 	"io"
 
 	"github.com/xhanio/errors"
+
+	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
@@ -33,6 +35,10 @@ func (m *manager) Info(w io.Writer, debug bool) {
 	t.Title("stat", "value")
 	t.Row("backend", fmt.Sprintf("%T", m.bus))
 	t.Row("published", m.published.Load())
+	if s, ok := m.bus.(driver.Stats); ok {
+		t.Row("dropped", s.Dropped())
+		t.Row("evicted", s.Evicted())
+	}
 	t.NewLine()
 	t.Flush()
 }

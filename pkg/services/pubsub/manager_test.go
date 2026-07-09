@@ -219,3 +219,14 @@ func TestManagerGracefulShutdown(t *testing.T) {
 	_, ok := <-ch
 	assert.False(t, ok, "channel should be closed after Stop")
 }
+
+func TestManagerInfoReportsDeliveryStats(t *testing.T) {
+	m := newManager(driver.NewMemory(log.Default), WithName("my-pubsub"))
+
+	var buf bytes.Buffer
+	m.Info(&buf, true)
+
+	out := buf.String()
+	assert.Contains(t, out, "dropped")
+	assert.Contains(t, out, "evicted")
+}

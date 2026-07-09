@@ -14,7 +14,7 @@ import (
 )
 
 type kafkaDriver struct {
-	log log.Logger
+	*dispatcher
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -25,12 +25,12 @@ type kafkaDriver struct {
 	reader *kafka.Reader
 
 	mu     sync.RWMutex
-	topics map[string][]subscriber // pubsub topic -> local subscribers
+	topics map[string][]*subscriber // pubsub topic -> local subscribers
 
 	wg sync.WaitGroup
 }
 
-func NewKafka(brokers []string, groupID string, log log.Logger) (Driver, error) {
+func NewKafka(brokers []string, groupID string, log log.Logger, opts ...Option) (Driver, error) {
 	if len(brokers) == 0 {
 		return nil, errors.Newf("at least one broker address is required")
 	}
@@ -60,11 +60,11 @@ func NewKafka(brokers []string, groupID string, log log.Logger) (Driver, error) 
 	})
 
 	return &kafkaDriver{
-		log:        log,
+		dispatcher: newDispatcher(log, opts...),
 		kafkaTopic: kafkaTopic,
 		writer:     writer,
 		reader:     reader,
-		topics:     make(map[string][]subscriber),
+		topics:     make(map[string][]*subscriber),
 	}, nil
 }
 
@@ -76,11 +76,10 @@ func (b *kafkaDriver) Subscribe(name string, topic string) (<-chan entity.Pubsub
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	ch := make(chan entity.PubsubMessage, channelBufferSize)
-	sub := subscriber{name: name, ch: ch}
+	sub := newSubscriber(name, b.opts)
 	b.topics[topic] = append(b.topics[topic], sub)
 
-	return ch, nil
+	return sub.ch, nil
 }
 
 func (b *kafkaDriver) GetSubscribers(topic string) []string {
@@ -95,8 +94,8 @@ func (b *kafkaDriver) GetSubscribers(topic string) []string {
 	return names
 }
 
-func (b *kafkaDriver) getSubscribers(topic string) []subscriber {
-	var subscribers []subscriber
+func (b *kafkaDriver) getSubscribers(topic string) []*subscriber {
+	var subscribers []*subscriber
 	for subTopic, subs := range b.topics {
 		if topicMatches(subTopic, topic) {
 			subscribers = append(subscribers, subs...)
@@ -111,17 +110,17 @@ func (b *kafkaDriver) Unsubscribe(name string, topic string) error {
 	}
 
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	subscribers, ok := b.topics[topic]
 	if !ok {
+		b.mu.Unlock()
 		return nil
 	}
 
-	filtered := make([]subscriber, 0, len(subscribers))
+	var removed []*subscriber
+	filtered := make([]*subscriber, 0, len(subscribers))
 	for _, sub := range subscribers {
 		if sub.name == name {
-			close(sub.ch)
+			removed = append(removed, sub)
 		} else {
 			filtered = append(filtered, sub)
 		}
@@ -132,28 +131,61 @@ func (b *kafkaDriver) Unsubscribe(name string, topic string) error {
 	} else {
 		delete(b.topics, topic)
 	}
+	b.mu.Unlock()
 
+	// stop tears down the pump, which owns close(ch); doing it here rather than
+	// under the lock keeps close off the critical section.
+	for _, sub := range removed {
+		sub.stop()
+	}
 	return nil
+}
+
+func (b *kafkaDriver) evict(lagged []laggard) {
+	for _, l := range lagged {
+		if !b.claim(l) {
+			continue
+		}
+		b.mu.Lock()
+		b.remove(l.topic, l.sub)
+		b.mu.Unlock()
+
+		l.sub.stop()
+	}
+}
+
+// remove drops target from topic by identity. Removing by name would race a
+// subscriber that unsubscribed and resubscribed under the same name between
+// the read lock being released and the write lock being taken.
+func (b *kafkaDriver) remove(topic string, target *subscriber) {
+	subscribers, ok := b.topics[topic]
+	if !ok {
+		return
+	}
+	filtered := make([]*subscriber, 0, len(subscribers))
+	for _, sub := range subscribers {
+		if sub != target {
+			filtered = append(filtered, sub)
+		}
+	}
+	if len(filtered) > 0 {
+		b.topics[topic] = filtered
+	} else {
+		delete(b.topics, topic)
+	}
 }
 
 func (b *kafkaDriver) Publish(ctx context.Context, from string, topic string, kind string, payload any) error {
 	// Local delivery
-	b.mu.RLock()
 	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
-	for subTopic, subs := range b.topics {
-		if topicMatches(subTopic, topic) {
-			for _, sub := range subs {
-				if from != "" && sub.name == from {
-					continue
-				}
-				select {
-				case sub.ch <- msg:
-				default:
-				}
-			}
-		}
-	}
+
+	b.mu.RLock()
+	lagged := b.fanout(b.topics, from, msg)
 	b.mu.RUnlock()
+
+	// Eviction needs the write lock, which cannot be taken while Publish holds
+	// the read lock: Go's RWMutex is not upgradable.
+	b.evict(lagged)
 
 	// Remote delivery via Kafka
 	rawPayload, err := json.Marshal(payload)
@@ -193,16 +225,22 @@ func (b *kafkaDriver) Stop(wait bool) error {
 	}
 
 	b.mu.Lock()
+	var stopped []*subscriber
 	for topic, subs := range b.topics {
-		for _, sub := range subs {
-			close(sub.ch)
-		}
+		stopped = append(stopped, subs...)
 		delete(b.topics, topic)
 	}
 	b.mu.Unlock()
 
+	for _, sub := range stopped {
+		sub.stop()
+	}
+
 	if wait {
 		b.wg.Wait()
+		for _, sub := range stopped {
+			sub.wait()
+		}
 	}
 
 	werr := b.writer.Close()
@@ -234,9 +272,6 @@ func (b *kafkaDriver) handleKafkaMessage(data []byte) {
 		return
 	}
 
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
 	m := entity.PubsubMessage{
 		From:    em.Publisher,
 		Topic:   em.Topic,
@@ -244,17 +279,9 @@ func (b *kafkaDriver) handleKafkaMessage(data []byte) {
 		Payload: em.Payload,
 	}
 
-	for subTopic, subs := range b.topics {
-		if topicMatches(subTopic, em.Topic) {
-			for _, sub := range subs {
-				if em.Publisher != "" && sub.name == em.Publisher {
-					continue
-				}
-				select {
-				case sub.ch <- m:
-				default:
-				}
-			}
-		}
-	}
+	b.mu.RLock()
+	lagged := b.fanout(b.topics, em.Publisher, m)
+	b.mu.RUnlock()
+
+	b.evict(lagged)
 }

@@ -11,16 +11,16 @@ import (
 )
 
 type memoryDriver struct {
-	log log.Logger
-	mu  sync.RWMutex
+	*dispatcher
+	mu sync.RWMutex
 
-	topics *trie.Trie[[]subscriber]
+	topics *trie.Trie[[]*subscriber]
 }
 
-func NewMemory(log log.Logger) Driver {
+func NewMemory(log log.Logger, opts ...Option) Driver {
 	return &memoryDriver{
-		log:    log,
-		topics: trie.New[[]subscriber](),
+		dispatcher: newDispatcher(log, opts...),
+		topics:     trie.New[[]*subscriber](),
 	}
 }
 
@@ -32,18 +32,17 @@ func (b *memoryDriver) Subscribe(name string, topic string) (<-chan entity.Pubsu
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	ch := make(chan entity.PubsubMessage, channelBufferSize)
-	sub := subscriber{name: name, ch: ch}
+	sub := newSubscriber(name, b.opts)
 
 	if node, ok := b.topics.Find(topic); ok {
 		subscribers := append(node.Value(), sub)
 		b.topics.Remove(topic)
 		b.topics.Add(topic, subscribers)
 	} else {
-		b.topics.Add(topic, []subscriber{sub})
+		b.topics.Add(topic, []*subscriber{sub})
 	}
 
-	return ch, nil
+	return sub.ch, nil
 }
 
 // GetSubscribers returns the names of all subscribers for the given topic and its parent topics.
@@ -60,8 +59,8 @@ func (b *memoryDriver) GetSubscribers(topic string) []string {
 }
 
 // getSubscribers returns all subscribers for the given topic and its parent topics.
-func (b *memoryDriver) getSubscribers(topic string) []subscriber {
-	var subscribers []subscriber
+func (b *memoryDriver) getSubscribers(topic string) []*subscriber {
+	var subscribers []*subscriber
 
 	sections := strings.Split(topic, "/")
 	for i := range sections {
@@ -80,14 +79,13 @@ func (b *memoryDriver) Unsubscribe(name string, topic string) error {
 	}
 
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
+	var removed []*subscriber
 	if node, ok := b.topics.Find(topic); ok {
 		subscribers := node.Value()
-		filtered := make([]subscriber, 0, len(subscribers))
+		filtered := make([]*subscriber, 0, len(subscribers))
 		for _, sub := range subscribers {
 			if sub.name == name {
-				close(sub.ch)
+				removed = append(removed, sub)
 			} else {
 				filtered = append(filtered, sub)
 			}
@@ -98,31 +96,77 @@ func (b *memoryDriver) Unsubscribe(name string, topic string) error {
 			b.topics.Add(topic, filtered)
 		}
 	}
+	b.mu.Unlock()
 
+	for _, sub := range removed {
+		sub.stop()
+	}
 	return nil
 }
 
 func (b *memoryDriver) Publish(_ context.Context, from string, topic string, kind string, payload any) error {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
 	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
+
+	var lagged []laggard
+
+	b.mu.RLock()
 	sections := strings.Split(topic, "/")
 	for i := range sections {
 		prefix := strings.Join(sections[:i+1], "/")
-		if node, ok := b.topics.Find(prefix); ok {
-			for _, sub := range node.Value() {
-				if from != "" && sub.name == from {
-					continue
-				}
-				select {
-				case sub.ch <- msg:
-				default:
-				}
+		node, ok := b.topics.Find(prefix)
+		if !ok {
+			continue
+		}
+		for _, sub := range node.Value() {
+			if from != "" && sub.name == from {
+				continue
+			}
+			if b.offer(sub, prefix, msg) {
+				lagged = append(lagged, laggard{sub: sub, topic: prefix})
 			}
 		}
 	}
+	b.mu.RUnlock()
+
+	// Eviction needs the write lock, which cannot be taken while Publish holds
+	// the read lock: Go's RWMutex is not upgradable.
+	b.evict(lagged)
 	return nil
+}
+
+func (b *memoryDriver) evict(lagged []laggard) {
+	for _, l := range lagged {
+		if !b.claim(l) {
+			continue
+		}
+		b.mu.Lock()
+		b.remove(l.topic, l.sub)
+		b.mu.Unlock()
+
+		l.sub.stop()
+	}
+}
+
+// remove drops target from topic by identity. Removing by name would race a
+// subscriber that unsubscribed and resubscribed under the same name between
+// the read lock being released and the write lock being taken.
+func (b *memoryDriver) remove(topic string, target *subscriber) {
+	node, ok := b.topics.Find(topic)
+	if !ok {
+		return
+	}
+	subscribers := node.Value()
+	filtered := make([]*subscriber, 0, len(subscribers))
+	for _, sub := range subscribers {
+		if sub != target {
+			filtered = append(filtered, sub)
+		}
+	}
+
+	b.topics.Remove(topic)
+	if len(filtered) > 0 {
+		b.topics.Add(topic, filtered)
+	}
 }
 
 func (b *memoryDriver) Start(ctx context.Context) error {
@@ -131,15 +175,22 @@ func (b *memoryDriver) Start(ctx context.Context) error {
 
 func (b *memoryDriver) Stop(wait bool) error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
+	var stopped []*subscriber
 	for _, key := range b.topics.Keys() {
 		if node, ok := b.topics.Find(key); ok {
-			for _, sub := range node.Value() {
-				close(sub.ch)
-			}
+			stopped = append(stopped, node.Value()...)
 		}
 		b.topics.Remove(key)
+	}
+	b.mu.Unlock()
+
+	for _, sub := range stopped {
+		sub.stop()
+	}
+	if wait {
+		for _, sub := range stopped {
+			sub.wait()
+		}
 	}
 	return nil
 }
