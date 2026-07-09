@@ -169,6 +169,9 @@ Production-ready service implementations:
   - Hierarchical topic subscriptions, non-self-delivery
   - Pluggable backends under [pubsub/driver/](pkg/services/pubsub/driver/): Memory, Redis, Kafka
   - `Publish(topic, msg)`, `Subscribe(topic, handler)`, `Unsubscribe(topic, handler)`
+  - Per-subscriber queue absorbs bursts; a subscriber that stops draining is handled by
+    `driver.WithOnFull(...)` — `DropMessage` (default, counted and logged) or `DropSubscriber`
+    (close the channel so the peer reconnects). Drop and eviction counts show up in `Info`
 
 - **[messagebus](pkg/services/messagebus/)** — Higher-level dispatch on top of `pubsub`
   - Single well-known topic with module-centric routing

@@ -290,6 +290,28 @@ ps := pubsub.New(driver.NewMemory(logger), pubsub.WithLogger(logger))
 
 Features: hierarchical topic subscriptions, non-self-delivery, both typed and raw dispatch.
 
+#### Slow subscribers
+
+Each subscriber gets a growable pending queue (capped, `driver.WithQueueCap`) drained by its own
+goroutine, so a briefly slow consumer loses nothing and never stalls `Publish`. When the queue
+fills, the consumer has stopped draining entirely, and `driver.WithOnFull` decides what happens:
+
+```go
+// Default: discard the message, count it, log it (throttled).
+driver.NewMemory(logger)
+
+// Close the subscriber's channel instead, so it reconnects and resumes from its own cursor.
+driver.NewMemory(logger, driver.WithOnFull(driver.DropSubscriber))
+```
+
+Pick `DropSubscriber` when consumers can reconnect and replay (a persisted log plus a cursor).
+A lost connection is recoverable and visible; a lost message is neither. All three drivers accept
+these options, and expose `Dropped()` / `Evicted()` via the optional `driver.Stats` interface,
+which `pubsub.Manager.Info` reports.
+
+An in-process bus is never a delivery guarantee — it dies with the process. Durability belongs in
+whatever log the consumer replays from.
+
 ### Message Bus
 
 `pkg/services/messagebus` wraps a `model.Pubsub` and dispatches via a single well-known topic (`/messages` by default). Modules register once and receive typed (`common.Message`) or raw (`kind`, payload) messages.
