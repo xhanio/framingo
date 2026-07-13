@@ -18,6 +18,7 @@ var (
 
 	GitBranch string
 	GitTag    string
+	GitCommit string
 
 	BuildVersion string
 	BuildType    string
@@ -35,6 +36,7 @@ var (
 
 		"GitBranch": &GitBranch,
 		"GitTag":    &GitTag,
+		"GitCommit": &GitCommit,
 
 		"BuildVersion": &BuildVersion,
 		"BuildType":    &BuildType,
@@ -56,6 +58,7 @@ type Build struct {
 
 	GitBranch string `json:"git_branch"`
 	GitTag    string `json:"git_tag"`
+	GitCommit string `json:"git_commit"`
 
 	BuildVersion string `json:"build_version"`
 	BuildType    string `json:"build_type"`
@@ -74,6 +77,7 @@ func GetBuildInfo() Build {
 			ProjectPath:    ProjectPath,
 			GitBranch:      GitBranch,
 			GitTag:         GitTag,
+			GitCommit:      GitCommit,
 			BuildVersion:   BuildVersion,
 			BuildType:      BuildType,
 			BuildDate:      BuildDate,
