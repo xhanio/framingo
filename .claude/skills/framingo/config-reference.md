@@ -16,7 +16,7 @@ log:
 
 # Database — used by db.New() options + dynamic config in db.Manager.Init()
 db:
-  type: postgres              # postgres | mysql | sqlite | clickhouse (the chosen type's driver subpackage must be blank-imported)
+  type: postgres              # postgres | mysql | sqlite | clickhouse (the chosen type's driver subpackage must be blank-imported; sqlite needs CGO_ENABLED=1)
   source:
     host: localhost
     port: 5432
@@ -70,6 +70,7 @@ pprof:
 
 **Notes**:
 - `db.type` is matched against the driver registry; the corresponding `pkg/services/db/drivers/{postgres,mysql,sqlite,clickhouse}` subpackage must be blank-imported by the binary or `db.Manager.Init` returns `unsupported db type: <name> (driver not registered ...)`
+- `db.type: sqlite` requires `CGO_ENABLED=1` and a C toolchain — its engine is `mattn/go-sqlite3`, a cgo wrapper around the C library. Built with `CGO_ENABLED=0` the binary still compiles, but `db.Manager.Init` fails at connect with `Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work`. This rules out cgo-free targets such as `FROM scratch` images and simple cross-compilation. The other drivers are pure Go.
 - `db.connection.*` keys are read dynamically during `db.Manager.Init(ctx)` via `confutil.FromContext(ctx)`, allowing values to change on service restart
 - `api.*` is iterated as a string map — each top-level key under `api` becomes a named server instance
 - TLS is enabled per-server when `api.<name>.cert` is set

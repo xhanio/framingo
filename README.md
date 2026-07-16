@@ -160,6 +160,7 @@ Production-ready service implementations:
 
 - **[db](pkg/services/db/)** — Database manager (GORM)
   - Pluggable drivers under [db/drivers/](pkg/services/db/drivers/): PostgreSQL, MySQL, SQLite, ClickHouse — blank-import only the ones your binary needs (a SQLite-only binary drops ~17MB)
+  - The SQLite driver uses [mattn/go-sqlite3](https://github.com/mattn/go-sqlite3), a cgo wrapper around the C library, so it needs `CGO_ENABLED=1` and a C toolchain. The other drivers are pure Go.
   - Connection pooling (`WithConnection(maxOpen, maxIdle, maxLifetime, maxIdleTime)`)
   - Migrations via `WithMigration(dir, version)`
   - Context-aware queries: `FromContext(ctx)` auto-extracts an active transaction
@@ -749,6 +750,7 @@ log:
 
 db:
   type: postgres          # postgres | mysql | sqlite | clickhouse
+                          # sqlite requires CGO_ENABLED=1; the others are pure Go
   source:
     host: localhost
     port: 5432

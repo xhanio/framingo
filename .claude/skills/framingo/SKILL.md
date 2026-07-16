@@ -42,7 +42,7 @@ After forking, use the rest of this skill as the per-package reference for the w
 | Concern | Package | Interface / Key Type |
 |---|---|---|
 | Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` |
-| Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse) |
+| Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1` |
 | HTTP API server | `pkg/services/api/server` | `server.Manager`, `api.Router`, `api.Middleware` |
 | HTTP client | `pkg/services/api/client` | `client.Client` |
 | Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers |
@@ -161,7 +161,7 @@ import (
     // Blank-import only the engines this binary supports.
     _ "github.com/xhanio/framingo/pkg/services/db/drivers/postgres"
     // _ "github.com/xhanio/framingo/pkg/services/db/drivers/mysql"
-    // _ "github.com/xhanio/framingo/pkg/services/db/drivers/sqlite"
+    // _ "github.com/xhanio/framingo/pkg/services/db/drivers/sqlite"      // needs CGO_ENABLED=1
     // _ "github.com/xhanio/framingo/pkg/services/db/drivers/clickhouse"
 )
 
