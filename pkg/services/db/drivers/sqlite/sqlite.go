@@ -2,6 +2,12 @@
 // DSN builder, and cleanup hooks with pkg/services/db. Blank-import it to
 // enable SQLite support without forcing every binary to pull in SQLite when
 // they only use other engines.
+//
+// The engine is github.com/mattn/go-sqlite3, which wraps the C SQLite library
+// and registers the "sqlite3" database/sql driver. Both the dialector and the
+// migration driver run on it, so a binary links one SQLite engine. Building
+// with CGO_ENABLED=0 still compiles, but connecting fails at runtime with
+// "go-sqlite3 requires cgo to work".
 package sqlite
 
 import (
@@ -9,7 +15,7 @@ import (
 	"fmt"
 
 	migratedb "github.com/golang-migrate/migrate/v4/database"
-	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
+	migratesqlite3 "github.com/golang-migrate/migrate/v4/database/sqlite3"
 	"github.com/xhanio/errors"
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -31,7 +37,7 @@ func dialector(dsn string) gorm.Dialector {
 }
 
 func migration(sqlDB *sql.DB) (migratedb.Driver, error) {
-	return migratesqlite.WithInstance(sqlDB, &migratesqlite.Config{})
+	return migratesqlite3.WithInstance(sqlDB, &migratesqlite3.Config{})
 }
 
 func dsn(s db.Source) (string, error) {
