@@ -4,7 +4,7 @@ description: Use when working with Framingo (`github.com/xhanio/framingo`) Go co
 compatibility: Requires Go 1.24+. Framework module is github.com/xhanio/framingo.
 metadata:
   author: xhanio
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Framingo - Service-Oriented Go Framework
@@ -43,7 +43,8 @@ After forking, use the rest of this skill as the per-package reference for the w
 |---|---|---|
 | Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` |
 | Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1` |
-| HTTP API server | `pkg/services/api/server` | `server.Manager`, `api.Router`, `api.Middleware` |
+| HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware` |
+| Handler request context | **project's own** `<project>/pkg/types/api` (unaliased `api`) | `api.Context` — use as the handler ctx instead of `echo.Context`; not a framingo type, you own it |
 | HTTP client | `pkg/services/api/client` | `client.Client` |
 | Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers |
 | Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` |
@@ -256,7 +257,76 @@ type Referenced[T comparable] interface {
 
 ## API Server
 
-Located in `pkg/services/api/server`. Built on Echo. Routes are defined declaratively: each `api.Router` ships an embedded `router.yaml` plus a `Handlers()` map; the server manager binds them at registration time. The recommended router layout splits each package into `router.go` (factory + `Handlers()` boilerplate, which typically just calls `api.DiscoverHandlers(r)` and debug-logs the handler count) and `handler.go` (handler bodies taking the project's `api.Context` wrapper — `echo.Context` + `context.Context` + project helpers). See [api-server.md](api-server.md) for the full pattern.
+Located in `pkg/services/api/server`. Built on Echo. Routes are defined declaratively: each `fapi.Router` ships an embedded `router.yaml` plus a `Handlers()` map; the server manager binds them at registration time. The recommended router layout splits each package into `router.go` (factory + `Handlers()` boilerplate, which typically just calls `api.DiscoverHandlers(r)` and debug-logs the handler count) and `handler.go` (handler bodies). See [api-server.md](api-server.md) for the full pattern.
+
+### Two `api` packages — don't confuse them
+
+Router code imports both. The example project's convention (follow it):
+
+```go
+import (
+    fapi "github.com/xhanio/framingo/pkg/types/api"  // FRAMEWORK: Router, Middleware, ContextKey*, ErrorBody
+    "myapp/pkg/types/api"                            // PROJECT (yours): Context, DiscoverHandlers, DTOs
+)
+```
+
+- `fapi` — **framingo's** `pkg/types/api`. Has `Router`, `Middleware`, `HandlerKey`, `ErrorBody`, `ContextKeyCredential`. It has **no `Context` type**.
+- `api` — **your project's** `pkg/types/api`, which you own and can extend. Defines `Context`, `DiscoverHandlers`, `WrapHandler`, `WrapWebSocket`, and request/response DTOs.
+
+`api.Context` below always means the **project** one. Referring to it as a framingo type is a mistake — framingo ships no such interface.
+
+### Handler signature — use the project `api.Context`
+
+**When defining an API, write handlers as `func(c api.Context) error` — not `func(c echo.Context) error`.** `api.Context` is the interface *your project* defines (canonical version: [`example/pkg/types/api/api.go`](../../example/pkg/types/api/api.go)) that embeds `echo.Context` **and** `context.Context`, and adds project helpers:
+
+```go
+// pkg/routers/user/handler.go
+import (
+    "myapp/pkg/types/api"   // the project wrapper, NOT echo, NOT framingo's pkg/types/api
+)
+
+func (r *router) GetUser(c api.Context) error {
+    cred, ok := c.Credential()             // project helper — no Get() + type-assert dance
+    if !ok {
+        return errors.Unauthorized.New()
+    }
+    u, err := r.svc.Get(c, c.Param("id"))  // c IS a context.Context — pass it straight through
+    if err != nil {
+        return errors.Wrap(err)
+    }
+    return c.JSON(http.StatusOK, u)
+}
+```
+
+Why this is the recommendation:
+
+- **One value, both contracts.** `c` satisfies `echo.Context` (bind/respond) *and* `context.Context`, so service calls take `c` directly — no `c.Request().Context()` unwrap, and cancellation/deadlines propagate for free.
+- **Helpers have a home.** `Credential()`, `Session()`, `TraceID()`, and custom binders live on the interface. Adding one later touches your `api.go` only — never every handler signature.
+- **You own it.** Because the interface is project-side, extending it needs no framingo change.
+- **Zero framework cost.** `api.DiscoverHandlers(r)` reflects over the router and wraps `func(api.Context) error` into the `echo.HandlerFunc` the server registers. The framework still accepts raw `echo.Context` handlers; that's the fallback for third-party code, not the pattern for new handlers.
+
+Same for WebSocket handlers: `func(c api.Context, conn *websocket.Conn) error`.
+
+If a project has no `pkg/types/api/api.go` yet (i.e. it wasn't forked from `example/`), copy [`example/pkg/types/api/api.go`](../../example/pkg/types/api/api.go) into it before writing handlers, and adjust the `entity` import to the project's own.
+
+### `Handlers()` — call `DiscoverHandlers` in each `router.go`
+
+`api.Context` handlers reach the framework through this one hook. **Every router package's `router.go` implements `Handlers()` with the same body**, verbatim across all six routers in `example/pkg/routers/`:
+
+```go
+// pkg/routers/user/router.go  — wiring lives here, never in handler.go
+func (r *router) Handlers() map[string]any {
+    handlers := api.DiscoverHandlers(r)                                    // r = this router, its own methods
+    r.log.Debugf("router %s parsed %d handler(s)", r.Name(), len(handlers))
+    return handlers
+}
+```
+
+It reflects over the receiver, keys handlers by method name (matching `func:` in that package's `router.yaml`), and wraps each `func(api.Context) error` into `echo.HandlerFunc`. So adding a handler = write the method in `handler.go` + add a `func:` entry to `router.yaml`. Nothing else.
+
+Don't hand-write the map (`map[string]any{"ListUsers": r.ListUsers}`) — it forces `echo.HandlerFunc` signatures, defeating `api.Context`, and rots on rename. Keep the debug line: methods that don't match a known signature are skipped **silently**, so the count is your only startup signal.
+
+### Wiring the server
 
 ```go
 import "github.com/xhanio/framingo/pkg/services/api/server"
@@ -464,6 +534,9 @@ For the full category rules, type-separation example, server component file stru
 - Never use `fmt.Errorf` or stdlib `errors.New` — the API server's error handler routes on `xhanio/errors` categories to set HTTP status.
 - Don't place `.go` files at a `pkg/` category root — every category is a grouping folder; code lives in subdirectories (`pkg/services/user/`, not `pkg/services/foo.go`).
 - A router's `prefix` MUST match the package's domain (e.g., `routers/user/` → `/users`), not an arbitrary path.
+- Don't declare handlers as `func(c echo.Context) error` — use the project's `api.Context` (`<project>/pkg/types/api`). Handlers that take `echo.Context` compile and run, so nothing tells you it's wrong; you just lose `context.Context` (forcing `c.Request().Context()` at every service call) and the `Credential()`/`Session()`/`TraceID()` helpers.
+- Don't hand-write the `Handlers()` map — each router's `router.go` returns `api.DiscoverHandlers(r)` (plus the debug log). Listing `map[string]any{"ListUsers": r.ListUsers}` by hand forces `echo.HandlerFunc` signatures (so you lose `api.Context`) and breaks on rename. Keep it in `router.go`; `handler.go` holds bodies only.
+- Don't look for `Context` in framingo's `pkg/types/api` — it isn't there. `Context`/`DiscoverHandlers` are **project**-side (`example/pkg/types/api/api.go`); framingo's package (aliased `fapi`) only has `Router`, `Middleware`, `ErrorBody`, `ContextKey*`. Importing both unaliased is a compile error — alias the framework one `fapi`.
 - Don't use the global Viper singleton — use the instance passed via `context.Context` (`confutil.FromContext(ctx)`).
 - After `echo.Shutdown` is called, the same echo instance can't be reused — the framework's api server rebuilds it on `Init`, but custom services must do the same if they wrap net/http servers.
 
