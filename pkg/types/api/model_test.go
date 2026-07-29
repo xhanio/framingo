@@ -14,33 +14,33 @@ func TestNewHandlerKey(t *testing.T) {
 		expected HandlerKey
 	}{
 		{
-			name:    "standard GET",
-			group:   &HandlerGroup{Server: "http", Prefix: "/api"},
-			handler: &Handler{Method: "GET", Path: "/users"},
+			name:     "standard GET",
+			group:    &HandlerGroup{Server: "http", Prefix: "/api"},
+			handler:  &Handler{Method: "GET", Path: "/users"},
 			expected: HandlerKey{Server: "http", Method: "GET", Path: "/api/users"},
 		},
 		{
-			name:    "ANY method",
-			group:   &HandlerGroup{Server: "http", Prefix: "/api"},
-			handler: &Handler{Method: MethodAny, Path: "/proxy"},
+			name:     "ANY method",
+			group:    &HandlerGroup{Server: "http", Prefix: "/api"},
+			handler:  &Handler{Method: MethodAny, Path: "/proxy"},
 			expected: HandlerKey{Server: "http", Method: "ANY", Path: "/api/proxy"},
 		},
 		{
-			name:    "wildcard path",
-			group:   &HandlerGroup{Server: "http", Prefix: "/api"},
-			handler: &Handler{Method: "GET", Path: "/*"},
+			name:     "wildcard path",
+			group:    &HandlerGroup{Server: "http", Prefix: "/api"},
+			handler:  &Handler{Method: "GET", Path: "/*"},
 			expected: HandlerKey{Server: "http", Method: "GET", Path: "/api/*"},
 		},
 		{
-			name:    "ANY with wildcard",
-			group:   &HandlerGroup{Server: "http", Prefix: "/proxy"},
-			handler: &Handler{Method: MethodAny, Path: "/*"},
+			name:     "ANY with wildcard",
+			group:    &HandlerGroup{Server: "http", Prefix: "/proxy"},
+			handler:  &Handler{Method: MethodAny, Path: "/*"},
 			expected: HandlerKey{Server: "http", Method: "ANY", Path: "/proxy/*"},
 		},
 		{
-			name:    "nil group",
-			group:   nil,
-			handler: &Handler{Method: "GET", Path: "/health"},
+			name:     "nil group",
+			group:    nil,
+			handler:  &Handler{Method: "GET", Path: "/health"},
 			expected: HandlerKey{Server: "", Method: "GET", Path: "/health"},
 		},
 	}

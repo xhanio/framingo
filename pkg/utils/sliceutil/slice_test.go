@@ -362,73 +362,73 @@ func TestCopy(t *testing.T) {
 
 func TestChanges(t *testing.T) {
 	tests := []struct {
-		name         string
-		from         []int
-		to           []int
-		expectedAdd  []int
+		name           string
+		from           []int
+		to             []int
+		expectedAdd    []int
 		expectedRemove []int
 	}{
 		{
-			name:         "identical slices",
-			from:         []int{1, 2, 3},
-			to:           []int{1, 2, 3},
-			expectedAdd:  []int{},
+			name:           "identical slices",
+			from:           []int{1, 2, 3},
+			to:             []int{1, 2, 3},
+			expectedAdd:    []int{},
 			expectedRemove: []int{},
 		},
 		{
-			name:         "completely different",
-			from:         []int{1, 2},
-			to:           []int{3, 4},
-			expectedAdd:  []int{3, 4},
+			name:           "completely different",
+			from:           []int{1, 2},
+			to:             []int{3, 4},
+			expectedAdd:    []int{3, 4},
 			expectedRemove: []int{1, 2},
 		},
 		{
-			name:         "from is subset of to",
-			from:         []int{1, 2},
-			to:           []int{1, 2, 3, 4},
-			expectedAdd:  []int{3, 4},
+			name:           "from is subset of to",
+			from:           []int{1, 2},
+			to:             []int{1, 2, 3, 4},
+			expectedAdd:    []int{3, 4},
 			expectedRemove: []int{},
 		},
 		{
-			name:         "to is subset of from",
-			from:         []int{1, 2, 3, 4},
-			to:           []int{1, 2},
-			expectedAdd:  []int{},
+			name:           "to is subset of from",
+			from:           []int{1, 2, 3, 4},
+			to:             []int{1, 2},
+			expectedAdd:    []int{},
 			expectedRemove: []int{3, 4},
 		},
 		{
-			name:         "with duplicates in from",
-			from:         []int{1, 1, 2},
-			to:           []int{1, 3},
-			expectedAdd:  []int{3},
+			name:           "with duplicates in from",
+			from:           []int{1, 1, 2},
+			to:             []int{1, 3},
+			expectedAdd:    []int{3},
 			expectedRemove: []int{1, 2},
 		},
 		{
-			name:         "with duplicates in to",
-			from:         []int{1, 3},
-			to:           []int{1, 1, 2},
-			expectedAdd:  []int{1, 2},
+			name:           "with duplicates in to",
+			from:           []int{1, 3},
+			to:             []int{1, 1, 2},
+			expectedAdd:    []int{1, 2},
 			expectedRemove: []int{3},
 		},
 		{
-			name:         "both empty",
-			from:         []int{},
-			to:           []int{},
-			expectedAdd:  []int{},
+			name:           "both empty",
+			from:           []int{},
+			to:             []int{},
+			expectedAdd:    []int{},
 			expectedRemove: []int{},
 		},
 		{
-			name:         "from empty",
-			from:         []int{},
-			to:           []int{1, 2},
-			expectedAdd:  []int{1, 2},
+			name:           "from empty",
+			from:           []int{},
+			to:             []int{1, 2},
+			expectedAdd:    []int{1, 2},
 			expectedRemove: []int{},
 		},
 		{
-			name:         "to empty",
-			from:         []int{1, 2},
-			to:           []int{},
-			expectedAdd:  []int{},
+			name:           "to empty",
+			from:           []int{1, 2},
+			to:             []int{},
+			expectedAdd:    []int{},
 			expectedRemove: []int{1, 2},
 		},
 	}

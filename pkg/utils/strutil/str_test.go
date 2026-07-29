@@ -79,10 +79,10 @@ func (t testStringer) String() string {
 
 func TestJoin(t *testing.T) {
 	tests := []struct {
-		name      string
-		sep       string
-		elements  []fmt.Stringer
-		expected  string
+		name     string
+		sep      string
+		elements []fmt.Stringer
+		expected string
 	}{
 		{
 			name:     "join with comma",
@@ -232,12 +232,12 @@ func TestRandom(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Random(tt.charset, tt.length)
-			
+
 			// Check length
 			if len(result) != tt.length {
 				t.Errorf("Random() length = %v, want %v", len(result), tt.length)
 			}
-			
+
 			// Check all characters are from charset
 			for _, char := range result {
 				if !strings.ContainsRune(tt.charset, char) {

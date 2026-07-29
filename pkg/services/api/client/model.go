@@ -22,7 +22,7 @@ type Request struct {
 	Cookies     []*http.Cookie
 	ContentType string
 	Body        any
-	Encoding api.Encoding
+	Encoding    api.Encoding
 }
 
 func (r *Request) ParseBody() (io.Reader, error) {

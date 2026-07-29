@@ -18,22 +18,22 @@ import (
 const ErrorCodeCmd string = "CMD_ERROR"
 
 type cmd struct {
-	ctx        context.Context
-	bin        string
-	args       []string
-	envs       []string
-	async      bool
-	dir        string
-	cancel     func(*os.Process) error
-	waitDelay  time.Duration
-	maxBuffer  int
-	stdout     io.Writer
-	stderr     io.Writer
-	in         io.Reader
-	out        io.Reader
-	outBuff    *bytes.Buffer
-	errBuff    *bytes.Buffer
-	p          *exec.Cmd
+	ctx       context.Context
+	bin       string
+	args      []string
+	envs      []string
+	async     bool
+	dir       string
+	cancel    func(*os.Process) error
+	waitDelay time.Duration
+	maxBuffer int
+	stdout    io.Writer
+	stderr    io.Writer
+	in        io.Reader
+	out       io.Reader
+	outBuff   *bytes.Buffer
+	errBuff   *bytes.Buffer
+	p         *exec.Cmd
 }
 
 func New(bin string, args []string, opts ...Option) Command {
