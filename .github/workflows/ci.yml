@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # The SQLite driver is a cgo wrapper around the C library, and the test
+      # helper builds an in-memory SQLite DB, so tests cannot run with cgo off.
+      CGO_ENABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # example/ declares go 1.25.8; the framework only needs 1.24.
+          go-version: stable
+          cache-dependency-path: |
+            go.sum
+            example/go.sum
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^plugins/framingo/skills/framingo/_templates/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt-clean:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Build (framework)
+        run: go build ./...
+
+      - name: Vet (framework)
+        run: go vet ./...
+
+      # -race is load-bearing here: the auth session tests exist to catch a
+      # lock-order inversion and a shared-credential data race, and neither
+      # fails without the detector.
+      - name: Test (framework)
+        run: go test -race -timeout 10m ./...
+
+      - name: Build (example)
+        working-directory: example
+        run: go build ./...
+
+      - name: Vet (example)
+        working-directory: example
+        run: go vet ./...
+
+      - name: Test (example)
+        working-directory: example
+        run: go test -race -timeout 10m ./...
