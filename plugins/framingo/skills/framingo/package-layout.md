@@ -40,7 +40,7 @@ pkg/
 
 | Category | Purpose | Key Rule |
 |---|---|---|
-| `components/cmd/` | Cobra command trees — one subdir per deployable binary (e.g., `app/` for the daemon, `cli/` for the client) | Subdir name maps 1:1 to `build/binary/<name>/main.go`; no business logic — only flag parsing and delegation |
+| `components/cmd/` | Cobra command trees — one subdir per deployable binary (e.g., `app/` for the daemon, `cli/` for the client) | One subdir per binary under `build/binary/`, but the names need not match: the example pairs `cmd/app` → `build/binary/exampleapp` and `cmd/cli` → `build/binary/examplecli`. No business logic — only flag parsing and delegation |
 | `components/server/` | Application daemon — owns the supervisor, wires all services, handles signals | Only place that knows about ALL services; one file per concern (see Server Component below) |
 | `components/client/` | Go client SDK exposing typed methods over HTTP for the daemon's API | Consumed by `components/cmd/cli/` and external callers; depends only on `types/api/` and `types/entity/`, never on services |
 | `services/` | Business logic — each service is a self-contained unit with its own `Manager` interface | Must declare dependencies via `Dependencies()`, never import other services directly; implementation is unexported, exposed via interface from `types/model/` |
@@ -48,10 +48,23 @@ pkg/
 | `middlewares/` | Request processing — each middleware implements `api.Middleware` | Stateless request/response transformations only |
 | `types/api/` | API request/response structs | Tags: `json`, `form`, `query`, `validate`. NO gorm tags |
 | `types/entity/` | Pure business domain models | Tags: `json` only. Returned from services to callers |
-| `types/model/` | Service interfaces — one file per domain (`user.go` declares `model.User`) | Imported by routers and other services so the implementation can stay package-private; the public contract layer |
+| `types/model/` | Service **business** interfaces — one file per domain (`user.go` declares `model.User`) | Imported by routers and other services so the implementation can stay package-private; the public contract layer. Pairs with the service's own `Manager` — see below |
 | `types/orm/` | Database table models | Tags: `gorm` only. Must implement `TableName()`. Never exposed outside services |
 | `types/repo/` | Repository interfaces — one file per domain (data-access contracts) | Implemented by `services/repository/`; services depend on the interface, never on a concrete repo struct |
 | `utils/` | Shared helpers | Must be stateless, no service dependencies |
+
+### `types/model/` vs the service's own `Manager` — both, not either
+
+Every service declares its interface in two places. They are not duplicates:
+
+| File | Declares | Consumed by |
+|---|---|---|
+| `types/model/user.go` | `model.User` — business methods + `common.Service`, **no lifecycle** | Routers, other services |
+| `services/user/model.go` | `user.Manager` = `model.User` + the lifecycle interfaces it implements | Only `components/server/` wiring |
+
+A router's constructor takes `model.User`, never `user.Manager` — that's what stops the router from seeing (or calling) the service's `Start`/`Stop`. A router importing `pkg/services/...` has skipped the split.
+
+Templates for both files: [`_templates/types-model-order.go`](_templates/types-model-order.go) and [`_templates/services-order-model.go`](_templates/services-order-model.go).
 
 ## Type Separation Example
 
@@ -86,7 +99,7 @@ func (User) TableName() string { return "users" }
 
 ## Server Component — Application Daemon
 
-**IMPORTANT**: All server implementations MUST follow the file structure under `example/pkg/components/server/example/`. This is the standard pattern for creating the application daemon. Each file has a specific responsibility:
+**IMPORTANT**: All server implementations MUST follow this file structure — the reference implementation is [`example/pkg/components/server/example/`](https://github.com/xhanio/framingo/tree/main/example/pkg/components/server/example) in the framework repo. Each file has a specific responsibility:
 
 ```
 components/server/myapp/
@@ -240,29 +253,33 @@ func (m *manager) Init(ctx context.Context) error {
 
 **IMPORTANT**: All Go imports MUST be organized into exactly three groups, separated by blank lines:
 
-1. **Go standard library** packages
-2. **Third-party** packages
-3. **Project** packages (current module and `github.com/xhanio/*`)
+1. **Go standard library**
+2. **Everything external to your module** — third-party libraries *and* `github.com/xhanio/framingo/*` / `github.com/xhanio/errors`
+3. **Your own module** only
+
+The framework is a dependency like any other, so it goes in group 2, **not** with your own packages. Group 3 holds exclusively the current module.
 
 ```go
 import (
     // Group 1: Go standard library
+    _ "embed"
     "context"
-    "database/sql"
-    "fmt"
-    "time"
+    "path"
 
-    // Group 2: Third-party packages
+    // Group 2: third-party + framingo (external to this module)
     "github.com/labstack/echo/v4"
-    "github.com/spf13/viper"
-    "gorm.io/gorm"
-
-    // Group 3: Project packages (xhanio/* and current module)
     "github.com/xhanio/errors"
-    "github.com/xhanio/framingo/pkg/services/db"
+    fapi "github.com/xhanio/framingo/pkg/types/api"
     "github.com/xhanio/framingo/pkg/types/common"
     "github.com/xhanio/framingo/pkg/utils/log"
+    "gorm.io/gorm"
+
+    // Group 3: this module
+    "myapp/pkg/services/order"
+    "myapp/pkg/types/api"
 )
 ```
 
 Never mix groups. Never use more than three groups. Each group is alphabetically sorted.
+
+This is what every file under [`example/pkg/`](https://github.com/xhanio/framingo/tree/main/example/pkg) does, and what the files in [`_templates/`](_templates/) do — when in doubt, copy their grouping.

@@ -4,7 +4,7 @@ description: Use when working with Framingo (`github.com/xhanio/framingo`) Go co
 compatibility: Requires Go 1.24+. Framework module is github.com/xhanio/framingo.
 metadata:
   author: xhanio
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Framingo - Service-Oriented Go Framework
@@ -29,13 +29,54 @@ Framingo is a modular, production-ready Go framework for building HTTP API appli
 
 ## Starting a New Backend
 
-**For any new framingo backend project, fork the `example/` folder.** Don't scaffold from scratch.
+Two routes. **Check first whether the framingo repo is on this machine** (`example/` present, or the module in the Go module cache) — that decides which one you can actually run.
 
-`example/` is a self-contained Go module that ships a complete production-shaped service: supervisor wiring, PostgreSQL + migrations, pub/sub + message bus, WebSocket stream, RBAC (auth/user/role/organization/certificate), Echo router with auth & throttle middlewares, structured logging, pprof, signal handling, plus GoPro build templates, a CLI client, Docker image, and Kubernetes manifests.
+### Route A — fork `example/` (preferred, needs the repo)
 
-**Canonical recipe:** [example/QUICKSTART.md](../../example/QUICKSTART.md), sections **"Use This Folder as Your Starting Template"** and **"Forking the Example into Your Own Repo"**. That file owns the fork-and-rename steps (module path, `framingo-example`/`exampleapp`/`examplecli` → your names, directory renames under `build/`, `env/`, `kubernetes/`) and the "Keep vs. rip out" table for pruning system services you don't need.
+`example/` is a self-contained Go module shipping a production-shaped service: supervisor wiring, PostgreSQL + migrations, pub/sub + message bus, WebSocket stream, RBAC (auth/user/role/organization/certificate), Echo router with auth & throttle middlewares, structured logging, pprof, signal handling, plus GoPro build templates, a CLI client, Docker image, and Kubernetes manifests.
 
-After forking, use the rest of this skill as the per-package reference for the work you do inside the new project.
+Get it, then follow its QUICKSTART:
+
+```bash
+git clone https://github.com/xhanio/framingo
+# fork-and-rename recipe, "Keep vs. rip out" pruning table:
+#   framingo/example/QUICKSTART.md → "Use This Folder as Your Starting Template"
+```
+
+Online reference: <https://github.com/xhanio/framingo/blob/main/example/QUICKSTART.md>
+
+### Route B — scaffold from the bundled templates (no repo needed)
+
+This skill ships the load-bearing files in [_templates/](_templates/). Use this route when `example/` isn't reachable — **do not hand-write `api.Context` or `DiscoverHandlers` from the prose in this skill; copy the template.** Reconstructing them by hand produces a subtly different `Context` that every handler then depends on.
+
+```bash
+go mod init github.com/yourorg/myapp
+go get github.com/xhanio/framingo@latest
+
+mkdir -p cmd/myapp \
+         pkg/{components/{cmd,server},services,routers,middlewares,utils} \
+         pkg/types/{api,entity,model,orm,repo}
+
+# The project-owned api.Context + DiscoverHandlers. Compiles as-is.
+cp <skill>/_templates/api-context.go pkg/types/api/api.go
+
+# Canonical router triple — copy per domain, rename the package,
+# replace the `myapp` import paths with your module path.
+mkdir -p pkg/routers/order pkg/services/order
+cp <skill>/_templates/{router.go,handler.go,router.yaml} pkg/routers/order/
+
+# The service's two interface halves (see "The interface goes in two places")
+cp <skill>/_templates/types-model-order.go    pkg/types/model/order.go
+cp <skill>/_templates/services-order-model.go pkg/services/order/model.go
+```
+
+All five `types/` subdirs are part of the layout ([package-layout.md](package-layout.md)); `model/` in particular is **not optional** — the router template imports `myapp/pkg/types/model`.
+
+`_templates/api-context.go` is self-contained (no project types). Its trailing comment shows how to add `Credential()`/`Session()` accessors over your own `entity` package once you have one.
+
+Then: write services (see [Creating a New Service](#creating-a-new-service)), wire them in `pkg/components/server/` (see [package-layout.md](package-layout.md)), and register routers with the API server (see [api-server.md](api-server.md)).
+
+Either route, the rest of this skill is the per-package reference for the work inside the new project.
 
 ## Quick Reference
 
@@ -121,14 +162,38 @@ mgr.Init(ctx)
 mgr.Start(ctx)
 ```
 
+Full signature set — `Register` and `TopoSort` differ in whether they return an error, so don't guess:
+
+```go
+type Manager interface {          // = model.Supervisor + Initializable + Daemon + Debuggable
+    Name() string
+    Dependencies() []common.Service
+    Register(services ...common.Service)          // no return value
+    TopoSort() error
+    Services() []common.Service
+    Stats() ([]*entity.SupervisorStats, error)
+
+    Init(ctx context.Context) error
+    Start(ctx context.Context) error
+    Stop(wait bool) error
+    Info(w io.Writer, debug bool)
+
+    InitService(ctx context.Context, name string) error
+    StartService(name string) error
+    StopService(name string, wait bool) error
+    RestartService(ctx context.Context, name string) error
+    Restart(ctx context.Context) error             // whole graph
+}
+```
+
 The manager:
 - Resolves dependencies via topological sort
 - Calls `Init(ctx)` on `Initializable` services in dependency order
 - Calls `Start(ctx)` on `Daemon` services
-- Monitors `Liveness` and `Readiness` probes
-- Auto-restarts services that fail liveness checks
-- Exposes `Restart(ctx) error` for explicit runtime restart of the whole service graph
-- Handles graceful shutdown via OS signals
+- Monitors `Liveness` and `Readiness` probes; only liveness failure triggers restart (readiness is reported only)
+- Restart behaviour tunes via `WithMonitorInterval`, `WithRestartPolicy(maxRetries)`, `WithRestartDelay`, `WithShutdownTimeout`
+
+**The supervisor does NOT install signal handlers.** There is no `os/signal` anywhere in framingo. Trapping SIGINT/SIGTERM/SIGHUP/SIGUSR1/SIGUSR2 and calling `Stop`/`Restart` is application code you write in `pkg/components/server/<app>/signal.go` — see [package-layout.md](package-layout.md).
 
 ### Configuration Pattern
 
@@ -144,6 +209,10 @@ func (s *myService) Init(ctx context.Context) error {
     return nil
 }
 ```
+
+**You never call `WrapContext` yourself in a service.** The supervisor wraps the viper instance it was constructed with (`supervisor.New(config, ...)`) into the context it passes to every service's `Init` — that's the whole delivery mechanism.
+
+`FromContext` **never returns nil**: with no config in the context it returns an empty `viper.New()`, so every getter yields the zero value. No nil check is needed, but it also means a missing config looks like "all defaults" rather than an error — if a setting is mandatory, validate it in `Init`.
 
 Priority: CLI flags > env vars > YAML file > defaults.
 
@@ -167,7 +236,10 @@ import (
 )
 
 dbMgr := db.New(
-    db.WithType(db.Postgres),       // or db.MySQL, db.SQLite, db.Clickhouse
+    // WithType takes a plain string; db.Postgres/MySQL/SQLite/Clickhouse are
+    // string constants, so config.GetString("db.type") can be passed directly
+    // — there is no separate parse step.
+    db.WithType(db.Postgres),
     db.WithDataSource(db.Source{
         Host:     "localhost",
         Port:     5432,
@@ -177,13 +249,35 @@ dbMgr := db.New(
         Secure:   false,
         Params:   map[string]string{"sslmode": "disable"},
     }),
-    db.WithConnection(10, 5, 5*time.Minute, 0), // maxOpen, maxIdle, maxLifetime, maxIdleTime
+    // maxOpen, maxIdle, maxLifetime, maxIdleTime, execTimeout — all five required
+    db.WithConnection(10, 5, 5*time.Minute, 0, 30*time.Second),
     db.WithMigration("migrations", 0),            // directory, target version (0 = latest)
     db.WithLogger(logger),
 )
 ```
 
 If `WithType` names a driver that hasn't been blank-imported, `db.Manager` startup fails with `unsupported db type: <name> (driver not registered — blank-import the corresponding pkg/services/db/drivers/* package)`.
+
+Exact option signatures — **note `Source.Port` and `WithMigration`'s version are `uint`**, so read them with `GetUint`, not `GetInt`:
+
+```go
+func WithType(dbtype string) Option
+func WithName(name string) Option
+func WithDataSource(source Source) Option
+func WithMigration(sqlDir string, version uint) Option
+func WithConnection(maxOpen, maxIdle int, maxLifetime, maxIdleTime, execTimeout time.Duration) Option
+func WithLogger(logger log.Logger) Option
+
+type Source struct {
+    Host     string
+    Port     uint                 // GetUint
+    User     string
+    Password string
+    DBName   string
+    Secure   bool
+    Params   map[string]string    // GetStringMapString
+}
+```
 
 ### Manager Interface
 
@@ -230,11 +324,12 @@ txCtx := db.WrapContext(ctx, tx)
 
 ### Dynamic Config Keys
 
-During `Init(ctx)`, the DB manager reads these from Viper:
+During `Init(ctx)`, the DB manager re-reads these from the context Viper, **overriding whatever `WithConnection` set at construction** — so a restart picks up pool changes without a rebuild:
 - `db.connection.max_open` - max open connections
 - `db.connection.max_idle` - max idle connections
 - `db.connection.max_lifetime` - connection max lifetime
 - `db.connection.max_idle_time` - idle connection max lifetime
+- `db.connection.exec_timeout` - query execution timeout
 
 ### ORM Base Types
 
@@ -277,7 +372,7 @@ import (
 
 ### Handler signature — use the project `api.Context`
 
-**When defining an API, write handlers as `func(c api.Context) error` — not `func(c echo.Context) error`.** `api.Context` is the interface *your project* defines (canonical version: [`example/pkg/types/api/api.go`](../../example/pkg/types/api/api.go)) that embeds `echo.Context` **and** `context.Context`, and adds project helpers:
+**When defining an API, write handlers as `func(c api.Context) error` — not `func(c echo.Context) error`.** `api.Context` is the interface *your project* defines (canonical version: [`example/pkg/types/api/api.go`](_templates/api-context.go)) that embeds `echo.Context` **and** `context.Context`, and adds project helpers:
 
 ```go
 // pkg/routers/user/handler.go
@@ -307,7 +402,7 @@ Why this is the recommendation:
 
 Same for WebSocket handlers: `func(c api.Context, conn *websocket.Conn) error`.
 
-If a project has no `pkg/types/api/api.go` yet (i.e. it wasn't forked from `example/`), copy [`example/pkg/types/api/api.go`](../../example/pkg/types/api/api.go) into it before writing handlers, and adjust the `entity` import to the project's own.
+If a project has no `pkg/types/api/api.go` yet (i.e. it wasn't forked from `example/`), copy [`example/pkg/types/api/api.go`](_templates/api-context.go) into it before writing handlers, and adjust the `entity` import to the project's own.
 
 ### `Handlers()` — call `DiscoverHandlers` in each `router.go`
 
@@ -332,10 +427,18 @@ Don't hand-write the map (`map[string]any{"ListUsers": r.ListUsers}`) — it for
 import "github.com/xhanio/framingo/pkg/services/api/server"
 
 srvMgr := server.New(server.WithLogger(logger))
-srvMgr.Add("http", server.WithEndpoint("0.0.0.0", 8080, "/"))
 
-srvMgr.RegisterMiddlewares(authMW, corsMW)   // must come before routers
-srvMgr.RegisterRouters(userRouter, orderRouter)
+// Add / RegisterMiddlewares / RegisterRouters ALL return error — check them.
+// port is uint: use config.GetUint(...), not GetInt.
+if err := srvMgr.Add("http", server.WithEndpoint("0.0.0.0", 8080, "/")); err != nil {
+    return errors.Wrap(err)
+}
+if err := srvMgr.RegisterMiddlewares(authMW, corsMW); err != nil {   // before routers
+    return errors.Wrap(err)
+}
+if err := srvMgr.RegisterRouters(userRouter, orderRouter); err != nil {
+    return errors.Wrap(err)
+}
 ```
 
 For the full registration flow, router/middleware contracts, YAML format, handler key format, WebSocket handling, and middleware resolution, see [api-server.md](api-server.md).
@@ -348,6 +451,20 @@ Two layers: the low-level pub/sub primitive (`pkg/services/pubsub`) and a higher
 
 `pkg/services/pubsub` with pluggable drivers under `pkg/services/pubsub/driver/` (Memory, Redis, Kafka).
 
+`pubsub.Manager` = `model.Pubsub` + `Daemon`/`Initializable`/`Debuggable`. The business half:
+
+```go
+type Pubsub interface {
+    common.Service
+    // from identifies the publisher; subscribers registered under the same
+    // name do NOT receive their own message. Returns error.
+    Publish(ctx context.Context, from, topic, kind string, payload any) error
+    // Returns a CHANNEL, not a handler registration. Caller must Unsubscribe.
+    Subscribe(name, topic string) (<-chan entity.PubsubMessage, error)
+    Unsubscribe(name, topic string) error
+}
+```
+
 ```go
 import (
     "github.com/xhanio/framingo/pkg/services/pubsub"
@@ -355,10 +472,24 @@ import (
 )
 
 ps := pubsub.New(driver.NewMemory(logger), pubsub.WithLogger(logger))
-// ps.Publish(topic, msg); ps.Subscribe(topic, handler); ps.Unsubscribe(topic, handler)
+
+if err := ps.Publish(ctx, m.Name(), "orders/created", "order.created", order); err != nil {
+    return errors.Wrap(err)
+}
+
+ch, err := ps.Subscribe("reporting", "orders")   // also receives "orders/created"
+if err != nil {
+    return errors.Wrap(err)
+}
+defer ps.Unsubscribe("reporting", "orders")
+for msg := range ch {
+    // msg is entity.PubsubMessage — carries From, Topic, Kind, Payload
+}
 ```
 
-Features: hierarchical topic subscriptions, non-self-delivery, both typed and raw dispatch.
+**Do not reach for `Subscribe(topic, handler)`** — there is no handler-registration form at this layer. Handler-style dispatch (`HandleMessage`/`HandleRawMessage`) lives one layer up in `messagebus`; use that if you want handlers rather than channels.
+
+Topics are hierarchical in the subscriber's favour: subscribing to `orders` receives `orders`, `orders/created`, `orders/created/eu`, etc.
 
 #### Slow subscribers
 
@@ -407,14 +538,45 @@ Defined in `pkg/types/common` (not in `pubsub`/`messagebus`):
 ```go
 // Typed messages
 type Message interface { Kind() string }
-type MessageHandler interface { HandleMessage(ctx context.Context, e Message) error }
 
-// Raw messages
-type RawMessageHandler interface { HandleRawMessage(ctx context.Context, kind string, payload any) error }
+// Handlers — note each embeds Service, so a handler is always a service.
+type MessageHandler interface {
+    Service
+    HandleMessage(ctx context.Context, msg Message) error
+}
+type RawMessageHandler interface {
+    Service
+    HandleRawMessage(ctx context.Context, kind string, payload any) error
+}
 
-// Senders
-type MessageSender    interface { SendMessage(ctx context.Context, m Message) error }
-type RawMessageSender interface { SendRawMessage(ctx context.Context, kind string, payload any) error }
+// Senders — take the SENDER as `from` and return NOTHING. Do not write
+// `if err := ...SendMessage(...)`; it does not compile.
+type MessageSender interface {
+    Service
+    SendMessage(ctx context.Context, from Named, msg Message)
+}
+type RawMessageSender interface {
+    Service
+    SendRawMessage(ctx context.Context, from Named, kind string, payload any)
+}
+```
+
+`from` is what makes non-self-delivery work — pass the sending service itself:
+
+```go
+// inside a service whose receiver is m
+m.mb.SendRawMessage(ctx, m, "helloworld", result)   // m implements Named
+```
+
+`NewMessenger` returns a `model.Messenger` — the raw-channel handle used for bridges:
+
+```go
+type Messenger interface {
+    common.Named
+    Ch() <-chan entity.PubsubMessage        // closed by Close
+    Send(ctx context.Context, kind string, payload any) error
+    Close()                                  // unsubscribes and closes Ch
+}
 ```
 
 ## Logging
@@ -424,11 +586,40 @@ Located in `pkg/utils/log`. Built on zap.
 ```go
 import "github.com/xhanio/framingo/pkg/utils/log"
 
-// Use service-scoped logger
-logger := log.Default.By(myService)  // prefixes logs with service name
+// Build the app's root logger once, in components/server/<app>/service.go.
+// Without this the `log:` block in config.yaml is inert.
+logger := log.New(
+    log.WithLevel(config.GetInt("log.level")),            // -1=Debug 0=Info 1=Warn 2=Error
+    log.WithFileWriter(                                    // file, maxSize(MB), maxBackups, maxAge(days)
+        config.GetString("log.file"),
+        config.GetInt("log.rotation.max_size"),
+        config.GetInt("log.rotation.max_backups"),
+        config.GetInt("log.rotation.max_age"),
+    ),
+    // log.NoStdout(),          // file only — suppress the console core
+    // log.WithTimeFormat(fmt), // override the timestamp layout
+)
+
+// Scope it per service — By() prefixes records with the service name.
+logger = logger.By(myService)   // takes a common.Named
 logger.Infof("started on port %d", port)
 logger.Debugf("processing request %s", id)
+logger.Errorf("failed: %s", err)
 ```
+
+Exact signatures — the option type is `log.Option`, so you can build a slice conditionally (e.g. only add the file writer when `log.file` is set):
+
+```go
+func New(opts ...Option) Logger
+func WithLevel(level int) Option
+func WithFileWriter(file string, maxSize, maxBackups, maxAge int) Option
+func WithTimeFormat(format string) Option
+func NoStdout() Option
+```
+
+`log.Default` is a package-level logger at Debug level — fine for tests and examples, but an app that reads config should build its own with `log.New`.
+
+`Logger` also exposes `Sugared() *zap.SugaredLogger`, `Level() zapcore.Level`, `With(args ...any) Logger`, and the `Debug/Info/Warn/Error/Fatal` families in plain, `-ln`, and `-f` forms.
 
 ## Context Keys
 
@@ -443,7 +634,18 @@ Defined in `pkg/types/common/context.go`:
 
 ## Creating a New Service
 
-Implement the interfaces you need. Always use an **unexported struct** with an **exported interface** and factory function — this is a strict convention throughout framingo.
+Always an **unexported struct** with an **exported interface** and factory function — a strict convention throughout framingo.
+
+### The interface goes in two places
+
+This trips people up because both halves get called "the service interface". Templates: [`_templates/types-model-order.go`](_templates/types-model-order.go) and [`_templates/services-order-model.go`](_templates/services-order-model.go).
+
+| File | Declares | Who depends on it |
+|---|---|---|
+| `pkg/types/model/order.go` | `model.Order` — business methods + `common.Service`, **no lifecycle** | Routers and other services |
+| `pkg/services/order/model.go` | `order.Manager` = `model.Order` + the lifecycle interfaces it implements | Only `pkg/components/server/` wiring |
+
+A router takes `model.Order`, never `order.Manager`. That's what keeps the implementation package-private and stops services importing each other. If a router imports `pkg/services/...`, the split has been skipped.
 
 ```go
 package myservice
@@ -537,6 +739,13 @@ For the full category rules, type-separation example, server component file stru
 - Don't declare handlers as `func(c echo.Context) error` — use the project's `api.Context` (`<project>/pkg/types/api`). Handlers that take `echo.Context` compile and run, so nothing tells you it's wrong; you just lose `context.Context` (forcing `c.Request().Context()` at every service call) and the `Credential()`/`Session()`/`TraceID()` helpers.
 - Don't hand-write the `Handlers()` map — each router's `router.go` returns `api.DiscoverHandlers(r)` (plus the debug log). Listing `map[string]any{"ListUsers": r.ListUsers}` by hand forces `echo.HandlerFunc` signatures (so you lose `api.Context`) and breaks on rename. Keep it in `router.go`; `handler.go` holds bodies only.
 - Don't look for `Context` in framingo's `pkg/types/api` — it isn't there. `Context`/`DiscoverHandlers` are **project**-side (`example/pkg/types/api/api.go`); framingo's package (aliased `fapi`) only has `Router`, `Middleware`, `ErrorBody`, `ContextKey*`. Importing both unaliased is a compile error — alias the framework one `fapi`.
+- Don't hand-write `api.Context`/`DiscoverHandlers` from this skill's prose — copy [_templates/api-context.go](_templates/api-context.go). A reconstruction compiles but diverges, and every handler in the project then depends on the divergence.
+- Don't give a router a `pkg/services/...` dependency — it takes the `model.X` business interface. Importing the service package leaks the implementation and its lifecycle methods.
+- `SendMessage`/`SendRawMessage` return **nothing** and take the sender as the second arg: `mb.SendRawMessage(ctx, m, kind, payload)`. `if err := mb.SendMessage(...)` does not compile.
+- `pubsub.Subscribe(name, topic)` returns a **channel**, not a handler registration — there is no `Subscribe(topic, handler)`. For handler-style dispatch use `messagebus`.
+- Ports are `uint`, not `int`: `server.WithEndpoint(host, port uint, prefix)` and `db.Source.Port uint`. Feed them `config.GetUint(...)` — `GetInt` is a compile error.
+- `db.WithConnection` takes **five** args (`maxOpen, maxIdle, maxLifetime, maxIdleTime, execTimeout`); the four-arg form doesn't compile.
+- Every `func:` in `router.yaml` needs a matching method, or registration fails at startup with `handler function <Name> not found in router.Handlers()`. Middleware names must be registered first, or `middleware <name> not found`.
 - Don't use the global Viper singleton — use the instance passed via `context.Context` (`confutil.FromContext(ctx)`).
 - After `echo.Shutdown` is called, the same echo instance can't be reused — the framework's api server rebuilds it on `Init`, but custom services must do the same if they wrap net/http servers.
 

@@ -11,7 +11,7 @@ Two different packages are in play throughout this document. Router code imports
 | `github.com/xhanio/framingo/pkg/types/api` | `fapi` | framingo | `Router`, `Middleware`, `HandlerKey`, `HandlerGroup`, `ErrorBody`, `WrapError`, `ContextKey*`, `Endpoint` |
 | `<project>/pkg/types/api` | none (`api`) | **you** | `Context`, `HandlerFunc`, `WebSocketHandlerFunc`, `WrapHandler`, `WrapWebSocket`, `DiscoverHandlers`, request/response DTOs |
 
-**`api.Context` in this document is always the project's**, e.g. [`example/pkg/types/api/api.go`](../../../example/pkg/types/api/api.go). Framingo does **not** define a `Context` interface — don't go looking for one in `fapi`, and don't import both packages unaliased (compile error).
+**`api.Context` in this document is always the project's**, e.g. [`example/pkg/types/api/api.go`](_templates/api-context.go). Framingo does **not** define a `Context` interface — don't go looking for one in `fapi`, and don't import both packages unaliased (compile error).
 
 ## Route Registration Flow
 
@@ -68,7 +68,7 @@ A Router provides two things: a YAML config declaring routes, and a map of handl
 
 ### Handler signature: use the project `api.Context`, not `echo.Context`
 
-**Declare every handler as `func(c api.Context) error`** — where `api.Context` is the interface **your project** defines (`<project>/pkg/types/api`, *not* framingo's `fapi`), embedding `echo.Context` + `context.Context`. Canonical implementation to copy: [`example/pkg/types/api/api.go`](../../../example/pkg/types/api/api.go).
+**Declare every handler as `func(c api.Context) error`** — where `api.Context` is the interface **your project** defines (`<project>/pkg/types/api`, *not* framingo's `fapi`), embedding `echo.Context` + `context.Context`. Canonical implementation to copy: [`example/pkg/types/api/api.go`](_templates/api-context.go).
 
 What you get over a bare `echo.Context`:
 
@@ -309,7 +309,7 @@ Built-in server middlewares (applied to all routes automatically):
 
 ## Error Response Format
 
-The server's built-in error middleware runs every handler error through [`api.WrapError`](../../../pkg/types/api/error.go) and emits the wire-level [`api.ErrorBody`](../../../pkg/types/api/error.go):
+The server's built-in error middleware runs every handler error through [`api.WrapError`](https://github.com/xhanio/framingo/blob/main/pkg/types/api/error.go) and emits the wire-level [`api.ErrorBody`](https://github.com/xhanio/framingo/blob/main/pkg/types/api/error.go):
 
 ```go
 type ErrorBody struct {
@@ -326,7 +326,7 @@ Returning `errors.NotFound.Newf(...)` from a handler sets `Status: 404` and `Kin
 
 A bare `errors.Category` returned from a handler (e.g. `return errors.NotImplemented.New()`) emits the status + `Kind` with no message. Non-`xhanio/errors` errors fall through to `500` with the raw `Error()` string as `Message`.
 
-`Source` is populated automatically by the server's built-in error middleware with the name passed to `srvMgr.Add("<name>", ...)` (e.g. `"http"`, `"admin"`). It is informational — useful when a caller talks to multiple framingo servers or when a gateway aggregates errors from several upstreams. Clients SHOULD NOT branch logic on `Source` value (the server name is a deployment detail, not part of the API contract). Its main practical use is the client-side check at [`pkg/services/api/client/client.go`](../../../pkg/services/api/client/client.go) where an empty `Source` after a successful JSON parse signals "this response did not originate from a framingo server" — for example, a load balancer's 503 page or an HTML error from an upstream proxy.
+`Source` is populated automatically by the server's built-in error middleware with the name passed to `srvMgr.Add("<name>", ...)` (e.g. `"http"`, `"admin"`). It is informational — useful when a caller talks to multiple framingo servers or when a gateway aggregates errors from several upstreams. Clients SHOULD NOT branch logic on `Source` value (the server name is a deployment detail, not part of the API contract). Its main practical use is the client-side check at [`pkg/services/api/client/client.go`](https://github.com/xhanio/framingo/blob/main/pkg/services/api/client/client.go) where an empty `Source` after a successful JSON parse signals "this response did not originate from a framingo server" — for example, a load balancer's 503 page or an HTML error from an upstream proxy.
 
 ## Consuming the Server with `pkg/services/api/client`
 
