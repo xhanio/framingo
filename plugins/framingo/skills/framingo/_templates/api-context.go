@@ -71,11 +71,15 @@ func (c *ctx) Err() error {
 	return c.Request().Context().Err()
 }
 
+// Value routes string keys through echo's request-scoped Get store (that's
+// where framingo's ContextKey* values land), and falls through to the
+// underlying request context for everything else — so typed context keys set
+// by stdlib/third-party middleware still resolve.
 func (c *ctx) Value(key any) any {
 	if k, ok := key.(string); ok {
 		return c.Get(k)
 	}
-	return nil
+	return c.Request().Context().Value(key)
 }
 
 func (c *ctx) TraceID() (string, bool) {

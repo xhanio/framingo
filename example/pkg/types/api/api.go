@@ -76,7 +76,7 @@ func (c *ctx) Value(key any) any {
 	if k, ok := key.(string); ok {
 		return c.Get(k)
 	}
-	return nil
+	return c.Request().Context().Value(key)
 }
 
 func (c *ctx) Credential() (*entity.Credential, bool) {
