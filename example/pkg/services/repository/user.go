@@ -116,15 +116,26 @@ func (m *manager) ListUsers(ctx context.Context, opts entity.UserListOptions) ([
 				return errors.DBFailed.Wrap(err)
 			}
 		}
+		// Fetch every contact in one query rather than one per user: the
+		// per-user form made listing N users cost N+1 round trips.
+		ids := make([]int32, 0, len(users))
 		for _, user := range users {
-			// Get contact information for each user
-			contact, err := m.getContact(itx, user.ContactID)
-			if err != nil {
-				if !errors.Is(err, errors.NotFound) {
-					return errors.Wrap(err)
-				}
+			ids = append(ids, user.ContactID)
+		}
+		byID := make(map[int32]*orm.Contact, len(ids))
+		if len(ids) > 0 {
+			var found []*orm.Contact
+			if err := itx.Model(&orm.Contact{}).Where("id IN ?", ids).Find(&found).Error; err != nil {
+				return errors.DBFailed.Wrap(err)
 			}
-			contacts = append(contacts, contact)
+			for _, c := range found {
+				byID[c.ID] = c
+			}
+		}
+		// Preserve the previous behaviour for a user whose contact is missing:
+		// a nil entry, keeping contacts index-aligned with users.
+		for _, user := range users {
+			contacts = append(contacts, byID[user.ContactID])
 		}
 		return nil
 	})
