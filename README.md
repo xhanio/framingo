@@ -34,7 +34,7 @@
 - [Core Modules](#core-modules)
 - [Building Your First Application](#building-your-first-application)
 - [Documentation](#documentation)
-- [Examples](#examples)
+- [Starter Template](#starter-template)
 - [Key Concepts](#key-concepts)
 - [Configuration](#configuration)
 - [Production Deployment](#production-deployment)
@@ -50,9 +50,9 @@
 go get github.com/xhanio/framingo
 ```
 
-### Running the Bundled Example
+### Trying It Out
 
-The fastest path to a working server is the example app under [example/](example/), which uses [GoPro](https://github.com/xhanio/gopro) for builds.
+The fastest path to a working server is the template under [example/](example/), which uses [GoPro](https://github.com/xhanio/gopro) for builds. Run it first to confirm your toolchain, then fork it — see [Starter Template](#starter-template).
 
 Prerequisites:
 
@@ -560,8 +560,8 @@ curl 'http://localhost:8080/api/v1/hello?name=Framingo'
 
 ## Documentation
 
-- **[example/QUICKSTART.md](example/QUICKSTART.md)** — Build, run, and exercise the bundled example with GoPro
-- **[example/](example/)** — Full reference application (supervisor, db, pubsub, messagebus, RBAC, CLI client)
+- **[example/QUICKSTART.md](example/QUICKSTART.md)** — Fork the template, plus build/run with GoPro
+- **[example/](example/)** — The starter template: fork it to begin a new service (supervisor, db, pubsub, messagebus, RBAC, CLI client)
 - **Framework packages**:
   - **[pkg/services/](pkg/services/)** — supervisor, api server/client, db, pubsub, messagebus, planner
   - **[pkg/types/](pkg/types/)** — common, api, model, entity, orm, info
@@ -589,9 +589,11 @@ framingo code correctly without being walked through the conventions:
 It activates on its own whenever a session touches framingo. See
 [`plugins/framingo/README.md`](plugins/framingo/README.md).
 
-## Examples
+## Starter Template
 
-The [example/](example/) directory contains a production-shaped reference app demonstrating most framework features:
+**[example/](example/) is a template project — fork it rather than scaffolding from scratch.** It is a self-contained module wired end to end (supervisor, database + migrations, pub/sub and message bus, RBAC, WebSocket stream, CLI client, Docker image, Kubernetes manifests), so a new service starts from something that already builds and runs. [example/QUICKSTART.md](example/QUICKSTART.md) has the fork-and-rename recipe and a "keep vs. rip out" table for pruning what you don't need.
+
+It is a real module, not a snippet: its own `go.mod` carries `replace github.com/xhanio/framingo => ../` (annotated to remove when you fork), so `go build ./...` and `go test ./...` inside `example/` run against the framework as it currently stands in this tree rather than a published version.
 
 ```
 example/
@@ -627,7 +629,7 @@ gopro build binary -e local             # cgo-enabled build
 
 `local` is the only environment [`example/project.yaml`](example/project.yaml) defines. Add your own under `env:` there — pointing `config_src`/`config_tgt` at a matching `env/<name>/` tree — before building with `-e <name>`.
 
-### Features Demonstrated
+### What You Inherit by Forking
 
 - Supervisor-orchestrated lifecycle with topological dependency resolution
 - Multiple services: database, pubsub, message bus, RBAC, business logic
@@ -912,8 +914,8 @@ MIT License — see [LICENSE](LICENSE).
 
 ## Resources & Support
 
-- **[example/QUICKSTART.md](example/QUICKSTART.md)** — build & run the bundled example
-- **[example/](example/)** — reference implementations
+- **[example/QUICKSTART.md](example/QUICKSTART.md)** — fork the template, build & run
+- **[example/](example/)** — the starter template to fork
 - **[Issues](https://github.com/xhanio/framingo/issues)** — bug reports and feature requests
 - **[Discussions](https://github.com/xhanio/framingo/discussions)** — questions and community
 
