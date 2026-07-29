@@ -21,10 +21,9 @@ func (m *manager) Info(w io.Writer, debug bool) {
 	// Snapshot under the lock; Lease.Expired/ExpiresAt take the lease's own
 	// lock and must not be called while m is held (see lookupSession).
 	type row struct {
-		sid     string
-		cred    string
-		lease   lease.Lease
-		userRow bool
+		sid   string
+		cred  string
+		lease lease.Lease
 	}
 	m.RLock()
 	users := make(map[string]int, len(m.users))
@@ -61,7 +60,7 @@ func (m *manager) HandleMessage(ctx context.Context, e common.Message) error {
 				UserName:         username,
 				OrganizationName: preset.DefaultOrganizationName,
 			}
-			m.Logout(context.Background(), cred)
+			m.Logout(ctx, cred)
 		}
 	case message.ResetLocalUserPassword:
 		cred := &entity.Credential{
@@ -69,8 +68,7 @@ func (m *manager) HandleMessage(ctx context.Context, e common.Message) error {
 			UserName:         evt.Username,
 			OrganizationName: preset.DefaultOrganizationName,
 		}
-		m.Logout(context.Background(), cred)
+		m.Logout(ctx, cred)
 	}
-
 	return nil
 }
