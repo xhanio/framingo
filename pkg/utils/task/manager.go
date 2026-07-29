@@ -157,8 +157,17 @@ func (m *manager) Start(ctx context.Context) error {
 			}
 			select {
 			case <-m.ctx.Done():
+				// Close only pipe: this goroutine is its sole sender, so
+				// closing here cannot race a send, and workers reading it get
+				// a nil task that IsValid() rejects.
+				//
+				// workers is NOT closed here. Its only sender is the executor
+				// goroutine below, which selects on ctx.Done() at the same
+				// moment - closing it from this side races that send, and a
+				// send on a closed channel panics rather than merely tripping
+				// the race detector. Nothing ranges over workers, so leaving it
+				// to the GC is sufficient.
 				close(m.pipe)
-				close(m.workers)
 				m.pq.Reset()
 				m.log.Infof("stopped fetching execution tasks")
 				return
