@@ -24,6 +24,9 @@ func New(repo repository.Repository, opts ...Option) Manager {
 	for _, opt := range opts {
 		opt(m)
 	}
+	if m.name == "" {
+		m.name = path.Join(reflectutil.Locate(m))
+	}
 	if m.log == nil {
 		m.log = log.Default
 	}
@@ -31,9 +34,6 @@ func New(repo repository.Repository, opts ...Option) Manager {
 }
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
-	}
 	return m.name
 }
 

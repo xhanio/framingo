@@ -28,18 +28,19 @@ type router struct {
 }
 
 func New(um model.User, rm model.Role, am model.Auth, log log.Logger) fapi.Router {
-	return &router{
+	r := &router{
 		um:  um,
 		rm:  rm,
 		am:  am,
 		log: log,
 	}
-}
-
-func (r *router) Name() string {
 	if r.name == "" {
 		r.name = path.Join(reflectutil.Locate(r))
 	}
+	return r
+}
+
+func (r *router) Name() string {
 	return r.name
 }
 

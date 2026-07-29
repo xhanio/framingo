@@ -33,6 +33,9 @@ func newUser(repo repository.Repository, opts ...Option) *manager {
 	for _, opt := range opts {
 		opt(m)
 	}
+	if m.name == "" {
+		m.name = path.Join(reflectutil.Locate(m))
+	}
 	if m.log == nil {
 		m.log = log.Default
 	}
@@ -40,9 +43,6 @@ func newUser(repo repository.Repository, opts ...Option) *manager {
 }
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
-	}
 	return m.name
 }
 

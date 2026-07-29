@@ -40,6 +40,9 @@ func newManager(um model.UserAuthN, lm model.LDAPAuthN, tm model.APITokenAuthN, 
 	for _, opt := range opts {
 		opt(m)
 	}
+	if m.name == "" {
+		m.name = path.Join(reflectutil.Locate(m))
+	}
 	if m.log == nil {
 		m.log = log.Default
 	}
@@ -47,9 +50,6 @@ func newManager(um model.UserAuthN, lm model.LDAPAuthN, tm model.APITokenAuthN, 
 }
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
-	}
 	return m.name
 }
 

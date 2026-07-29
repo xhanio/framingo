@@ -57,14 +57,15 @@ type manager struct {
 }
 
 func New(configPath string) Server {
-	return &manager{
+	m := &manager{
 		config: newConfig(configPath),
 	}
-}
-
-func (m *manager) Name() string {
 	if m.name == "" {
 		m.name = path.Join(reflectutil.Locate(m))
 	}
+	return m
+}
+
+func (m *manager) Name() string {
 	return m.name
 }

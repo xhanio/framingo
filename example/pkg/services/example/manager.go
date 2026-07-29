@@ -34,6 +34,9 @@ func New(repo repository.Repository, mb common.RawMessageSender, opts ...Option)
 		wg:         &sync.WaitGroup{},
 	}
 	m.apply(opts...)
+	if m.name == "" {
+		m.name = path.Join(reflectutil.Locate(m))
+	}
 	m.log = m.log.By(m)
 	if m.ctx == nil {
 		m.ctx = context.Background()
@@ -42,9 +45,6 @@ func New(repo repository.Repository, mb common.RawMessageSender, opts ...Option)
 }
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
-	}
 	return m.name
 }
 

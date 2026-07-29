@@ -26,16 +26,17 @@ type router struct {
 }
 
 func New(cm model.Certificate, log log.Logger) fapi.Router {
-	return &router{
+	r := &router{
 		cm:  cm,
 		log: log,
 	}
-}
-
-func (r *router) Name() string {
 	if r.name == "" {
 		r.name = path.Join(reflectutil.Locate(r))
 	}
+	return r
+}
+
+func (r *router) Name() string {
 	return r.name
 }
 
