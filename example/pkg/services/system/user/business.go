@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 	"golang.org/x/crypto/bcrypt"
@@ -12,6 +13,10 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
+
+// validate is safe for concurrent use and caches struct metadata, so it is
+// built once per package rather than per call.
+var validate = validator.New()
 
 // POST /users/local-users
 // Create new user for all given organizations.
@@ -29,6 +34,12 @@ func (m *manager) Create(ctx context.Context, opts entity.UserCreateOptions) (*e
 // GET /users/local-users
 // TODO: Support multiple sort field and filtering.
 func (m *manager) List(ctx context.Context, opts entity.UserListOptions) ([]*entity.User, error) {
+	// Validated here rather than in the router so every caller is covered, not
+	// just HTTP. InvalidArgument is what the server's error handler turns into
+	// a 400.
+	if err := validate.Struct(opts); err != nil {
+		return nil, errors.InvalidArgument.Wrap(err)
+	}
 	users, contacts, err := m.repository.ListUsers(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err)

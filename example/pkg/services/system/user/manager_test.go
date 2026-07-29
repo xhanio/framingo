@@ -170,16 +170,30 @@ func TestListWithSort(t *testing.T) {
 		t.Fatalf("Error from Create User: %v", err.Error())
 	}
 
+	// An unsortable column is rejected by the options validator before it can
+	// reach the database. It used to surface as DBFailed — a 500 that also
+	// told the caller whether the column existed; now it is a 400.
 	if _, err := m.List(context.Background(), listFalseSortOpts); err != nil {
 		if be, ok := err.(errors.Error); ok {
-			if !errors.Is(be, errors.DBFailed) {
-				t.Fatalf("Expected error from ordering by a non-existing column: %v, but got: %v", errors.DBFailed, err.Error())
+			if !errors.Is(be, errors.InvalidArgument) {
+				t.Fatalf("Expected %v for a non-sortable column, but got: %v", errors.InvalidArgument, err.Error())
 			}
 		}
 	} else {
-		t.Fatalf("Expecting error from listing not existing user")
+		t.Fatalf("Expecting error from ordering by a non-sortable column")
 	}
 
+	// A column that exists but must not be exposed for ordering.
+	if _, err := m.List(context.Background(), entity.UserListOptions{SortBy: "password"}); err == nil {
+		t.Fatal("ordering by password should be rejected")
+	}
+
+	// The allowed columns still work.
+	for _, col := range []string{"", "id", "username", "role"} {
+		if _, err := m.List(context.Background(), entity.UserListOptions{SortBy: col}); err != nil {
+			t.Fatalf("sort_by=%q should be accepted, got %v", col, err)
+		}
+	}
 }
 
 func TestDelete(t *testing.T) {

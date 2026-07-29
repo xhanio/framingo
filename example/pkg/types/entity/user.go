@@ -27,8 +27,12 @@ type UserCreateOptions struct {
 
 type UserListOptions struct {
 	OrganizationID int32
-	SortBy         string
-	Desc           bool // false for ascending order; true for descending order
+	// SortBy reaches GORM as a column identifier. GORM quotes it, so it is not
+	// injectable, but an unknown value is a runtime SQL error (a 500) that also
+	// answers "does this column exist?". Constrain it to the columns a caller
+	// may legitimately order by — password is a column too.
+	SortBy string `validate:"omitempty,oneof=id username role"`
+	Desc   bool   // false for ascending order; true for descending order
 }
 
 // Pointer fields to differentiate between an empty string and a nil case

@@ -15,6 +15,7 @@ replace github.com/xhanio/framingo => ../
 
 require (
 	github.com/coder/websocket v1.8.14
+	github.com/go-playground/validator/v10 v10.13.0
 	github.com/google/uuid v1.6.0
 	go.step.sm/crypto v0.83.0
 	go.uber.org/zap v1.27.0
@@ -45,7 +46,6 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.13.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang-migrate/migrate/v4 v4.19.0 // indirect

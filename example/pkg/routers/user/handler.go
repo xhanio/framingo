@@ -47,6 +47,7 @@ func (r *router) Create(c api.Context) error {
 func (r *router) List(c api.Context) error {
 	opts := entity.UserListOptions{}
 	if sortBy := c.QueryParam("sort_by"); sortBy != "" {
+		// Validated by the service against UserListOptions' validate tag.
 		opts.SortBy = sortBy
 		if c.QueryParam("sort_order") == "desc" {
 			opts.Desc = true
