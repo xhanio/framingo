@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/coder/websocket"
+	"github.com/google/uuid"
 
 	"github.com/xhanio/errors"
 
@@ -19,7 +20,10 @@ func (r *router) Stream(c api.Context, conn *websocket.Conn) error {
 	if !ok || session == nil {
 		return errors.Unauthorized.Newf("session required for message stream")
 	}
-	messenger, err := r.mb.NewMessenger(fmt.Sprintf("ws:%s", session.UID()))
+	// The name must be unique PER CONNECTION, not per session: two tabs share
+	// one session, and Unsubscribe removes every subscriber with a given name,
+	// so a session-scoped name means closing one tab silently kills the other.
+	messenger, err := r.mb.NewMessenger(fmt.Sprintf("ws:%s:%s", session.UID(), uuid.NewString()))
 	if err != nil {
 		return errors.Wrap(err)
 	}
