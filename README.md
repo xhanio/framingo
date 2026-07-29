@@ -1,6 +1,6 @@
 # Framingo
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8.svg)](https://go.dev/)
 
 **Framingo** is a modular, service-oriented Go framework for building production-ready HTTP API applications. It provides service lifecycle management, dependency resolution, a declarative HTTP router, database integration, pub/sub messaging, and health monitoring — all wired together by a supervisor that handles graceful startup, shutdown, and automatic restart.
@@ -25,7 +25,7 @@
 
 - **Structured Logging** — Zap-based logger with file rotation and per-service scoping
 
-- **Production Ready** — Built-in OS signal handling (SIGINT/SIGTERM/SIGUSR1/SIGUSR2), pprof profiling, graceful shutdown, and error categorization via `xhanio/errors`
+- **Production Ready** — Graceful shutdown and error categorization via `xhanio/errors`, with the bundled example wiring OS signal handling (SIGINT/SIGTERM/SIGHUP/SIGUSR1/SIGUSR2) and pprof on top
 
 ## Table of Contents
 
@@ -53,6 +53,12 @@ go get github.com/xhanio/framingo
 ### Running the Bundled Example
 
 The fastest path to a working server is the example app under [example/](example/), which uses [GoPro](https://github.com/xhanio/gopro) for builds.
+
+Prerequisites:
+
+- **Go 1.25.8+** — the `example/` module's own `go` directive; the framework module itself only needs 1.24. On an older toolchain the default `GOTOOLCHAIN=auto` fetches it for you, but `GOTOOLCHAIN=local` will hard-fail
+- **A C toolchain**, since the example blank-imports the SQLite driver and therefore builds with `CGO_ENABLED=1`
+- **PostgreSQL on `localhost:5432`** with database `framingo_example` (user `framingo`, password `framingo_dev`) — that's what the local config points at. A compose file for it ships at [example/env/local/docker-compose/](example/env/local/docker-compose/)
 
 ```bash
 go install github.com/xhanio/gopro@latest
@@ -123,7 +129,7 @@ sequenceDiagram
 
     Client->>APIServer: HTTP Request
     APIServer->>Middleware: Process Request
-    Note over Middleware: Recover<br/>Info<br/>Throttle<br/>Logger<br/>Auth/Custom
+    Note over Middleware: Recover<br/>Logger<br/>Info<br/>Error<br/>Throttle<br/>Auth/Custom
     Middleware->>Router: Validated Request
     Router->>Service: Business Operation
     Service->>DB: Data Access
@@ -147,37 +153,39 @@ Production-ready service implementations:
   - Calls `Init(ctx)` and `Start(ctx)` in dependency order, `Stop()` in reverse
   - Monitors `Liveness`/`Readiness` probes and auto-restarts services that fail liveness
   - Per-service runtime control (`InitService`, `StartService`, `StopService`, `RestartService`)
-  - Whole-graph `Restart(ctx)` and OS signal handling
+  - Whole-graph `Restart(ctx)`, `Stats()` per service, and a `Debuggable.Info` dump
+  - Restart behavior is tunable: `WithMonitorInterval`, `WithRestartPolicy(maxRetries)`, `WithRestartDelay`, `WithShutdownTimeout`
 
 - **[api/server](pkg/services/api/server/)** — HTTP API server
   - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithThrottle(...))`
   - Declarative YAML routing via `api.Router`
   - Middleware pipeline with name-based resolution
   - WebSocket handlers (use method `WS` in router YAML)
-  - Built-in middlewares: recover, info, throttle, logger, error
+  - Built-in chain, applied in order: recover → logger → info → error → throttle, preceded by CORS when the manager is built with `WithDebug(true)`
 
 - **[api/client](pkg/services/api/client/)** — HTTP client with TLS, headers, cookies, body encoding (deflate), and structured error parsing — `NewRequest` builds, `Do` executes an `*http.Request`, `Send` does both in one shot
 
 - **[db](pkg/services/db/)** — Database manager (GORM)
   - Pluggable drivers under [db/drivers/](pkg/services/db/drivers/): PostgreSQL, MySQL, SQLite, ClickHouse — blank-import only the ones your binary needs (a SQLite-only binary drops ~17MB)
   - The SQLite driver uses [mattn/go-sqlite3](https://github.com/mattn/go-sqlite3), a cgo wrapper around the C library, so it needs `CGO_ENABLED=1` and a C toolchain. The other drivers are pure Go.
-  - Connection pooling (`WithConnection(maxOpen, maxIdle, maxLifetime, maxIdleTime)`)
+  - Connection pooling (`WithConnection(maxOpen, maxIdle, maxLifetime, maxIdleTime, execTimeout)`)
   - Migrations via `WithMigration(dir, version)`
   - Context-aware queries: `FromContext(ctx)` auto-extracts an active transaction
-  - `Transaction(ctx, fn, opts...)` wraps `fn` in a TX with rollback-on-error
+  - `Transaction(ctx, fn, opts...)` wraps `fn` in a TX with rollback-on-error, and nests on a transaction already in `ctx` via a savepoint instead of opening a second one
 
 - **[pubsub](pkg/services/pubsub/)** — Publish-subscribe primitive
   - Hierarchical topic subscriptions, non-self-delivery
   - Pluggable backends under [pubsub/driver/](pkg/services/pubsub/driver/): Memory, Redis, Kafka
-  - `Publish(topic, msg)`, `Subscribe(topic, handler)`, `Unsubscribe(topic, handler)`
+  - `Publish(ctx, from, topic, kind, payload)` fans out to every subscriber whose topic is a prefix of `topic`
+  - `Subscribe(name, topic)` returns a `<-chan entity.PubsubMessage` — a raw channel, not a handler registration; `Unsubscribe(name, topic)` closes it. Handler-style dispatch lives one layer up, in `messagebus`
   - Per-subscriber queue absorbs bursts; a subscriber that stops draining is handled by
     `driver.WithOnFull(...)` — `DropMessage` (default, counted and logged) or `DropSubscriber`
     (close the channel so the peer reconnects). Drop and eviction counts show up in `Info`
 
 - **[messagebus](pkg/services/messagebus/)** — Higher-level dispatch on top of `pubsub`
-  - Single well-known topic with module-centric routing
+  - Single well-known topic with module-centric routing — `Register(module)` picks up `common.MessageHandler` / `common.RawMessageHandler` and skips modules implementing neither
   - Typed (`common.Message`) and raw (`kind`, payload) handlers
-  - `NewMessenger()` for direct channel access, `AttachWebSocket()` to bridge a connection
+  - `NewMessenger(name)` for direct channel access, `AttachWebSocket(messenger, ws)` to bridge a connection (with server-side pings, tunable via `WithPing`)
 
 - **[planner](pkg/services/planner/)** — Task scheduling
   - Concurrent execution with priority, cancel, and result lookup
@@ -193,7 +201,7 @@ Interface contracts and shared types:
   - Messaging ([`message.go`](pkg/types/common/message.go)): `Message`, `MessageSender`, `RawMessageSender`, `MessageHandler`, `RawMessageHandler`
   - Context keys ([`context.go`](pkg/types/common/context.go)): `_config`, `_logger`, `_db`, `_tx`, `_credential`, `_session`, `_namespace`, `_trace`, `_api_request_info`, `_api_response_info`, `_api_error`
 
-- **[api](pkg/types/api/)** — HTTP types: `Router`, `Middleware`, `Handler`, `HandlerGroup`, `HandlerKey`, `Endpoint`, `ThrottleConfig`, `TLS`
+- **[api](pkg/types/api/)** — HTTP types: `Router`, `Middleware`, `Handler`, `HandlerGroup`, `HandlerKey`, `Endpoint`, `ThrottleConfig`, `ClientTLS`/`ServerTLS`, `ErrorBody`, `Encoding`, and the `RequestInfo`/`ResponseInfo`/`Stats` records the built-in middlewares stash on the request context
 
 - **[model](pkg/types/model/)** — Behavioral contracts for framework services: `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Messenger`, `Planner`
 
@@ -201,7 +209,7 @@ Interface contracts and shared types:
 
 - **[orm](pkg/types/orm/)** — Generic ORM base types: `Record[T]`, `Referenced[T]`, `Reference[T]`
 
-- **[info](pkg/types/info/)** — Build metadata (product name, version, git tag/branch, build date) injected at link time
+- **[info](pkg/types/info/)** — Build metadata (product name/model/version, project root/name/path, git tag/branch/commit, build version/type/date/time) injected at link time
 
 ### Data Structures (`pkg/structs/`)
 
@@ -217,14 +225,14 @@ Interface contracts and shared types:
 | Package | Purpose |
 | --- | --- |
 | **[certutil](pkg/utils/certutil/)** | X.509 CA/server/client cert generation and TLS config |
-| **[cmdutil](pkg/utils/cmdutil/)** | Context-aware external command execution with I/O capture |
+| **[cmdutil](pkg/utils/cmdutil/)** | Context-aware external command execution with I/O capture, plus `MergeArgs` for last-wins flag merging |
 | **[confutil](pkg/utils/confutil/)** | Viper instance propagated via `context.Context` |
-| **[envutil](pkg/utils/envutil/)** | Prefixed environment variable helpers |
+| **[envutil](pkg/utils/envutil/)** | Env-var prefix derivation (`EnvPrefix`) and last-wins env merging (`Merge`) |
 | **[infra](pkg/utils/infra/)** | OS-level helpers (timezone detection and loading) |
 | **[ioutil](pkg/utils/ioutil/)** | File copy/compress/encrypt with progress tracking and limits |
 | **[job](pkg/utils/job/)** | Job model with state, labels, results, statistics |
 | **[job/executor](pkg/utils/job/executor/)** | Executor with retry, timeout, cooldown, and stop control |
-| **[log](pkg/utils/log/)** | Zap-based logger with file rotation, custom levels, per-service scoping |
+| **[log](pkg/utils/log/)** | Zap-based logger with file rotation, custom levels, per-service scoping, and `NoStdout` to suppress the console core |
 | **[maputil](pkg/utils/maputil/)** | Map and set helpers (copy, diff, keys, membership) |
 | **[netutil](pkg/utils/netutil/)** | MAC/CIDR/IP helpers |
 | **[pageutil](pkg/utils/pageutil/)** | Pagination wrapper (items, total, params) |
@@ -460,13 +468,16 @@ func (m *manager) Init(ctx context.Context) error {
 
     m.api = server.New(server.WithLogger(m.log))
     if httpConfig := m.config.Sub("api.http"); httpConfig != nil {
-        m.api.Add("http",
+        // WithEndpoint takes a uint port — use GetUint, not GetInt
+        if err := m.api.Add("http",
             server.WithEndpoint(
                 httpConfig.GetString("host"),
-                httpConfig.GetInt("port"),
+                httpConfig.GetUint("port"),
                 httpConfig.GetString("prefix"),
             ),
-        )
+        ); err != nil {
+            return err
+        }
     }
 
     m.helloSvc = hello.New(hello.WithLogger(m.log))
@@ -482,7 +493,7 @@ func (m *manager) Init(ctx context.Context) error {
         return err
     }
 
-    return m.api.RegisterRouters(helloRouter.New(m.helloSvc))
+    return m.api.RegisterRouters(helloRouter.New(m.helloSvc, m.log))
 }
 
 func (m *manager) Start(ctx context.Context) error { return m.services.Start(ctx) }
@@ -565,6 +576,19 @@ go doc github.com/xhanio/framingo/pkg/services/api/server
 go doc github.com/xhanio/framingo/pkg/services/messagebus
 ```
 
+### Claude Code plugin
+
+The same material is packaged as a Claude Code skill so an agent writes
+framingo code correctly without being walked through the conventions:
+
+```
+/plugin marketplace add https://github.com/xhanio/plugins
+/plugin install framingo@xhanio
+```
+
+It activates on its own whenever a session touches framingo. See
+[`plugins/framingo/README.md`](plugins/framingo/README.md).
+
 ## Examples
 
 The [example/](example/) directory contains a production-shaped reference app demonstrating most framework features:
@@ -595,12 +619,13 @@ Build it via GoPro:
 
 ```bash
 cd example
-gopro build binary -e local             # cgo-enabled local build
-# gopro build binary -e prod            # static binary for production
+gopro build binary -e local             # cgo-enabled build
 # gopro build image -e local            # docker image
 
 ./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
+
+`local` is the only environment [`example/project.yaml`](example/project.yaml) defines. Add your own under `env:` there — pointing `config_src`/`config_tgt` at a matching `env/<name>/` tree — before building with `-e <name>`.
 
 ### Features Demonstrated
 
@@ -681,8 +706,9 @@ func (s *myService) Dependencies() []common.Service {
 ### Router Configuration
 
 ```yaml
-server: http
+server: http                    # which server from Add(name, ...) hosts this group
 prefix: /users
+middlewares: [authnuser]        # applied to every handler in the group
 handlers:
   - method: GET
     path: /:id
@@ -690,11 +716,21 @@ handlers:
   - method: POST
     path: /
     func: CreateUser
-    middlewares: [authnuser]
+    middlewares: [authz]        # handler middlewares run *before* group ones
+    permission: user.manage     # metadata; enforced by your own authz middleware
+  - method: GET
+    path: /status
+    func: Status
+    poll: true                  # suppress per-request logging for pollers
+    throttle:                   # overrides the server-level WithThrottle
+      rps: 5.0
+      burst_size: 10
   - method: WS
     path: /events
     func: Events
 ```
+
+`method` also accepts `ANY` to match every HTTP verb. `permission` is carried through to the handler's `RequestInfo` but never enforced by the framework — the example's `authz` and `feature` middlewares read it. Note the ordering: a handler's own `middlewares` are collected ahead of the group's, so they wrap the outside and run first.
 
 Each router embeds its `router.yaml` and exposes a `Handlers() map[string]any` that maps each `func:` key to a handler implementation. The framework accepts `echo.HandlerFunc` (or `func(echo.Context) error`) for HTTP and `func(echo.Context, *websocket.Conn) error` for WebSocket — but the **recommended** pattern is `func(c api.Context) error` (and `func(c api.Context, conn *websocket.Conn) error` for WS), where `api.Context` is a project-defined interface that embeds `echo.Context` and `context.Context`. A small `DiscoverHandlers` helper (see [`example/pkg/types/api/api.go`](example/pkg/types/api/api.go)) reflects over the router's methods and wraps the project-context signature into the echo signature the server expects. This keeps handlers free to evolve (extra binders, session/credential accessors, trace propagation) without rewriting every signature.
 
@@ -711,10 +747,12 @@ func (r *router) Handlers() map[string]any {
 ### Middleware Pipeline
 
 ```
-Request → Recover → Info → Throttle → Logger → custom (auth, deflate, …) → Handler → Response
+Request → [CORS] → Recover → Logger → Info → Error → Throttle → custom (auth, deflate, …) → Handler → Response
 ```
 
-Middlewares are resolved by name from the set registered with `srv.RegisterMiddlewares(...)`. Always register middlewares before routers.
+CORS is only inserted when the server manager is built with `WithDebug(true)`. The remaining five are always applied, in that order, ahead of any custom middleware.
+
+Custom middlewares are resolved by name from the set registered with `srv.RegisterMiddlewares(...)`, and the lookup happens while routers are being installed — so always register middlewares before routers, or registration fails with `NotImplemented: middleware <name> not found`.
 
 ### Error Handling
 
@@ -760,10 +798,11 @@ db:
   migration:
     dir: ./migrations
     version: 0            # 0 = latest
-  connection:
+  connection:             # re-read by db.Manager.Init on every init/restart
     max_open: 10
     max_idle: 5
     max_lifetime: 1h
+    max_idle_time: 30m
     exec_timeout: 30s
 
 api:
@@ -778,6 +817,8 @@ api:
 pprof:
   port: 6060              # optional
 ```
+
+Apart from `db.connection.*` — which `db.Manager.Init` reads straight from the context Viper, so a restart picks up pool changes without a rebuild — this layout is a convention, not a schema. Your wiring code maps keys onto constructor options, so rename freely as long as `Init(ctx)` stays the place dynamic values are read.
 
 Override at runtime:
 
@@ -794,13 +835,16 @@ export MYAPP_API_HTTP_PORT=9090
 FROM golang:1.24 AS builder
 WORKDIR /app
 COPY . .
-RUN go build -o app cmd/app/main.go
+RUN CGO_ENABLED=0 go build -o app cmd/app/main.go
 
 FROM alpine:latest
+RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /app/app /usr/local/bin/
 COPY config.yaml /etc/app/
 CMD ["app", "daemon", "-c", "/etc/app/config.yaml"]
 ```
+
+That assumes a pure-Go binary. If you blank-import the SQLite driver you need `CGO_ENABLED=1`, and the glibc-linked result won't run on Alpine — build and ship on the same libc, as the example does with `ubuntu:22.04` in [example/build/image/exampleapp/Dockerfile](example/build/image/exampleapp/Dockerfile).
 
 ### Kubernetes
 
@@ -864,7 +908,7 @@ Contributions are welcome.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+MIT License — see [LICENSE](LICENSE).
 
 ## Resources & Support
 
