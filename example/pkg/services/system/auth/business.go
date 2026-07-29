@@ -140,27 +140,26 @@ func (m *manager) createSession(ctx context.Context, credential *entity.Credenti
 	return session
 }
 
-func (m *manager) refreshSession(ctx context.Context, sessionID string) (*entity.Session, bool) {
-	session, ok := m.sessions[sessionID]
-	if ok {
-		session.Lease.Refresh(preset.SessionExpiration)
-	}
-	return session, ok
-}
-
-func (m *manager) closeSession(ctx context.Context, sessionID string) bool {
-	session, ok := m.sessions[sessionID]
-	if ok {
-		session.Lease.Cancel()
-	}
-	return ok
-}
-
-func (m *manager) GetSession(ctx context.Context, sessionID string) (*entity.Session, bool) {
+// lookupSession returns the session under a read lock and nothing else.
+//
+// Lease methods MUST NOT be called while holding m's lock. The lease runs its
+// OnExpired/OnCancel callbacks from its own goroutine while holding the
+// lease's lock, and those callbacks take m's lock — so calling into the lease
+// with m held inverts the acquisition order and deadlocks both goroutines
+// permanently (every later GetSession then blocks, hanging all authenticated
+// requests). Always snapshot here, release, then touch the lease.
+func (m *manager) lookupSession(sessionID string) (*entity.Session, bool) {
 	m.RLock()
 	defer m.RUnlock()
 	session, ok := m.sessions[sessionID]
 	return session, ok
+}
+
+// GetSession returns the stored session. Sharing it is safe because
+// entity.Credential is immutable once built — nothing request-scoped is
+// written back onto it.
+func (m *manager) GetSession(ctx context.Context, sessionID string) (*entity.Session, bool) {
+	return m.lookupSession(sessionID)
 }
 
 func (m *manager) HasSession(ctx context.Context, credential *entity.Credential) bool {
@@ -171,29 +170,41 @@ func (m *manager) HasSession(ctx context.Context, credential *entity.Credential)
 }
 
 func (m *manager) RefreshSession(ctx context.Context, sessionID string) bool {
-	m.RLock()
-	defer m.RUnlock()
-	_, ok := m.refreshSession(ctx, sessionID)
-	return ok
+	session, ok := m.lookupSession(sessionID)
+	if !ok {
+		return false
+	}
+	session.Lease.Refresh(preset.SessionExpiration) // lock released
+	return true
 }
 
 func (m *manager) CloseSession(ctx context.Context, sessionID string) bool {
-	m.Lock()
-	defer m.Unlock()
-	return m.closeSession(ctx, sessionID)
+	session, ok := m.lookupSession(sessionID)
+	if !ok {
+		return false
+	}
+	session.Lease.Cancel() // lock released; OnCancel reclaims it to unindex
+	return true
 }
 
 func (m *manager) Logout(ctx context.Context, credential *entity.Credential) bool {
+	// Collect the leases under the lock, cancel them after releasing it.
 	m.Lock()
-	defer m.Unlock()
-	result := false
+	var leases []lease.Lease
 	if sessions, ok := m.users[credential.UID()]; ok {
 		for sessionID := range sessions {
-			result = m.closeSession(ctx, sessionID) || result
+			if session, ok := m.sessions[sessionID]; ok {
+				leases = append(leases, session.Lease)
+			}
 		}
 		delete(m.users, credential.UID())
 	}
-	return result
+	m.Unlock()
+
+	for _, l := range leases {
+		l.Cancel()
+	}
+	return len(leases) > 0
 }
 
 // // PAM related

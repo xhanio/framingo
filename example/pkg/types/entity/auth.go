@@ -20,8 +20,12 @@ type Credential struct {
 	RequirePasswordReset bool       `json:"require_password_reset"` // filled by user service
 	OrganizationID       int32      `json:"-"`
 	OrganizationName     string     `json:"-"` // filled by user service
-	Permissions          []string   `json:"permissions"`
 }
+
+// A Credential is immutable once built. It is shared by every request on a
+// session, so anything request-scoped or derived — permissions, which are a
+// lookup on Role and can change under you — belongs in the response DTO, not
+// here. Keeping it immutable is what makes sharing it safe without copying.
 
 func (c *Credential) UID() string {
 	if c == nil {

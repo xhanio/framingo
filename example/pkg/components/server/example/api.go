@@ -18,12 +18,12 @@ import (
 func (m *manager) initAPI() error {
 	middlewares := []api.Middleware{
 		deflate.New(),
-		authnuser.New(m.auth, m.role),
+		authnuser.New(m.auth),
 		authz.New(m.role),
 	}
 	routers := []api.Router{
 		exampleRouter.New(m.example, m.log),
-		authRouter.New(m.auth, m.log),
+		authRouter.New(m.auth, m.role, m.log),
 		userRouter.New(m.user, m.role, m.auth, m.log),
 		roleRouter.New(m.role, m.log),
 		certRouter.New(m.certificate, m.log),

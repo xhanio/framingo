@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/xhanio/framingo/pkg/structs/lease"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/infra"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
@@ -14,23 +15,41 @@ import (
 )
 
 func (m *manager) Info(w io.Writer, debug bool) {
-	if debug {
-		m.RLock()
-		defer m.RUnlock()
-		t := printutil.NewTable(w)
-		t.Header(m.Name())
-		t.Title("Credential", "Sessions")
-		for cid, sessions := range m.users {
-			t.Row(cid, len(sessions))
-		}
-		t.NewLine()
-		t.Title("SessionID", "Credential", "Expired", "ExpiresAt")
-		for sid, session := range m.sessions {
-			t.Row(sid, session.Credential.UID(), session.Lease.Expired(), session.Lease.ExpiresAt().In(infra.Timezone).Format(common.TimeFormat))
-		}
-		t.NewLine()
-		t.Flush()
+	if !debug {
+		return
 	}
+	// Snapshot under the lock; Lease.Expired/ExpiresAt take the lease's own
+	// lock and must not be called while m is held (see lookupSession).
+	type row struct {
+		sid     string
+		cred    string
+		lease   lease.Lease
+		userRow bool
+	}
+	m.RLock()
+	users := make(map[string]int, len(m.users))
+	for cid, sessions := range m.users {
+		users[cid] = len(sessions)
+	}
+	rows := make([]row, 0, len(m.sessions))
+	for sid, session := range m.sessions {
+		rows = append(rows, row{sid: sid, cred: session.Credential.UID(), lease: session.Lease})
+	}
+	m.RUnlock()
+
+	t := printutil.NewTable(w)
+	t.Header(m.Name())
+	t.Title("Credential", "Sessions")
+	for cid, n := range users {
+		t.Row(cid, n)
+	}
+	t.NewLine()
+	t.Title("SessionID", "Credential", "Expired", "ExpiresAt")
+	for _, r := range rows {
+		t.Row(r.sid, r.cred, r.lease.Expired(), r.lease.ExpiresAt().In(infra.Timezone).Format(common.TimeFormat))
+	}
+	t.NewLine()
+	t.Flush()
 }
 
 func (m *manager) HandleMessage(ctx context.Context, e common.Message) error {

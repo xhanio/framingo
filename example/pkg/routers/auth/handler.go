@@ -47,9 +47,18 @@ func (r *router) Logout(c api.Context) error {
 	if session, ok := c.Session(); ok && session != nil {
 		r.am.CloseSession(c, session.ID)
 	}
+	// Attributes must match the cookie set at login (notably Path), or the
+	// browser scopes this deletion to the request's directory and leaves the
+	// original session cookie in place.
 	cookie := &http.Cookie{
-		Name:    fapi.CookiesKeySession,
-		Expires: time.Now(),
+		Name:     fapi.CookiesKeySession,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   true,
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
 	}
 	c.SetCookie(cookie)
 	return c.NoContent(http.StatusOK)
@@ -60,5 +69,21 @@ func (r *router) Session(c api.Context) error {
 	if !ok || credential == nil {
 		return errors.Unauthorized.New()
 	}
-	return c.JSON(http.StatusOK, credential)
+	// Resolved here, not carried on the credential: permissions derive from
+	// Role and can change while the session is alive.
+	permissions, err := r.rm.GetPermissionsByName(c, credential.Role)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	return c.JSON(http.StatusOK, api.SessionResponse{
+		Metadata:             credential.Metadata,
+		Source:               credential.Source,
+		Role:                 credential.Role,
+		APIToken:             credential.APIToken,
+		AgentID:              credential.AgentID,
+		UserID:               credential.UserID,
+		UserName:             credential.UserName,
+		RequirePasswordReset: credential.RequirePasswordReset,
+		Permissions:          permissions,
+	})
 }

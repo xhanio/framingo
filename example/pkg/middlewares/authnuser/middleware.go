@@ -13,7 +13,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/system/auth"
-	"github.com/xhanio/framingo/example/pkg/services/system/role"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
@@ -22,13 +21,12 @@ var _ fapi.Middleware = (*middleware)(nil)
 type middleware struct {
 	log  log.Logger
 	auth auth.Manager
-	role role.Manager
 }
 
-func New(auth auth.Manager, role role.Manager, opts ...Option) fapi.Middleware {
+// Authentication only - resolving what a role may do is authz's job.
+func New(auth auth.Manager, opts ...Option) fapi.Middleware {
 	m := &middleware{
 		auth: auth,
-		role: role,
 	}
 	for _, opt := range opts {
 		opt(m)
@@ -45,7 +43,7 @@ func (m *middleware) Name() string {
 }
 
 func (m *middleware) Dependencies() []common.Service {
-	return []common.Service{m.auth, m.role}
+	return []common.Service{m.auth}
 }
 
 func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -56,11 +54,6 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 			if err != nil {
 				return errors.Unauthorized.Wrap(err)
 			}
-			permissions, err := m.role.GetPermissionsByName(c.Request().Context(), credential.Role)
-			if err != nil {
-				return errors.Internal.Wrap(err)
-			}
-			credential.Permissions = permissions
 			c.Set(fapi.ContextKeyCredential, credential)
 		} else {
 			sessionID := sliceutil.First(
@@ -90,11 +83,9 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 			// if c.Request().Method != http.MethodGet {
 			session.Lease.Refresh(preset.SessionExpiration)
 			// }
-			permissions, err := m.role.GetPermissionsByName(c.Request().Context(), session.Credential.Role)
-			if err != nil {
-				return errors.Internal.Wrap(err)
-			}
-			session.Credential.Permissions = permissions
+			// The credential is immutable and shared across every request on
+			// this session — resolve permissions where they're consumed, don't
+			// write derived state onto it.
 			c.Set(fapi.ContextKeySession, session)
 			c.Set(fapi.ContextKeyCredential, session.Credential)
 		}

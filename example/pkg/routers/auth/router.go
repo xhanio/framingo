@@ -23,25 +23,29 @@ type router struct {
 	log  log.Logger
 
 	am model.Auth
+	rm model.Role
 }
 
-func New(am model.Auth, log log.Logger) fapi.Router {
-	return &router{
+func New(am model.Auth, rm model.Role, log log.Logger) fapi.Router {
+	r := &router{
 		am:  am,
+		rm:  rm,
 		log: log,
 	}
-}
-
-func (r *router) Name() string {
 	if r.name == "" {
 		r.name = path.Join(reflectutil.Locate(r))
 	}
+	return r
+}
+
+func (r *router) Name() string {
 	return r.name
 }
 
 func (r *router) Dependencies() []common.Service {
 	return []common.Service{
 		r.am,
+		r.rm,
 	}
 }
 
