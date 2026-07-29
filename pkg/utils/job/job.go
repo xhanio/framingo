@@ -119,10 +119,18 @@ func (j *job) Run(ctx context.Context, params any) bool {
 		j.initialize()
 		// set params
 		j.params = params
+		// ctx/cancel are read by Cancel() and Context() from other goroutines,
+		// so they must be published under the same lock as the rest of the
+		// state, not after it.
+		j.ctx, j.cancel = context.WithCancel(ctx)
 		j.Unlock()
 
-		j.ctx, j.cancel = context.WithCancel(ctx)
-		j.err = j.fn(j)
+		// Run fn without the lock held, then publish its error under it:
+		// Stats() reads j.err concurrently while the job is still running.
+		err := j.fn(j)
+		j.Lock()
+		j.err = err
+		j.Unlock()
 	}()
 	return true
 }
@@ -132,20 +140,27 @@ func (j *job) Wait() {
 }
 
 func (j *job) Cancel() bool {
-	if j.State() == StateRunning && j.cancel != nil {
-		j.log.Debugf("canceling job %s", j.id)
-		j.Lock()
-		j.state = StateCanceling
-		// j.sendEvent(JobActionUpdate)
+	j.Lock()
+	// Read state directly: State() takes the read lock, and this mutex is not
+	// reentrant.
+	if j.state != StateRunning || j.cancel == nil {
 		j.Unlock()
-		j.cancel()
-		j.cancel = nil
-		return true
+		return false
 	}
-	return false
+	j.state = StateCanceling
+	// j.sendEvent(JobActionUpdate)
+	cancel := j.cancel
+	j.cancel = nil
+	j.Unlock()
+
+	j.log.Debugf("canceling job %s", j.id)
+	cancel() // outside the lock: it wakes the job goroutine
+	return true
 }
 
 func (j *job) Context() context.Context {
+	j.RLock()
+	defer j.RUnlock()
 	if j.ctx == nil {
 		return context.Background()
 	}
