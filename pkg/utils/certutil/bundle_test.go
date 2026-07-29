@@ -2,14 +2,16 @@ package certutil
 
 import (
 	"crypto/tls"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
+
+	"github.com/youmark/pkcs8"
 )
 
 func TestBundle(t *testing.T) {
@@ -102,24 +104,52 @@ func TestBundle(t *testing.T) {
 	}
 }
 
-func TestPKCS8(t *testing.T) {
-	certBytes, err := os.ReadFile("/home/xhan/Downloads/dns.crt")
+// Generates its own material rather than reading a file from disk, so it runs
+// anywhere.
+func TestParsePEM(t *testing.T) {
+	ca, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err = ParsePEM(certBytes, nil, nil, "")
+	cert, _, key, err := ParsePEM(ca.CertPEM(), nil, ca.KeyPEM(), "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if cert == nil {
+		t.Fatal("no certificate parsed")
+	}
+	if key == nil {
+		t.Fatal("no key parsed")
+	}
+	if !cert.IsCA {
+		t.Fatal("expected a CA certificate")
 	}
 }
 
-func TestEncryptKey(t *testing.T) {
-	keyBytes, err := os.ReadFile("key.pem")
+// ParsePEMKey must decrypt a password-protected PKCS#8 key, and must fail on
+// the wrong password rather than returning a garbage key.
+func TestParseEncryptedPEMKey(t *testing.T) {
+	const password = "demo"
+
+	ca, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ParsePEMKey(keyBytes, "demo")
+	der, err := pkcs8.ConvertPrivateKeyToPKCS8(ca.Key(), []byte(password))
 	if err != nil {
 		t.Fatal(err)
+	}
+	encrypted := pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: der})
+
+	key, err := ParsePEMKey(encrypted, password)
+	if err != nil {
+		t.Fatalf("correct password should decrypt: %v", err)
+	}
+	if key == nil {
+		t.Fatal("no key parsed")
+	}
+
+	if _, err := ParsePEMKey(encrypted, "wrong"); err == nil {
+		t.Fatal("wrong password should fail")
 	}
 }

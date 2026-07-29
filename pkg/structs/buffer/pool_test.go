@@ -162,8 +162,12 @@ func TestPoolGetPutCycle(t *testing.T) {
 	if hits != 2 {
 		t.Errorf("Expected 2 hits, got %d", hits)
 	}
-	if creates != 1 {
-		t.Errorf("Expected 1 create (first get), got %d", creates)
+	// creates counts allocations, which happen inside sync.Pool's New. sync.Pool
+	// may drop a pooled buffer at any time (GC, per-P caches), so the second Get
+	// is allowed to allocate again - assert the floor, not an exact count, or
+	// this test is flaky.
+	if creates < 1 {
+		t.Errorf("Expected at least 1 create (first get), got %d", creates)
 	}
 	if hitRate != 100.0 {
 		t.Errorf("Expected hit rate 100%%, got %f%%", hitRate)
@@ -217,8 +221,10 @@ func TestPoolStats(t *testing.T) {
 	if hits != 4 {
 		t.Errorf("Expected 4 hits, got %d", hits)
 	}
-	if creates != 3 {
-		t.Errorf("Expected 3 creates, got %d", creates)
+	// Floor, not an exact count: if sync.Pool dropped either buffer that was
+	// Put above, the re-Get allocates again and creates climbs to 4 or 5.
+	if creates < 3 {
+		t.Errorf("Expected at least 3 creates, got %d", creates)
 	}
 	expectedHitRate := float64(4) / float64(5) * 100 // 80%
 	if hitRate != expectedHitRate {
