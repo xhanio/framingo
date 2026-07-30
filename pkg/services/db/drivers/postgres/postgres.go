@@ -6,6 +6,9 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
+	"maps"
+	"slices"
+	"strconv"
 
 	migratedb "github.com/golang-migrate/migrate/v4/database"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -43,8 +46,20 @@ func dsn(s db.Source) (string, error) {
 			params["sslmode"] = "disable"
 		}
 	}
-	value := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s", s.Host, s.Port, s.User, s.Password, s.DBName)
-	return paramutil.Keyword.Apply(value, params), nil
+	// Set the fields as entries rather than Sprintf them into a string, so the
+	// notation's quoting reaches them: a password holding a space would
+	// otherwise be mangled before quoting could see it. Params set last
+	// overwrite any field, sorted for a deterministic DSN.
+	entries := paramutil.NewEntries[string]()
+	entries.Set("host", s.Host)
+	entries.Set("port", strconv.FormatUint(uint64(s.Port), 10))
+	entries.Set("user", s.User)
+	entries.Set("password", s.Password)
+	entries.Set("dbname", s.DBName)
+	for _, k := range slices.Sorted(maps.Keys(params)) {
+		entries.Set(k, params[k])
+	}
+	return paramutil.Keyword.Render("", entries), nil
 }
 
 func cleanup(gdb *gorm.DB, _ string, schema bool) error {
