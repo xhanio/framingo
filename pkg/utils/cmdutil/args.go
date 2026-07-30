@@ -1,6 +1,10 @@
 package cmdutil
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/xhanio/framingo/pkg/structs/kv"
+)
 
 // This function merges argument sets left to right, so a later set overrides an
 // earlier one. A token longer than one character and starting with "-" is a
@@ -26,17 +30,11 @@ import "strings"
 //     ["--verbose", "file.txt"] parses file.txt as --verbose's value. There is
 //     no "--" terminator to guard against this.
 func MergeArgs(sets ...[]string) []string {
-	type slot struct {
-		key   string
-		raw   string
-		keyed bool
-	}
 	type flag struct {
 		inline bool
 		values []string
 	}
-	var slots []slot
-	flags := make(map[string]*flag)
+	entries := kv.New[*flag]()
 	for _, set := range sets {
 		var open *flag
 		for _, token := range set {
@@ -45,44 +43,42 @@ func MergeArgs(sets ...[]string) []string {
 					open.values = append(open.values, token)
 					continue
 				}
-				slots = append(slots, slot{raw: token})
+				entries.AddRaw(token)
 				continue
 			}
 			key := token
 			var values []string
 			inline := false
-			if i := strings.Index(token, "="); i >= 0 {
-				key = token[:i]
-				values = []string{token[i+1:]}
+			if k, v, ok := strings.Cut(token, "="); ok {
+				key = k
+				values = []string{v}
 				inline = true
 			}
-			f, ok := flags[key]
+			f, ok := entries.Get(key)
 			if !ok {
 				f = &flag{}
-				flags[key] = f
-				slots = append(slots, slot{key: key, keyed: true})
 			}
 			f.inline = inline
 			f.values = values
+			entries.Set(key, f)
 			open = f
 			if inline {
 				open = nil
 			}
 		}
 	}
-	result := make([]string, 0, len(slots))
-	for _, s := range slots {
-		if !s.keyed {
-			result = append(result, s.raw)
+	result := make([]string, 0, entries.Len())
+	for _, e := range entries.Entries() {
+		if !e.Keyed {
+			result = append(result, e.Raw)
 			continue
 		}
-		f := flags[s.key]
-		if f.inline {
-			result = append(result, s.key+"="+f.values[0])
+		if e.Value.inline {
+			result = append(result, e.Key+"="+e.Value.values[0])
 			continue
 		}
-		result = append(result, s.key)
-		result = append(result, f.values...)
+		result = append(result, e.Key)
+		result = append(result, e.Value.values...)
 	}
 	return result
 }

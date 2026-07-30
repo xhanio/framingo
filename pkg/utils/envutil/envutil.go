@@ -1,6 +1,10 @@
 package envutil
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/xhanio/framingo/pkg/structs/kv"
+)
 
 func EnvPrefix(name string) string {
 	pn := name
@@ -21,34 +25,24 @@ func EnvPrefix(name string) string {
 // The result is newly allocated and never aliases an input.
 // It has a time complexity of O(n) in the total number of entries.
 func Merge(sets ...[]string) []string {
-	type slot struct {
-		key   string
-		raw   string
-		keyed bool
-	}
-	var slots []slot
-	values := make(map[string]string)
+	entries := kv.New[string]()
 	for _, set := range sets {
 		for _, entry := range set {
-			i := strings.Index(entry, "=")
-			if i < 0 {
-				slots = append(slots, slot{raw: entry})
+			key, value, ok := strings.Cut(entry, "=")
+			if !ok {
+				entries.AddRaw(entry)
 				continue
 			}
-			key := entry[:i]
-			if _, ok := values[key]; !ok {
-				slots = append(slots, slot{key: key, keyed: true})
-			}
-			values[key] = entry[i+1:]
+			entries.Set(key, value)
 		}
 	}
-	result := make([]string, 0, len(slots))
-	for _, s := range slots {
-		if !s.keyed {
-			result = append(result, s.raw)
+	result := make([]string, 0, entries.Len())
+	for _, e := range entries.Entries() {
+		if !e.Keyed {
+			result = append(result, e.Raw)
 			continue
 		}
-		result = append(result, s.key+"="+values[s.key])
+		result = append(result, e.Key+"="+e.Value)
 	}
 	return result
 }
