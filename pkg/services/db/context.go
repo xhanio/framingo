@@ -29,6 +29,12 @@ func (m *manager) FromContextTimeout(ctx context.Context, timeout time.Duration)
 }
 
 func WrapContext(ctx context.Context, tx *gorm.DB) context.Context {
+	// The key is a plain string on purpose: the same value indexes echo's
+	// per-request store (echo.Context.Get/Set takes a string), so the api
+	// server can bridge the two. A private key type would not be reachable
+	// from the echo side. Collisions are avoided by the _-prefixed names in
+	// common/context.go rather than by the type system.
+	//nolint:staticcheck // SA1029: see above
 	return context.WithValue(ctx, common.ContextKeyTX, tx)
 }
 

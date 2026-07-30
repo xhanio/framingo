@@ -31,6 +31,9 @@ func (c *cli) StreamMessages(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
+	// Best-effort teardown: by the time this runs the connection is either
+	// already closed cleanly below, or being abandoned on an error path.
+	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	// On signal, send a proper close frame so the server sees a clean shutdown

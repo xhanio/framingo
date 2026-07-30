@@ -10,8 +10,6 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 )
 
-const viewAllOrganizationsID = 0
-
 // webapp/src/main/java/com/ensilo/webapp/rest/UserRestController.java
 type manager struct {
 	log  log.Logger

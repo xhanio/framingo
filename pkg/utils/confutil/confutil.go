@@ -17,5 +17,8 @@ func FromContext(ctx context.Context) *viper.Viper {
 }
 
 func WrapContext(ctx context.Context, v *viper.Viper) context.Context {
+	// Plain string key on purpose - see the note in db.WrapContext: these keys
+	// are shared with echo's string-keyed request store.
+	//nolint:staticcheck // SA1029: intentional, shared with echo's Get/Set
 	return context.WithValue(ctx, common.ContextKeyConfig, v)
 }

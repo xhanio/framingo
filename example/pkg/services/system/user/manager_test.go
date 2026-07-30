@@ -3,7 +3,6 @@ package user
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/model"
@@ -14,24 +13,6 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
-
-var usersTable = map[string]interface{}{
-	"ID":                1,
-	"Erased":            false,
-	"Hidden":            false,
-	"UpdateTime":        time.Time{},
-	"Version":           int64(0),
-	"Expired":           false,
-	"Locked":            false,
-	"PassCanExpired":    false,
-	"Disabled":          false,
-	"FailedLoginsCount": 0,
-	"Password":          "",
-	"Username":          "",
-	"Role":              "",
-	"OrganizationID":    0,
-	"ContactID":         nil,
-}
 
 var (
 	testUser    = "johndoe"

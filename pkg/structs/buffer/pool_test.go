@@ -188,7 +188,7 @@ func TestPoolStats(t *testing.T) {
 	buffer2 := pool.Get(2000)
 	buffer3 := pool.Get(10000000) // oversized
 
-	gets, puts, hits, creates, hitRate = pool.Stats()
+	gets, _, hits, creates, hitRate = pool.Stats() // puts is asserted after the Puts below
 	if gets != 3 {
 		t.Errorf("Expected 3 gets, got %d", gets)
 	}

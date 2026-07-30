@@ -89,6 +89,10 @@ func (p *pool[T]) Put(buffer []T) {
 
 	if pool, exists := p.pools[capacity]; exists {
 		buffer = buffer[:0]
+		// Slice rather than *[]T, so each Put allocates the 3-word header.
+		// Accepted: switching to *[]T would change what Get must unwrap and is
+		// a larger change than this pool's contention profile justifies.
+		//nolint:staticcheck // SA6002: see above
 		pool.Put(buffer)
 	}
 }
