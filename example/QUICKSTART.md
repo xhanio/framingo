@@ -11,9 +11,9 @@ The example is structured as a self-contained module (`github.com/xhanio/framing
 | Layer | What's wired up |
 |---|---|
 | **Binaries** | `exampleapp` (daemon) + `examplecli` (HTTP client CLI) |
-| **Supervisor** | Topologically-sorted lifecycle, signal handling, auto-restart on liveness failure |
+| **Supervisor** | Topologically-sorted lifecycle, auto-restart on liveness failure. Signal handling is app code, in `pkg/components/server/example/signal.go` — the framework installs no handlers |
 | **Persistence** | PostgreSQL via GORM, migrations, connection pooling, transactions |
-| **AuthN/AuthZ** | User login (with optional LDAP/API-token hooks), session cookies, role-based authorization, mTLS agent auth |
+| **AuthN/AuthZ** | User login (with optional LDAP/API-token hooks), session cookies, role-based authorization. `pkg/middlewares/authnagent/` sketches mTLS agent auth but is **not registered and not working** — its CN parsing rejects the certs this system issues, and it verifies only the signature, not expiry or key usage |
 | **Messaging** | Pub/sub primitive + message bus + WebSocket stream endpoint (`/api/v1/messages/stream`) |
 | **HTTP API** | Echo-based server with declarative YAML routing, throttling, deflate compression, feature flags |
 | **System services** | User, role, organization, certificate (PKI) management |
@@ -81,17 +81,21 @@ The supervisor's dependency resolution means you can delete a service entirely: 
 
 ## Prerequisites
 
-1. Go 1.24+
-2. Install GoPro: `go install github.com/xhanio/gopro@latest`
-3. (For the default config) a local PostgreSQL with database `framingo_example`, user `framingo`, password `framingo_dev`
+1. **Go 1.25.8+** — this module's own `go` directive (the framework itself only needs 1.24). On an older toolchain the default `GOTOOLCHAIN=auto` fetches it; `GOTOOLCHAIN=local` will fail.
+2. **A C toolchain** — the SQLite driver is blank-imported, so builds run with `CGO_ENABLED=1`.
+3. Install GoPro: `go install github.com/xhanio/gopro@latest`
+4. (For the default config) a local PostgreSQL with database `framingo_example`, user `framingo`, password `framingo_dev`
 
 ## Building
 
 ```bash
 cd example/                          # or your forked project root
 gopro build binary -e local          # CGO-enabled local dev build
-# gopro build binary -e prod         # static binary for production
 ```
+
+`local` is the only environment `project.yaml` defines. To build for another,
+add it under `env:` there — pointing `config_src`/`config_tgt` at a matching
+`env/<name>/` tree — before passing `-e <name>`.
 
 Produces:
 - `bin/exampleapp` — daemon (HTTP API server)
@@ -118,12 +122,14 @@ The endpoint is protected by `authnuser`, so log in first:
 ./bin/examplecli -e http://localhost:8080 logout
 ```
 
-Equivalent curl (after login persists a cookie at `~/.example`):
+Equivalent curl. `login` persists the session id to `~/.example` as
+`{"session_id":"..."}`, and the CLI sends it in the `X-SESSION-ID` header
+rather than as a cookie:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/example/helloworld \
   -H 'Content-Type: application/json' \
-  --cookie "$(cat ~/.example | jq -r .cookie)" \
+  -H "X-SESSION-ID: $(jq -r .session_id ~/.example)" \
   -d '{"message":"Hello"}'
 ```
 
@@ -148,7 +154,7 @@ Global flags: `-e/--endpoint`, `-v/--verbose`.
 ## Docker
 
 ```bash
-gopro build binary -e prod
+gopro build binary -e local
 gopro build image
 
 docker run -p 8080:8080 -p 6060:6060 \
@@ -174,7 +180,7 @@ kubectl port-forward svc/framingo-example 8080:8080
 
 ```bash
 gopro generate config -e local          # → dist/local/config/exampleapp/
-gopro generate config -e prod           # → dist/prod/config/exampleapp/
+# ...and one per environment you add under `env:` in project.yaml
 ```
 
 ## Debugging

@@ -229,7 +229,7 @@ Interface contracts and shared types:
 | **[confutil](pkg/utils/confutil/)** | Viper instance propagated via `context.Context` |
 | **[envutil](pkg/utils/envutil/)** | Env-var prefix derivation (`EnvPrefix`) and last-wins env merging (`Merge`) |
 | **[infra](pkg/utils/infra/)** | OS-level helpers (timezone detection and loading) |
-| **[ioutil](pkg/utils/ioutil/)** | File copy/compress/encrypt with progress tracking and limits |
+| **[ioutil](pkg/utils/ioutil/)** | File copy/compress/encrypt with progress tracking, plus `LimitWriter`/`LimitReader` for bounding untrusted streams (the reader fails past its limit rather than truncating) |
 | **[job](pkg/utils/job/)** | Job model with state, labels, results, statistics |
 | **[job/executor](pkg/utils/job/executor/)** | Executor with retry, timeout, cooldown, and stop control |
 | **[log](pkg/utils/log/)** | Zap-based logger with file rotation, custom levels, per-service scoping, and `NoStdout` to suppress the console core |
