@@ -25,6 +25,12 @@ var (
 	Flags = NewParams("=", " ", WithKeyPrefix("--", "-"), WithQuote(`"`, "'"), AllowRaw())
 	// Comma reads a=b,c="d,e".
 	Comma = NewParams("=", ",", WithQuote(`"`, "'"))
+	// Env reads KEY=VALUE entries as a process environment holds them: any
+	// name at all, one entry per token, joined by the NUL that separates an
+	// environment block. Quotes are text - the shell's business, not the
+	// environment's - and an entry with nothing before its equal sign is not
+	// a pair, which keeps the =C: entries of a Windows environment intact.
+	Env = NewParams("=", "\x00", WithBadKeyChars(""))
 )
 
 type params struct {
@@ -194,8 +200,10 @@ func (p *params) read(entries Entries[string], tokens []string, raw bool) bool {
 
 // cut splits a token into the key and value of a pair, the key keeping whatever
 // prefix it carries. A token that is missing a prefix the notation asks for, or
-// whose name holds a separator, an opener or a mark of a URI, is text rather
-// than a pair.
+// whose name holds an opener or a mark of a URI, is text rather than a pair. No
+// rule bars a name from the separator: a token cut out of a string cannot hold
+// one, the string having been split on it, and in a token list the separator is
+// text like any other.
 func (p *params) cut(token string) (string, string, bool) {
 	k, v, ok := strings.Cut(token, p.equal)
 	if !ok {
@@ -210,7 +218,7 @@ func (p *params) cut(token string) (string, string, bool) {
 		name = k[len(prefix):]
 	}
 	if name == "" || strings.ContainsAny(name, p.badKeys) ||
-		strings.Contains(name, p.sep) || (p.open != "" && strings.Contains(name, p.open)) {
+		(p.open != "" && strings.Contains(name, p.open)) {
 		return "", "", false
 	}
 	return k, p.unquote(v), true

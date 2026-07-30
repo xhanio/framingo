@@ -86,14 +86,13 @@ type Args interface {
 // holds every quote it knows - or begins with one and holds the rest - there
 // being no escape.
 //
-// A name - what is left of a key once its prefix is off - may not hold the
-// equal sign, the separator, the opener, or any character the notation calls
-// bad, which is "/@:" until WithBadKeyChars says otherwise; and where a
-// notation asks for prefixes a key must carry one. Text that reads otherwise is
-// not a pair: it stays in front of the section, or is kept where it stands if
-// the notation AllowRaw. That is what keeps a "?" inside a password from
-// opening a query, and what lets "mycmd --a=b -v" keep its command and its bare
-// flag.
+// A name - what is left of a key once its prefix is off - may not be empty or
+// hold the opener or any character the notation calls bad, which is "/@:" until
+// WithBadKeyChars says otherwise; and where a notation asks for prefixes a key
+// must carry one. Text that reads otherwise is not a pair: it stays in front of
+// the section, or is kept where it stands if the notation AllowRaw. That is
+// what keeps a "?" inside a password from opening a query, and what lets
+// "mycmd --a=b -v" keep its command and its bare flag.
 //
 // A key keeps the prefix it was written with, so --a and -a are two keys.
 type Params interface {
@@ -109,8 +108,8 @@ type Params interface {
 	// caller whose separator is the boundary between tokens rather than text of
 	// its own. A token that is not a pair is kept as a raw entry whether or not
 	// the notation AllowRaw, there being no text in front of a section here for
-	// it to belong to instead. A separator inside a token is text, no quotes
-	// needed, nothing having been split on it.
+	// it to belong to instead. A separator inside a token is text - in the name
+	// and the value alike - no quotes needed, nothing having been split on it.
 	ParseTokens(tokens []string) Entries[string]
 	// ParseTokensInto reads tokens into an Entries that may already hold params,
 	// as ParseTokens does otherwise. A key it already holds keeps its

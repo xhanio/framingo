@@ -126,6 +126,13 @@ func TestParams_ParseTokens(t *testing.T) {
 		assert.Equal(t, "1 2", got)
 	})
 
+	t.Run("keys a name that holds the separator", func(t *testing.T) {
+		entries := paramutil.Keyword.ParseTokens([]string{"a b=1"})
+		got, ok := entries.Get("a b")
+		assert.True(t, ok)
+		assert.Equal(t, "1", got)
+	})
+
 	t.Run("returns an empty entries for no tokens", func(t *testing.T) {
 		assert.Equal(t, 0, paramutil.Keyword.ParseTokens(nil).Len())
 	})
@@ -434,6 +441,30 @@ func TestNewParams(t *testing.T) {
 		got, ok := entries.Get("--a")
 		assert.True(t, ok)
 		assert.Equal(t, "x", got)
+	})
+}
+
+func TestParams_Env(t *testing.T) {
+	t.Run("takes any name at all", func(t *testing.T) {
+		entries := paramutil.Env.ParseTokens([]string{"PATH=/usr/bin", "dbus:addr=unix", "A B=1"})
+		assert.Equal(t, []paramutil.Param[string]{
+			{Key: "PATH", Value: "/usr/bin", Keyed: true},
+			{Key: "dbus:addr", Value: "unix", Keyed: true},
+			{Key: "A B", Value: "1", Keyed: true},
+		}, entries.List())
+	})
+
+	t.Run("keeps an entry with nothing before the equal sign as it stands", func(t *testing.T) {
+		entries := paramutil.Env.ParseTokens([]string{`=C:=C:\old`, "A=1"})
+		assert.Equal(t, []paramutil.Param[string]{
+			{Raw: `=C:=C:\old`},
+			{Key: "A", Value: "1", Keyed: true},
+		}, entries.List())
+	})
+
+	t.Run("treats quotes in a value as text", func(t *testing.T) {
+		tokens := []string{"FOO='bar'", `=C:=C:\x`, "A="}
+		assert.Equal(t, tokens, paramutil.Env.RenderTokens(paramutil.Env.ParseTokens(tokens)))
 	})
 }
 

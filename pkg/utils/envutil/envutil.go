@@ -19,7 +19,8 @@ func EnvPrefix(name string) string {
 // "=". A repeated key keeps its first-seen position and takes its last-seen
 // value, so Merge([]string{"A=1"}, []string{"A=2"}) returns ["A=2"].
 //
-// An entry with no "=" is passed through unchanged in place and is never used
+// An entry with no "=" - or with nothing before it, as the =C: entries of a
+// Windows environment - is passed through unchanged in place and is never used
 // as a merge key. Keys are case sensitive.
 //
 // The result is newly allocated and never aliases an input.
@@ -27,22 +28,7 @@ func EnvPrefix(name string) string {
 func Merge(sets ...[]string) []string {
 	entries := paramutil.NewEntries[string]()
 	for _, set := range sets {
-		for _, entry := range set {
-			key, value, ok := strings.Cut(entry, "=")
-			if !ok {
-				entries.AddRaw(entry)
-				continue
-			}
-			entries.Set(key, value)
-		}
+		paramutil.Env.ParseTokensInto(entries, set)
 	}
-	result := make([]string, 0, entries.Len())
-	for _, e := range entries.List() {
-		if !e.Keyed {
-			result = append(result, e.Raw)
-			continue
-		}
-		result = append(result, e.Key+"="+e.Value)
-	}
-	return result
+	return paramutil.Env.RenderTokens(entries)
 }

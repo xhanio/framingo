@@ -57,6 +57,16 @@ func TestMerge(t *testing.T) {
 			expected: []string{"a=1", "A=2"},
 		},
 		{
+			name:     "entry with nothing before the equals passes through unmerged",
+			sets:     [][]string{{`=C:=C:\old`, "A=1"}, {`=C:=C:\new`}},
+			expected: []string{`=C:=C:\old`, "A=1", `=C:=C:\new`},
+		},
+		{
+			name:     "quotes in a value are literal",
+			sets:     [][]string{{"FOO='bar'"}, {"BAR=\"x\""}},
+			expected: []string{"FOO='bar'", "BAR=\"x\""},
+		},
+		{
 			name:     "no sets",
 			sets:     nil,
 			expected: []string{},
