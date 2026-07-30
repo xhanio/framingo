@@ -3,7 +3,7 @@ package envutil
 import (
 	"strings"
 
-	"github.com/xhanio/framingo/pkg/structs/kv"
+	"github.com/xhanio/framingo/pkg/utils/paramutil"
 )
 
 func EnvPrefix(name string) string {
@@ -25,7 +25,7 @@ func EnvPrefix(name string) string {
 // The result is newly allocated and never aliases an input.
 // It has a time complexity of O(n) in the total number of entries.
 func Merge(sets ...[]string) []string {
-	entries := kv.New[string]()
+	entries := paramutil.NewEntries[string]()
 	for _, set := range sets {
 		for _, entry := range set {
 			key, value, ok := strings.Cut(entry, "=")
@@ -37,7 +37,7 @@ func Merge(sets ...[]string) []string {
 		}
 	}
 	result := make([]string, 0, entries.Len())
-	for _, e := range entries.Entries() {
+	for _, e := range entries.List() {
 		if !e.Keyed {
 			result = append(result, e.Raw)
 			continue

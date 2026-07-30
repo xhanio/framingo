@@ -46,6 +46,17 @@ func TestSource_DSN(t *testing.T) {
 			want:   "host=localhost port=5432 user=user password=password dbname=mydb sslmode=require",
 		},
 		{
+			name: "Postgres with an empty password",
+			source: db.Source{
+				Host:   "localhost",
+				Port:   5432,
+				User:   "user",
+				DBName: "mydb",
+			},
+			dbtype: db.Postgres,
+			want:   "host=localhost port=5432 user=user password='' dbname=mydb sslmode=disable",
+		},
+		{
 			name:   "SQLite memory",
 			source: db.Source{},
 			dbtype: db.SQLite,

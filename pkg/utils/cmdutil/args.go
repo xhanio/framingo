@@ -1,10 +1,6 @@
 package cmdutil
 
-import (
-	"strings"
-
-	"github.com/xhanio/framingo/pkg/structs/kv"
-)
+import "github.com/xhanio/framingo/pkg/utils/paramutil"
 
 // This function merges argument sets left to right, so a later set overrides an
 // earlier one. A token longer than one character and starting with "-" is a
@@ -30,62 +26,9 @@ import (
 //     ["--verbose", "file.txt"] parses file.txt as --verbose's value. There is
 //     no "--" terminator to guard against this.
 func MergeArgs(sets ...[]string) []string {
-	type flag struct {
-		inline bool
-		values []string
-	}
-	entries := kv.New[*flag]()
+	entries := paramutil.NewEntries[paramutil.Arg]()
 	for _, set := range sets {
-		var open *flag
-		for _, token := range set {
-			if !isFlag(token) {
-				if open != nil {
-					open.values = append(open.values, token)
-					continue
-				}
-				entries.AddRaw(token)
-				continue
-			}
-			key := token
-			var values []string
-			inline := false
-			if k, v, ok := strings.Cut(token, "="); ok {
-				key = k
-				values = []string{v}
-				inline = true
-			}
-			f, ok := entries.Get(key)
-			if !ok {
-				f = &flag{}
-			}
-			f.inline = inline
-			f.values = values
-			entries.Set(key, f)
-			open = f
-			if inline {
-				open = nil
-			}
-		}
+		paramutil.Argv.ParseInto(entries, set)
 	}
-	result := make([]string, 0, entries.Len())
-	for _, e := range entries.Entries() {
-		if !e.Keyed {
-			result = append(result, e.Raw)
-			continue
-		}
-		if e.Value.inline {
-			result = append(result, e.Key+"="+e.Value.values[0])
-			continue
-		}
-		result = append(result, e.Key)
-		result = append(result, e.Value.values...)
-	}
-	return result
-}
-
-// This function reports whether a token is a flag rather than a positional.
-// Bare "-" is a positional.
-// It has a time complexity of O(1).
-func isFlag(token string) bool {
-	return len(token) > 1 && strings.HasPrefix(token, "-")
+	return paramutil.Argv.Render(entries)
 }

@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/xhanio/framingo/pkg/services/db"
-	"github.com/xhanio/framingo/pkg/structs/kv"
+	"github.com/xhanio/framingo/pkg/utils/paramutil"
 )
 
 func init() {
@@ -44,7 +44,7 @@ func dsn(s db.Source) (string, error) {
 		}
 	}
 	value := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s", s.Host, s.Port, s.User, s.Password, s.DBName)
-	return kv.Keyword.Apply(value, params), nil
+	return paramutil.Keyword.Apply(value, params), nil
 }
 
 func cleanup(gdb *gorm.DB, _ string, schema bool) error {
