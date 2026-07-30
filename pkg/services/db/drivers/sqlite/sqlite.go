@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/xhanio/framingo/pkg/services/db"
+	"github.com/xhanio/framingo/pkg/structs/kv"
 )
 
 func init() {
@@ -45,7 +46,7 @@ func dsn(s db.Source) (string, error) {
 	if value == "" {
 		value = ":memory:"
 	}
-	return db.AppendParams(value, s.GetParams(), "?", "&"), nil
+	return kv.Query.Apply(value, s.GetParams()), nil
 }
 
 func cleanup(gdb *gorm.DB, _ string, schema bool) error {

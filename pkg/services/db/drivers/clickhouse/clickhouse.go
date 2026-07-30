@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/xhanio/framingo/pkg/services/db"
+	"github.com/xhanio/framingo/pkg/structs/kv"
 )
 
 func init() {
@@ -40,8 +41,8 @@ func dsn(s db.Source) (string, error) {
 			params["secure"] = "true"
 		}
 	}
-	value := fmt.Sprintf("clickhouse://%s:%s@%s:%d/%s?", s.User, s.Password, s.Host, s.Port, s.DBName)
-	return db.AppendParams(value, params, "&", "&"), nil
+	value := fmt.Sprintf("clickhouse://%s:%s@%s:%d/%s", s.User, s.Password, s.Host, s.Port, s.DBName)
+	return kv.Query.Apply(value, params), nil
 }
 
 func cleanup(gdb *gorm.DB, dbName string, schema bool) error {

@@ -102,6 +102,19 @@ func TestSource_DSN(t *testing.T) {
 			want:   "root:password@tcp(localhost:3306)/mydb?charset=utf8&parseTime=True&loc=Local&tls=skip-verify",
 		},
 		{
+			name: "MySQL Params override a built-in default",
+			source: db.Source{
+				Host:     "localhost",
+				Port:     3306,
+				User:     "root",
+				Password: "password",
+				DBName:   "mydb",
+				Params:   map[string]string{"charset": "utf8mb4", "loc": "UTC"},
+			},
+			dbtype: db.MySQL,
+			want:   "root:password@tcp(localhost:3306)/mydb?charset=utf8mb4&parseTime=True&loc=UTC",
+		},
+		{
 			name: "ClickHouse with SSL and Params",
 			source: db.Source{
 				Host:     "localhost",
@@ -113,7 +126,7 @@ func TestSource_DSN(t *testing.T) {
 				Params:   map[string]string{"debug": "true"},
 			},
 			dbtype: db.Clickhouse,
-			want:   "clickhouse://default:@localhost:9000/default?&debug=true&secure=true",
+			want:   "clickhouse://default:@localhost:9000/default?debug=true&secure=true",
 		},
 		{
 			name: "ClickHouse with Params override",
@@ -127,7 +140,7 @@ func TestSource_DSN(t *testing.T) {
 				Params:   map[string]string{"secure": "false"},
 			},
 			dbtype: db.Clickhouse,
-			want:   "clickhouse://default:@localhost:9000/default?&secure=false",
+			want:   "clickhouse://default:@localhost:9000/default?secure=false",
 		},
 		{
 			name: "SQLite with Params",

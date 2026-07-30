@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/xhanio/framingo/pkg/services/db"
+	"github.com/xhanio/framingo/pkg/structs/kv"
 )
 
 func init() {
@@ -41,7 +42,7 @@ func dsn(s db.Source) (string, error) {
 		}
 	}
 	value := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&parseTime=True&loc=Local", s.User, s.Password, s.Host, s.Port, s.DBName)
-	return db.AppendParams(value, params, "&", "&"), nil
+	return kv.Query.Apply(value, params), nil
 }
 
 func cleanup(gdb *gorm.DB, dbName string, schema bool) error {
