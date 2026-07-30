@@ -79,6 +79,40 @@ The supervisor's dependency resolution means you can delete a service entirely: 
 
 ---
 
+## What Is Framingo Here, and What Is GoPro
+
+This folder is two things layered together, and it helps to know which is which
+before you start deleting parts of it.
+
+| | Owned by | Lives in |
+|---|---|---|
+| Services, supervisor wiring, routers, middlewares, type layout, the shape of `config.yaml` | **framingo** | `pkg/` |
+| Building binaries, per-environment config generation, Docker images, K8s manifests | **[GoPro](https://github.com/xhanio/gopro)** | `project.yaml`, `build/`, `env/`, `dist/` |
+
+So anything below involving `project.yaml`, `-e <env>`, `dist/`, `gopro build`
+or `gopro generate` is GoPro's, not framingo's — consult GoPro's own docs for
+those, since this guide only covers the paths this template uses.
+
+**framingo does not require GoPro.** The entry points under `build/binary/` are
+ordinary `main` packages:
+
+```bash
+CGO_ENABLED=1 go build -o bin/exampleapp ./build/binary/exampleapp
+```
+
+Two things GoPro does for you that you then have to handle yourself:
+
+1. **`dist/` is generated and gitignored**, so a fresh clone does not have it —
+   yet `config.yaml` sets `db.migration.dir` to `./dist/local/config/exampleapp/migrations`.
+   Either run `gopro generate config -e local` once, or repoint that key at
+   `./env/local/config/exampleapp/migrations`.
+2. **Build metadata is injected at link time** into `pkg/types/info` (product
+   name, version, git commit). Without it `info.ProductName` is empty, which
+   leaves the env-var prefix blank — so overrides are `DB_HOST` rather than
+   `FRAMINGO_EXAMPLE_DB_HOST` — and gives generated CA certificates an empty
+   common name. Harmless for local poking; supply your own `-ldflags` if you
+   care.
+
 ## Prerequisites
 
 1. **Go 1.25.8+** — this module's own `go` directive (the framework itself only needs 1.24). On an older toolchain the default `GOTOOLCHAIN=auto` fetches it; `GOTOOLCHAIN=local` will fail.

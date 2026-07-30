@@ -33,7 +33,9 @@ Two routes. **Check first whether the framingo repo is on this machine** (`examp
 
 ### Route A — fork `example/` (preferred, needs the repo)
 
-`example/` is a self-contained Go module shipping a production-shaped service: supervisor wiring, PostgreSQL + migrations, pub/sub + message bus, WebSocket stream, RBAC (auth/user/role/organization/certificate), Echo router with auth & throttle middlewares, structured logging, pprof, signal handling, plus GoPro build templates, a CLI client, Docker image, and Kubernetes manifests.
+`example/` is a self-contained Go module shipping a production-shaped service: supervisor wiring, PostgreSQL + migrations, pub/sub + message bus, WebSocket stream, RBAC (auth/user/role/organization/certificate), Echo router with auth & throttle middlewares, structured logging, pprof, signal handling, plus a CLI client.
+
+Its build layer — `project.yaml`, `build/`, `env/`, `dist/`, the Docker image and Kubernetes manifests — belongs to [GoPro](https://github.com/xhanio/gopro), a separate tool, **not to framingo**. Don't treat GoPro as a framingo requirement or reproduce its config when scaffolding: the entries under `build/binary/` are ordinary `main` packages that `go build` handles. Two things GoPro otherwise does for you: it generates the gitignored `dist/` tree that the example's `db.migration.dir` points into (repoint it at `env/...` if you skip GoPro), and it injects `pkg/types/info` build metadata at link time, without which `info.ProductName` is empty and the env-var prefix is blank.
 
 Get it, then follow its QUICKSTART:
 

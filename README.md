@@ -52,7 +52,9 @@ go get github.com/xhanio/framingo
 
 ### Trying It Out
 
-The fastest path to a working server is the template under [example/](example/), which uses [GoPro](https://github.com/xhanio/gopro) for builds. Run it first to confirm your toolchain, then fork it — see [Starter Template](#starter-template).
+The fastest path to a working server is the template under [example/](example/). Run it first to confirm your toolchain, then fork it — see [Starter Template](#starter-template).
+
+The template builds with [GoPro](https://github.com/xhanio/gopro), which owns a layer framingo has nothing to do with: `project.yaml`, per-environment config generation, Docker images and Kubernetes manifests. **Framingo itself has no build-tool dependency** — the entry points under `example/build/binary/` are ordinary `main` packages, so `go build ./build/binary/exampleapp` works. See [What Is Framingo Here, and What Is GoPro](example/QUICKSTART.md#what-is-framingo-here-and-what-is-gopro) for the split and for the two things GoPro does that you'd otherwise do yourself.
 
 Prerequisites:
 
