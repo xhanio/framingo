@@ -8,8 +8,6 @@ import (
 type Server interface {
 	common.Named
 	Endpoint() *api.Endpoint
-	Routers() []*api.HandlerGroup
-	HandlerPath(group *api.HandlerGroup, handler *api.Handler) string
 }
 
 // Manager manages multiple server instances.

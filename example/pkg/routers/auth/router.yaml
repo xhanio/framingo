@@ -1,12 +1,17 @@
 server: http
 prefix: /auth
+middlewares:
+  - throttle
 handlers:
   - method: POST
     path: /login
     func: Login
-    # throttle:
-    #   rps: 1
-    #   burst_size: 3
+    middlewares:
+      # This handler's own limit, overriding the group's throttle attachment
+      # and the instance limit it carries.
+      - throttle:
+          rps: 1
+          burst_size: 3
   - method: POST
     path: /logout
     func: Logout

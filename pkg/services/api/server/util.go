@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -15,7 +16,11 @@ import (
 	"github.com/xhanio/framingo/pkg/types/api"
 )
 
-func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
+// requestInfo builds the request record and reports whether a handler matched.
+// The record is always returned - error paths log unmatched requests too - and
+// the matched handler's route metadata is flattened onto it; the parsed schema
+// itself stays inside this package.
+func (s *server) requestInfo(c echo.Context) (*api.RequestInfo, bool) {
 	r := c.Request()
 	prevID := c.Request().Header.Get(api.HeaderKeyTrace)
 	traceID := uuid.NewString()[:8]
@@ -35,16 +40,27 @@ func (s *server) requestInfo(c echo.Context) *api.RequestInfo {
 		StartedAt: time.Now(),
 	}
 	// find the handler and group from this server instance
-	key := req.Key(s.endpoint.Path)
+	key := s.requestKey(req)
 	s.log.Debugf("looking for key %s", key.String())
-	h, g := s.matchHandler(key)
-	if h != nil && g != nil {
-		req.Handler = h
-		req.HandlerGroup = g
-	} else {
+	h, _ := s.matchHandler(key)
+	if h == nil {
 		s.log.Debugf("unable to locate api %s for req %s %s", key.String(), req.Method, req.RawPath)
+		return req, false
 	}
-	return req
+	req.Permission = h.Permission
+	req.Poll = h.Poll
+	return req, true
+}
+
+// requestKey builds the lookup key for a request, trimming the server's path
+// prefix off the matched route path.
+func (s *server) requestKey(req *api.RequestInfo) handlerKey {
+	p := strings.TrimPrefix(req.RawPath, s.endpoint.Path)
+	return handlerKey{
+		Server: req.Server,
+		Method: req.Method,
+		Path:   path.Join("/", p),
+	}
 }
 
 func (s *server) responseInfo(started time.Time, c echo.Context) *api.ResponseInfo {
@@ -112,20 +128,20 @@ func colorDuration(duration time.Duration) string {
 // 2. WS method fallback (WS routes registered as GET but keyed with WS)
 // 3. ANY method match (same path, method=ANY)
 // 4. wildcard path match — longest prefix wins, exact method over ANY
-func (s *server) matchHandler(key api.HandlerKey) (*api.Handler, *api.HandlerGroup) {
+func (s *server) matchHandler(key handlerKey) (*handlerConfig, *handlerGroupConfig) {
 	// exact match
 	if h, ok := s.handlers[key]; ok {
 		return h, s.groups[key]
 	}
 	// WS method fallback
 	if key.Method == http.MethodGet {
-		wsKey := api.HandlerKey{Server: key.Server, Method: api.MethodWS, Path: key.Path}
+		wsKey := handlerKey{Server: key.Server, Method: api.MethodWS, Path: key.Path}
 		if h, ok := s.handlers[wsKey]; ok {
 			return h, s.groups[wsKey]
 		}
 	}
 	// ANY method fallback
-	anyKey := api.HandlerKey{Server: key.Server, Method: api.MethodAny, Path: key.Path}
+	anyKey := handlerKey{Server: key.Server, Method: api.MethodAny, Path: key.Path}
 	if h, ok := s.handlers[anyKey]; ok {
 		return h, s.groups[anyKey]
 	}
@@ -137,7 +153,7 @@ func (s *server) matchHandler(key api.HandlerKey) (*api.Handler, *api.HandlerGro
 		reqPath = "/" + reqPath
 	}
 
-	var bestKey api.HandlerKey
+	var bestKey handlerKey
 	var bestLen int
 	var bestExact bool // true if matched via exact method (not ANY)
 

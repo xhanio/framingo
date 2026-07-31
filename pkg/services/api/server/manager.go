@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -13,7 +12,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/xhanio/errors"
-	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
 	"github.com/xhanio/framingo/pkg/types/api"
@@ -30,11 +28,8 @@ type manager struct {
 
 	servers map[string]*server // map of server name to server instance
 
-	handlerFuncs    map[api.HandlerKey]echo.HandlerFunc
-	middlewareFuncs map[string]echo.MiddlewareFunc
-
-	sync.Mutex // lock for rate limiters
-	limits     map[string]*rate.Limiter
+	handlerFuncs map[handlerKey]echo.HandlerFunc
+	middlewares  map[string]api.Middleware
 }
 
 // New creates a new server instance with the given options
@@ -44,11 +39,10 @@ func New(opts ...Option) Manager {
 
 func newManager(opts ...Option) *manager {
 	m := &manager{
-		log:             log.Default,
-		servers:         make(map[string]*server),
-		handlerFuncs:    make(map[api.HandlerKey]echo.HandlerFunc),
-		middlewareFuncs: make(map[string]echo.MiddlewareFunc),
-		limits:          make(map[string]*rate.Limiter),
+		log:          log.Default,
+		servers:      make(map[string]*server),
+		handlerFuncs: make(map[handlerKey]echo.HandlerFunc),
+		middlewares:  make(map[string]api.Middleware),
 	}
 	m.apply(opts...)
 	return m
@@ -90,7 +84,9 @@ func (m *manager) Dependencies() []common.Service {
 // reusing a server after Shutdown — on restart we need fresh echos.
 func (m *manager) Init(ctx context.Context) error {
 	for _, s := range m.servers {
-		m.buildEcho(s)
+		if err := m.buildEcho(s); err != nil {
+			return err
+		}
 		for key, h := range s.handlers {
 			g := s.groups[key]
 			if err := m.installHandler(s, g, h); err != nil {
@@ -103,25 +99,32 @@ func (m *manager) Init(ctx context.Context) error {
 
 // buildEcho creates a fresh echo instance for the given server and applies
 // the pre + core middlewares. Replaces any prior s.echo.
-func (m *manager) buildEcho(s *server) {
+func (m *manager) buildEcho(s *server) error {
 	mw := newMiddleware(s)
 	e := m.newEcho()
 	e.HTTPErrorHandler = s.errorHandler
 	e.Pre(middleware.RemoveTrailingSlash())
 	var middlewares []echo.MiddlewareFunc
-	// Apply CORS middleware in debug mode
-	if m.debug {
-		middlewares = append(middlewares, mw.CORS())
+	// Server-level middlewares (WithMiddlewares) run ahead of the built-ins,
+	// before any route has been matched, so one that must answer requests no
+	// route matches - CORS preflight - can do so. Attached from code, they
+	// carry no router.yaml config.
+	for _, umw := range s.middlewares {
+		fn, err := umw.Func(nil)
+		if err != nil {
+			return errors.Wrapf(err, "middleware %s failed to build for server %s", umw.Name(), s.name)
+		}
+		middlewares = append(middlewares, fn)
 	}
 	middlewares = append(middlewares,
 		mw.Recover,
 		mw.Logger,
 		mw.Info,
 		mw.Error,
-		mw.Throttle,
 	)
 	e.Use(middlewares...)
 	s.echo = e
+	return nil
 }
 
 // Add adds a new echo server instance with the given configuration
@@ -129,14 +132,16 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	s := &server{
 		name:     name,
 		log:      m.log,
-		groups:   make(map[api.HandlerKey]*api.HandlerGroup),
-		handlers: make(map[api.HandlerKey]*api.Handler),
+		groups:   make(map[handlerKey]*handlerGroupConfig),
+		handlers: make(map[handlerKey]*handlerConfig),
 	}
 	s.apply(opts...)
 	if s.endpoint == nil {
 		return errors.Newf("server must have a valid endpoint")
 	}
-	m.buildEcho(s)
+	if err := m.buildEcho(s); err != nil {
+		return err
+	}
 	m.servers[name] = s
 	return nil
 }
@@ -164,14 +169,14 @@ func (m *manager) List() []Server {
 // ============================================================================
 
 // registerRouter loads the router's configuration and registers its handlers
-func (m *manager) registerRouter(router api.Router) (*api.HandlerGroup, error) {
+func (m *manager) registerRouter(router api.Router) (*handlerGroupConfig, error) {
 	// Get embedded router.yaml configuration
 	data := router.Config()
 	if len(data) == 0 {
 		return nil, errors.Newf("router %s has empty config", router.Name())
 	}
 	// Parse YAML config
-	var group *api.HandlerGroup
+	var group *handlerGroupConfig
 	if err := yaml.Unmarshal(data, &group); err != nil {
 		return nil, errors.Wrapf(err, "failed to parse router config")
 	}
@@ -193,7 +198,7 @@ func (m *manager) registerRouter(router api.Router) (*api.HandlerGroup, error) {
 		if !ok {
 			return nil, errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
 		}
-		key := api.NewHandlerKey(group, handler)
+		key := newHandlerKey(group, handler)
 		switch f := fn.(type) {
 		case echo.HandlerFunc:
 			if handler.Method == api.MethodWS {
@@ -239,7 +244,7 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 		}
 
 		for _, h := range g.Handlers {
-			key := api.NewHandlerKey(g, h)
+			key := newHandlerKey(g, h)
 			s.groups[key] = g
 			s.handlers[key] = h
 			if err := m.installHandler(s, g, h); err != nil {
@@ -252,7 +257,7 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 
 // installHandler registers a single handler on the server's echo instance.
 // Used by both RegisterRouters (initial wiring) and Init (rebuild on restart).
-func (m *manager) installHandler(s *server, g *api.HandlerGroup, h *api.Handler) error {
+func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerConfig) error {
 	// Create echo group with API prefix.
 	// Trim trailing slash so Echo's literal prefix+path concatenation
 	// doesn't produce double slashes (e.g., "/" + "/health" → "//health").
@@ -264,7 +269,7 @@ func (m *manager) installHandler(s *server, g *api.HandlerGroup, h *api.Handler)
 		return err
 	}
 
-	key := api.NewHandlerKey(g, h)
+	key := newHandlerKey(g, h)
 	// Normalize root path "/" to "" so the route registers at the
 	// group prefix without a trailing slash. Combined with the
 	// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
@@ -289,28 +294,39 @@ func (m *manager) installHandler(s *server, g *api.HandlerGroup, h *api.Handler)
 	return nil
 }
 
-// collectMiddlewares gathers handler-specific and group-level middlewares
-func (m *manager) collectMiddlewares(h *api.Handler, g *api.HandlerGroup) ([]echo.MiddlewareFunc, error) {
-	var mwfuncs []echo.MiddlewareFunc
-
-	// Collect handler-specific middlewares
-	for _, name := range h.Middlewares {
-		if mw, ok := m.middlewareFuncs[name]; ok {
-			mwfuncs = append(mwfuncs, mw)
-		} else {
-			return nil, errors.NotImplemented.Newf("middleware %s not found", name)
+// collectMiddlewares resolves the handler's and group's middleware refs into
+// functions for one route. Handler refs come first - they wrap outermost - and
+// a name the handler already claimed is skipped at group level, so a handler's
+// config overrides the group's attachment rather than stacking a second run.
+// Each ref costs one Func call, at registration, so a bad config fails startup.
+func (m *manager) collectMiddlewares(h *handlerConfig, g *handlerGroupConfig) ([]echo.MiddlewareFunc, error) {
+	refs := make([]*middlewareConfig, 0, len(h.Middlewares)+len(g.Middlewares))
+	seen := make(map[string]bool, len(h.Middlewares))
+	for _, ref := range h.Middlewares {
+		if !seen[ref.Name] {
+			seen[ref.Name] = true
+			refs = append(refs, ref)
+		}
+	}
+	for _, ref := range g.Middlewares {
+		if !seen[ref.Name] {
+			seen[ref.Name] = true
+			refs = append(refs, ref)
 		}
 	}
 
-	// Collect group-level middlewares
-	for _, name := range g.Middlewares {
-		if mw, ok := m.middlewareFuncs[name]; ok {
-			mwfuncs = append(mwfuncs, mw)
-		} else {
-			return nil, errors.NotImplemented.Newf("middleware %s not found", name)
+	mwfuncs := make([]echo.MiddlewareFunc, 0, len(refs))
+	for _, ref := range refs {
+		mw, ok := m.middlewares[ref.Name]
+		if !ok {
+			return nil, errors.NotImplemented.Newf("middleware %s not found", ref.Name)
 		}
+		fn, err := mw.Func(ref.Config)
+		if err != nil {
+			return nil, errors.Wrapf(err, "middleware %s failed to build for %s %s", ref.Name, h.Method, h.Path)
+		}
+		mwfuncs = append(mwfuncs, fn)
 	}
-
 	return mwfuncs, nil
 }
 
@@ -350,14 +366,16 @@ func (m *manager) closeWebSocket(ctx context.Context, conn *websocket.Conn, err 
 	}
 }
 
-// RegisterMiddlewares registers middlewares with the server
+// RegisterMiddlewares registers middlewares with the server. The middleware
+// itself is kept, not a function: functions are minted per attachment point
+// once router.yaml configs are known.
 func (m *manager) RegisterMiddlewares(middlewares ...api.Middleware) error {
 	for _, mw := range middlewares {
 		name := mw.Name()
-		if _, exists := m.middlewareFuncs[name]; exists {
+		if _, exists := m.middlewares[name]; exists {
 			return errors.Conflict.Newf("middleware %s already registered", name)
 		}
-		m.middlewareFuncs[name] = mw.Func
+		m.middlewares[name] = mw
 	}
 	return nil
 }

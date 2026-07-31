@@ -1,5 +1,7 @@
 server: http # server name
 prefix: /example # group prefix
+middlewares:
+  - throttle
 handlers:
   - method: POST
     path: /helloworld

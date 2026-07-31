@@ -131,7 +131,7 @@ sequenceDiagram
 
     Client->>APIServer: HTTP Request
     APIServer->>Middleware: Process Request
-    Note over Middleware: Recover<br/>Logger<br/>Info<br/>Error<br/>Throttle<br/>Auth/Custom
+    Note over Middleware: Recover<br/>Logger<br/>Info<br/>Error<br/>Auth/Custom
     Middleware->>Router: Validated Request
     Router->>Service: Business Operation
     Service->>DB: Data Access
@@ -159,11 +159,11 @@ Production-ready service implementations:
   - Restart behavior is tunable: `WithMonitorInterval`, `WithRestartPolicy(maxRetries)`, `WithRestartDelay`, `WithShutdownTimeout`
 
 - **[api/server](pkg/services/api/server/)** — HTTP API server
-  - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithThrottle(...))`
+  - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithMiddlewares(...))`
   - Declarative YAML routing via `api.Router`
   - Middleware pipeline with name-based resolution
   - WebSocket handlers (use method `WS` in router YAML)
-  - Built-in chain, applied in order: recover → logger → info → error → throttle, preceded by CORS when the manager is built with `WithDebug(true)`
+  - Built-in chain, applied in order: recover → logger → info → error, preceded by any server-level middlewares installed with `WithMiddlewares` (where a CORS middleware belongs, since preflight requests match no route)
 
 - **[api/client](pkg/services/api/client/)** — HTTP client with TLS, headers, cookies, body encoding (deflate), and structured error parsing — `NewRequest` builds, `Do` executes an `*http.Request`, `Send` does both in one shot
 
@@ -203,7 +203,7 @@ Interface contracts and shared types:
   - Messaging ([`message.go`](pkg/types/common/message.go)): `Message`, `MessageSender`, `RawMessageSender`, `MessageHandler`, `RawMessageHandler`
   - Context keys ([`context.go`](pkg/types/common/context.go)): `_config`, `_logger`, `_db`, `_tx`, `_credential`, `_session`, `_namespace`, `_trace`, `_api_request_info`, `_api_response_info`, `_api_error`
 
-- **[api](pkg/types/api/)** — HTTP types: `Router`, `Middleware`, `Handler`, `HandlerGroup`, `HandlerKey`, `Endpoint`, `ThrottleConfig`, `ClientTLS`/`ServerTLS`, `ErrorBody`, `Encoding`, and the `RequestInfo`/`ResponseInfo`/`Stats` records the built-in middlewares stash on the request context
+- **[api](pkg/types/api/)** — HTTP types: the two extension interfaces `Router` and `Middleware`, plus `Endpoint`, `ClientTLS`/`ServerTLS`, `ErrorBody`, `Encoding`, and the `RequestInfo`/`ResponseInfo`/`Stats` records the built-in middlewares stash on the request context. The router.yaml schema itself is private to the server package: routers hand it over as bytes, middlewares receive their config the same way
 
 - **[model](pkg/types/model/)** — Behavioral contracts for framework services: `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Messenger`, `Planner`
 
@@ -726,15 +726,16 @@ handlers:
     path: /status
     func: Status
     poll: true                  # suppress per-request logging for pollers
-    throttle:                   # overrides the server-level WithThrottle
-      rps: 5.0
-      burst_size: 10
+    middlewares:
+      - throttle:               # a middleware entry may carry config: the block
+          rps: 5.0              # under the name is handed to that middleware,
+          burst_size: 10        # raw, when this route is registered
   - method: WS
     path: /events
     func: Events
 ```
 
-`method` also accepts `ANY` to match every HTTP verb. `permission` is carried through to the handler's `RequestInfo` but never enforced by the framework — the example's `authz` and `feature` middlewares read it. Note the ordering: a handler's own `middlewares` are collected ahead of the group's, so they wrap the outside and run first.
+`method` also accepts `ANY` to match every HTTP verb. `permission` is carried through to the handler's `RequestInfo` (flattened — the parsed schema never leaves the server package) but never enforced by the framework — the example's `authz` and `feature` middlewares read it. A middleware entry is either a bare name or a single-key map whose value is that middleware's config for this route; handler entries are collected ahead of the group's, wrap the outside and run first, and a name the handler claims is skipped at group level — so a handler's config overrides the group's attachment instead of stacking a second run.
 
 Each router embeds its `router.yaml` and exposes a `Handlers() map[string]any` that maps each `func:` key to a handler implementation. The framework accepts `echo.HandlerFunc` (or `func(echo.Context) error`) for HTTP and `func(echo.Context, *websocket.Conn) error` for WebSocket — but the **recommended** pattern is `func(c api.Context) error` (and `func(c api.Context, conn *websocket.Conn) error` for WS), where `api.Context` is a project-defined interface that embeds `echo.Context` and `context.Context`. A small `DiscoverHandlers` helper (see [`example/pkg/types/api/api.go`](example/pkg/types/api/api.go)) reflects over the router's methods and wraps the project-context signature into the echo signature the server expects. This keeps handlers free to evolve (extra binders, session/credential accessors, trace propagation) without rewriting every signature.
 
@@ -751,10 +752,12 @@ func (r *router) Handlers() map[string]any {
 ### Middleware Pipeline
 
 ```
-Request → [CORS] → Recover → Logger → Info → Error → Throttle → custom (auth, deflate, …) → Handler → Response
+Request → [server-level (cors, …)] → Recover → Logger → Info → Error → custom (auth, throttle, deflate, …) → Handler → Response
 ```
 
-CORS is only inserted when the server manager is built with `WithDebug(true)`. The remaining five are always applied, in that order, ahead of any custom middleware.
+Server-level middlewares are installed per server with `Add(name, WithMiddlewares(...))` and run ahead of the built-ins, before any route has been matched — the position a CORS middleware needs, since a preflight OPTIONS matches no route. The four built-ins are always applied, in that order, ahead of any route-attached custom middleware. Rate limiting and CORS are not built in: the example ships them as user middlewares (`example/pkg/middlewares/throttle`, `example/pkg/middlewares/cors`).
+
+A middleware implements one method — `Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)` — called once per attachment point at registration time, with the raw YAML written under its name in router.yaml, or nil when attached bare or from code. Per-route state lives in the returned closure, and a bad config fails startup, not the first request.
 
 Custom middlewares are resolved by name from the set registered with `srv.RegisterMiddlewares(...)`, and the lookup happens while routers are being installed — so always register middlewares before routers, or registration fails with `NotImplemented: middleware <name> not found`.
 
@@ -897,7 +900,7 @@ WantedBy=multi-user.target
 
 6. **Performance**
    - Tune `db.connection.*` for your workload
-   - Apply throttling per server (`WithThrottle`) or per handler in `router.yaml`
+   - Apply throttling per router group or per handler in `router.yaml` (see `example/pkg/middlewares/throttle`)
    - Enable pprof during incidents (`pprof.port`)
 
 ## Contributing

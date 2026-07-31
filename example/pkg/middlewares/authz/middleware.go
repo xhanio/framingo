@@ -37,7 +37,16 @@ func (m *middleware) Dependencies() []common.Service {
 	return []common.Service{m.role}
 }
 
-func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
+// Func implements api.Middleware. The middleware takes no router.yaml config,
+// so a block under its name is a mistake worth failing startup for.
+func (m *middleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if config != nil {
+		return nil, errors.Newf("%s takes no config", m.Name())
+	}
+	return m.handle, nil
+}
+
+func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		credential := c.Get(fapi.ContextKeyCredential)
 		cred, ok := credential.(*entity.Credential)
@@ -50,13 +59,13 @@ func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
 		if !sliceutil.In(cred.Source, preset.AuthSourceLdapUser, preset.AuthSourceLocalUser) {
 			return next(c)
 		}
-		// The Info middleware runs upstream and resolves the matched Handler
-		// (and its declared Permission) onto the request context.
+		// The Info middleware runs upstream and resolves the matched route's
+		// metadata - its declared permission among it - onto the request context.
 		req, ok := c.Get(fapi.ContextKeyRequestInfo).(*fapi.RequestInfo)
-		if !ok || req == nil || req.Handler == nil {
+		if !ok || req == nil {
 			return errors.Forbidden.Newf("no handler info for request %s %s", c.Request().Method, c.Request().URL.EscapedPath())
 		}
-		required := req.Handler.Permission
+		required := req.Permission
 		if required == "" {
 			return next(c) // public endpoint
 		}

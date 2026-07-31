@@ -1,6 +1,7 @@
 server: http
 prefix: /certificates
 middlewares:
+  - throttle
   - authnuser
   - authz
 handlers:

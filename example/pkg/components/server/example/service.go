@@ -20,6 +20,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
+	"github.com/xhanio/framingo/example/pkg/middlewares/cors"
 	"github.com/xhanio/framingo/example/pkg/services/example"
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/auth"
@@ -159,12 +160,10 @@ func (m *manager) initServices() error {
 				m.config.GetString(fmt.Sprintf("api.%s.prefix", name)),
 			),
 		}
-		// add throttle if configured
-		if m.config.IsSet(fmt.Sprintf("api.%s.throttle", name)) {
-			opts = append(opts, server.WithThrottle(
-				m.config.GetFloat64(fmt.Sprintf("api.%s.throttle.rps", name)),
-				m.config.GetInt(fmt.Sprintf("api.%s.throttle.burst_size", name)),
-			))
+		// add CORS if configured - server-level, so preflight OPTIONS requests
+		// are answered before any route is consulted
+		if m.config.GetBool(fmt.Sprintf("api.%s.cors", name)) {
+			opts = append(opts, server.WithMiddlewares(cors.New()))
 		}
 		// add TLS if configured
 		if m.config.IsSet(fmt.Sprintf("api.%s.cert", name)) {

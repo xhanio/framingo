@@ -1,9 +1,6 @@
 package api
 
 import (
-	"fmt"
-	"path"
-
 	"github.com/labstack/echo/v4"
 
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -14,55 +11,22 @@ const (
 	MethodWS  = "WS"
 )
 
+// Middleware is one of the two extension points of the API server, the mirror
+// image of Router: where a Router supplies its configuration to the framework,
+// a Middleware receives configuration from it.
 type Middleware interface {
 	common.Service
-	Func(echo.HandlerFunc) echo.HandlerFunc
+	// Func returns the middleware function for one attachment point. config is
+	// the raw YAML written under the middleware's name in router.yaml, and nil
+	// when the middleware is attached bare or from code. Called once per route
+	// at registration time - and again on restart, when routes are rebuilt -
+	// so per-route state lives in the returned closure. An error fails
+	// registration.
+	Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)
 }
 
 type Router interface {
 	common.Service
 	Config() []byte
 	Handlers() map[string]any // echo.HandlerFunc or WebSocketHandlerFunc
-}
-
-// HandlerKey uniquely identifies a handler within a server.
-type HandlerKey struct {
-	Server string
-	Method string
-	Path   string
-}
-
-func (k HandlerKey) String() string {
-	return fmt.Sprintf("[%s] %s %s", k.Server, k.Method, k.Path)
-}
-
-// NewHandlerKey creates a HandlerKey from a HandlerGroup and Handler.
-func NewHandlerKey(g *HandlerGroup, h *Handler) HandlerKey {
-	var server, prefix string
-	if g != nil {
-		server = g.Server
-		prefix = g.Prefix
-	}
-	return HandlerKey{
-		Server: server,
-		Method: h.Method,
-		Path:   path.Join(prefix, h.Path),
-	}
-}
-
-type HandlerGroup struct {
-	Server      string     `json:"server"` // default: http
-	Prefix      string     `json:"prefix"` // default: /
-	Handlers    []*Handler `json:"handlers"`
-	Middlewares []string   `json:"middlewares"`
-}
-
-type Handler struct {
-	Method      string          `json:"method"`
-	Path        string          `json:"path"`
-	Middlewares []string        `json:"middlewares"`
-	Permission  string          `json:"permission"`
-	Poll        bool            `json:"poll"`
-	Throttle    *ThrottleConfig `json:"throttle,omitempty"`
-	Func        string          `json:"func"`
 }

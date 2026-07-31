@@ -74,6 +74,6 @@ pprof:
 - `db.connection.*` keys are read dynamically during `db.Manager.Init(ctx)` via `confutil.FromContext(ctx)`, allowing values to change on service restart
 - `api.*` is iterated as a string map — each top-level key under `api` becomes a named server instance
 - TLS is enabled per-server when `api.<name>.cert` is set
-- Throttle is enabled per-server when `api.<name>.throttle` is set
+- `api.<name>.throttle` and `api.<name>.cors` are read by the example's wiring, not the framework: the throttle values become the example throttle middleware's instance limit (router.yaml can override per handler), and the cors flag installs the example CORS middleware via `server.WithMiddlewares`
 - Custom service config keys are accessed in `Init(ctx)` via `confutil.FromContext(ctx).GetString("myservice.key")`
 - Pubsub, messagebus, and planner services are configured entirely via functional options, not YAML keys

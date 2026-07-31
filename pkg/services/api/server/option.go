@@ -1,8 +1,6 @@
 package server
 
 import (
-	"golang.org/x/time/rate"
-
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
@@ -58,15 +56,14 @@ func WithTLS(cert certutil.CertBundle, auth bool) ServerOption {
 	}
 }
 
-func WithThrottle(rps float64, burstSize int) ServerOption {
+// WithMiddlewares installs middlewares on the server itself, ahead of the
+// built-in chain and so ahead of any route match - where a concern that must
+// answer requests no route matches, such as CORS preflight, has to sit. They
+// run on every request to the server, are built with a nil config, and survive
+// the echo rebuild a restart performs. RequestInfo does not exist yet at this
+// position; a middleware that reads it belongs in router.yaml instead.
+func WithMiddlewares(mws ...api.Middleware) ServerOption {
 	return func(s *server) {
-		if rps == 0 || burstSize == 0 {
-			// no throttle control
-			return
-		}
-		s.throttleConfig = &api.ThrottleConfig{
-			RPS:       rate.Limit(rps),
-			BurstSize: burstSize,
-		}
+		s.middlewares = append(s.middlewares, mws...)
 	}
 }

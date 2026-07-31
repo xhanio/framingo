@@ -7,6 +7,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/middlewares/authnuser"
 	"github.com/xhanio/framingo/example/pkg/middlewares/authz"
 	"github.com/xhanio/framingo/example/pkg/middlewares/deflate"
+	"github.com/xhanio/framingo/example/pkg/middlewares/throttle"
 	authRouter "github.com/xhanio/framingo/example/pkg/routers/auth"
 	certRouter "github.com/xhanio/framingo/example/pkg/routers/certificate"
 	exampleRouter "github.com/xhanio/framingo/example/pkg/routers/example"
@@ -20,6 +21,14 @@ func (m *manager) initAPI() error {
 		deflate.New(),
 		authnuser.New(m.auth),
 		authz.New(m.role),
+		// Routers opt in through router.yaml, where a handler may also carry
+		// its own limit under the middleware's name; this instance limit
+		// covers the rest. Built without one it passes everything, so
+		// attaching it is safe with no config at all.
+		throttle.New(throttle.WithLimit(
+			m.config.GetFloat64("api.http.throttle.rps"),
+			m.config.GetInt("api.http.throttle.burst_size"),
+		)),
 	}
 	routers := []api.Router{
 		exampleRouter.New(m.example, m.log),

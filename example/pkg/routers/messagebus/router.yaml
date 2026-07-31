@@ -1,5 +1,7 @@
 server: http
 prefix: /messages
+middlewares:
+  - throttle
 handlers:
   - method: WS
     path: /stream

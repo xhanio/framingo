@@ -1,6 +1,7 @@
 server: http
 prefix: /roles
 middlewares:
+  - throttle
   - authnuser
   - authz
 handlers:

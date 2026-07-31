@@ -1,6 +1,7 @@
 server: http
 prefix: /users
 middlewares:
+  - throttle
   - authnuser
 handlers:
   - method: POST

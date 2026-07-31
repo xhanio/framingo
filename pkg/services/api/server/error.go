@@ -15,7 +15,9 @@ func (s *server) errorHandler(err error, c echo.Context) {
 	}
 	req, ok := c.Get(common.ContextKeyAPIRequestInfo).(*api.RequestInfo)
 	if !ok || req == nil {
-		req = s.requestInfo(c)
+		// The record is wanted even when no handler matched, so the 404
+		// itself gets logged with the request's facts.
+		req, _ = s.requestInfo(c)
 	}
 	resp, ok := c.Get(common.ContextKeyAPIResponseInfo).(*api.ResponseInfo)
 	if !ok || resp == nil {

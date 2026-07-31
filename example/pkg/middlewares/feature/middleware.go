@@ -31,18 +31,27 @@ func (m *middleware) Dependencies() []common.Service {
 	return nil
 }
 
-func (m *middleware) Func(next echo.HandlerFunc) echo.HandlerFunc {
+// Func implements api.Middleware. The middleware takes no router.yaml config,
+// so a block under its name is a mistake worth failing startup for.
+func (m *middleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if config != nil {
+		return nil, errors.Newf("%s takes no config", m.Name())
+	}
+	return m.handle, nil
+}
+
+func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		req, ok := c.Get(common.ContextKeyAPIRequestInfo).(*fapi.RequestInfo)
-		if !ok || req == nil || req.Handler == nil {
+		if !ok || req == nil {
 			return errors.NotFound.Newf("failed to look up handler %s", c.Request().RequestURI)
 		}
-		if req.Handler.Permission == "" {
+		if req.Permission == "" {
 			return next(c)
 		}
 		features := rbac.Features[rbac.FeatureBasic]
 		features = sliceutil.Deduplicate(features...)
-		if sliceutil.In(req.Handler.Permission, features...) {
+		if sliceutil.In(req.Permission, features...) {
 			return next(c)
 		}
 		return errors.Forbidden.Newf("Access denied to this feature. Please upload an appropriate license to enable this functionality.")

@@ -13,7 +13,9 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
+	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
@@ -417,4 +419,273 @@ handlers:
 	var closeErr websocket.CloseError
 	assert.ErrorAs(t, err, &closeErr)
 	assert.Equal(t, websocket.StatusInternalError, closeErr.Code)
+}
+
+// captureMiddleware records the config bytes of every Func call, so a test can
+// see how many attachments were minted and what each one received.
+type captureMiddleware struct {
+	name    string
+	configs [][]byte
+}
+
+func (m *captureMiddleware) Name() string                   { return m.name }
+func (m *captureMiddleware) Dependencies() []common.Service { return nil }
+func (m *captureMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	m.configs = append(m.configs, config)
+	return func(next echo.HandlerFunc) echo.HandlerFunc { return next }, nil
+}
+
+// rejectMiddleware refuses any config, the shape of a config-free middleware
+// handed a block it does not understand.
+type rejectMiddleware struct{}
+
+func (m *rejectMiddleware) Name() string                   { return "rejectmw" }
+func (m *rejectMiddleware) Dependencies() []common.Service { return nil }
+func (m *rejectMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if config != nil {
+		return nil, fmt.Errorf("rejectmw takes no config")
+	}
+	return func(next echo.HandlerFunc) echo.HandlerFunc { return next }, nil
+}
+
+func TestMiddleware_ConfigForms(t *testing.T) {
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
+	cap := &captureMiddleware{name: "capmw"}
+	require.NoError(t, m.RegisterMiddlewares(cap))
+	require.NoError(t, m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+middlewares:
+  - capmw
+handlers:
+  - method: GET
+    path: /bare
+    func: A
+  - method: GET
+    path: /configured
+    func: B
+    middlewares:
+      - capmw:
+          key: value
+`),
+		handlers: map[string]any{"A": okHandler, "B": okHandler},
+	}))
+
+	// One Func call per route: /bare from the group ref, /configured from the
+	// handler ref. The handler's configured ref overrides the group's bare one
+	// rather than stacking a second run.
+	require.Len(t, cap.configs, 2)
+	assert.Nil(t, cap.configs[0], "bare attachment passes nil config")
+	var cfg map[string]string
+	require.NoError(t, yaml.Unmarshal(cap.configs[1], &cfg))
+	assert.Equal(t, map[string]string{"key": "value"}, cfg)
+}
+
+func TestMiddleware_GroupConfig(t *testing.T) {
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
+	cap := &captureMiddleware{name: "capmw"}
+	require.NoError(t, m.RegisterMiddlewares(cap))
+	require.NoError(t, m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+middlewares:
+  - capmw:
+      scope: group
+handlers:
+  - method: GET
+    path: /a
+    func: A
+  - method: GET
+    path: /b
+    func: B
+`),
+		handlers: map[string]any{"A": okHandler, "B": okHandler},
+	}))
+
+	// A group-level config reaches every route of the group, one Func call
+	// each, so per-route state stays per-route.
+	require.Len(t, cap.configs, 2)
+	for _, raw := range cap.configs {
+		var cfg map[string]string
+		require.NoError(t, yaml.Unmarshal(raw, &cfg))
+		assert.Equal(t, map[string]string{"scope": "group"}, cfg)
+	}
+}
+
+func TestMiddleware_ConfigErrorFailsRegistration(t *testing.T) {
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
+	require.NoError(t, m.RegisterMiddlewares(&rejectMiddleware{}))
+	err := m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /a
+    func: A
+    middlewares:
+      - rejectmw:
+          unexpected: true
+`),
+		handlers: map[string]any{"A": okHandler},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "rejectmw")
+}
+
+func TestMiddleware_UnknownNameFailsRegistration(t *testing.T) {
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
+	err := m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /a
+    func: A
+    middlewares:
+      - ghost
+`),
+		handlers: map[string]any{"A": okHandler},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ghost")
+}
+
+// stampMiddleware is shaped like CORS: attached at server level from code, it
+// stamps every response and answers OPTIONS itself, before routing.
+type stampMiddleware struct{}
+
+func (m *stampMiddleware) Name() string                   { return "stamp" }
+func (m *stampMiddleware) Dependencies() []common.Service { return nil }
+func (m *stampMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Response().Header().Set("X-Stamp", "ran")
+			if c.Request().Method == http.MethodOptions {
+				return c.NoContent(http.StatusNoContent)
+			}
+			return next(c)
+		}
+	}, nil
+}
+
+func TestWithMiddlewares_ServerLevel(t *testing.T) {
+	port := freePort(t)
+	m := testManager()
+	require.NoError(t, m.Add("http",
+		WithEndpoint("127.0.0.1", port, "/"),
+		WithMiddlewares(&stampMiddleware{}),
+	))
+	require.NoError(t, m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /test
+    func: Test`),
+		handlers: map[string]any{"Test": okHandler},
+	}))
+	require.NoError(t, m.Start(context.Background()))
+	defer func() { require.NoError(t, m.Stop(true)) }()
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(baseURL + "/")
+		if err != nil {
+			return false
+		}
+		resp.Body.Close()
+		return true
+	}, 2*time.Second, 10*time.Millisecond)
+
+	t.Run("runs on a matched route", func(t *testing.T) {
+		resp, err := http.Get(baseURL + "/api/test")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, "ran", resp.Header.Get("X-Stamp"))
+	})
+
+	t.Run("answers a request no route matches, as a preflight needs", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodOptions, baseURL+"/api/test", nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+		assert.Equal(t, "ran", resp.Header.Get("X-Stamp"))
+	})
+
+	t.Run("survives a restart rebuild", func(t *testing.T) {
+		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Init(context.Background()))
+		require.NoError(t, m.Start(context.Background()))
+		require.Eventually(t, func() bool {
+			resp, err := http.Get(baseURL + "/api/test")
+			if err != nil {
+				return false
+			}
+			defer resp.Body.Close()
+			return resp.Header.Get("X-Stamp") == "ran"
+		}, 2*time.Second, 10*time.Millisecond)
+	})
+}
+
+// permissionEcho answers with the flattened route metadata it sees at request
+// time, proving the schema never has to leave the server package.
+type permissionEcho struct{}
+
+func (m *permissionEcho) Name() string                   { return "permecho" }
+func (m *permissionEcho) Dependencies() []common.Service { return nil }
+func (m *permissionEcho) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			req, _ := c.Get(api.ContextKeyRequestInfo).(*api.RequestInfo)
+			if req != nil {
+				c.Response().Header().Set("X-Permission", req.Permission)
+				c.Response().Header().Set("X-Poll", fmt.Sprintf("%t", req.Poll))
+			}
+			return next(c)
+		}
+	}, nil
+}
+
+func TestRequestInfo_FlattenedRouteMetadata(t *testing.T) {
+	port := freePort(t)
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", port, "/")))
+	require.NoError(t, m.RegisterMiddlewares(&permissionEcho{}))
+	require.NoError(t, m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /guarded
+    func: Guarded
+    permission: user.manage
+    poll: true
+    middlewares:
+      - permecho
+`),
+		handlers: map[string]any{"Guarded": okHandler},
+	}))
+	require.NoError(t, m.Start(context.Background()))
+	defer func() { require.NoError(t, m.Stop(true)) }()
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(baseURL + "/api/guarded")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.Header.Get("X-Permission") == "user.manage" && resp.Header.Get("X-Poll") == "true"
+	}, 2*time.Second, 10*time.Millisecond)
 }

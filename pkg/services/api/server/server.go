@@ -3,13 +3,11 @@ package server
 import (
 	"context"
 	"net/http"
-	"path"
 
 	"github.com/labstack/echo/v4"
 
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/maputil"
 )
 
 var _ Server = (*server)(nil)
@@ -19,13 +17,13 @@ type server struct {
 	name string
 	log  log.Logger
 
-	endpoint       *api.Endpoint
-	tlsConfig      *api.ServerTLS
-	throttleConfig *api.ThrottleConfig
-	echo           *echo.Echo
+	endpoint    *api.Endpoint
+	tlsConfig   *api.ServerTLS
+	middlewares []api.Middleware
+	echo        *echo.Echo
 
-	groups   map[api.HandlerKey]*api.HandlerGroup
-	handlers map[api.HandlerKey]*api.Handler
+	groups   map[handlerKey]*handlerGroupConfig
+	handlers map[handlerKey]*handlerConfig
 }
 
 func (s *server) Name() string {
@@ -34,22 +32,6 @@ func (s *server) Name() string {
 
 func (s *server) Endpoint() *api.Endpoint {
 	return s.endpoint
-}
-
-func (s *server) HandlerPath(group *api.HandlerGroup, handler *api.Handler) string {
-	var ep, gp string
-	if s.endpoint != nil {
-		ep = s.endpoint.Path
-	}
-	if group != nil {
-		gp = group.Prefix
-	}
-	return path.Join(ep, gp, handler.Path)
-}
-
-// Routers returns all handler groups and handlers for this server
-func (s *server) Routers() []*api.HandlerGroup {
-	return maputil.Values(s.groups)
 }
 
 // start starts a single HTTP or HTTPS server
