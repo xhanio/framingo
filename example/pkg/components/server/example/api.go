@@ -22,13 +22,11 @@ func (m *manager) initAPI() error {
 		authnuser.New(m.auth),
 		authz.New(m.role),
 		// Routers opt in through router.yaml, where a handler may also carry
-		// its own limit under the middleware's name; this instance limit
-		// covers the rest. Built without one it passes everything, so
-		// attaching it is safe with no config at all.
-		throttle.New(throttle.WithLimit(
-			m.config.GetFloat64("api.http.throttle.rps"),
-			m.config.GetInt("api.http.throttle.burst_size"),
-		)),
+		// its own limit under the middleware's name; the server's middleware
+		// defaults (api.<name>.middlewares in config.yaml) cover the rest.
+		// With no limit anywhere it passes everything, so attaching it is
+		// safe with no config at all.
+		throttle.New(),
 	}
 	routers := []api.Router{
 		exampleRouter.New(m.example, m.log),

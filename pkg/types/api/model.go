@@ -17,11 +17,11 @@ const (
 type Middleware interface {
 	common.Service
 	// Func returns the middleware function for one attachment point. config is
-	// the raw YAML written under the middleware's name in router.yaml, and nil
-	// when the middleware is attached bare or from code. Called once per route
-	// at registration time - and again on restart, when routes are rebuilt -
-	// so per-route state lives in the returned closure. An error fails
-	// registration.
+	// the raw YAML written under the middleware's name, and nil when there is
+	// none. Called once per attachment at registration time - and again on
+	// restart, when routes are rebuilt - so per-route state lives in the
+	// returned closure. An error fails registration; returning no function
+	// and no error declines the attachment, and the server skips it.
 	Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)
 }
 

@@ -8,7 +8,7 @@ handlers:
     func: Login
     middlewares:
       # This handler's own limit, overriding the group's throttle attachment
-      # and the instance limit it carries.
+      # and the server's default config for it.
       - throttle:
           rps: 1
           burst_size: 3

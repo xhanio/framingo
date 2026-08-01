@@ -3,15 +3,18 @@
 // route its own limit right there:
 //
 //	middlewares:
-//	  - throttle            # the instance limit from WithLimit
+//	  - throttle            # the server's default limit for this middleware
 //	  - throttle:           # or this route's own, overriding it
 //	      rps: 1
 //	      burst_size: 3
 //
+// The bare form takes its config from the group's entry, then from the
+// server's middleware configs (server.WithMiddlewareConfigs), which is where a
+// server-wide limit belongs.
 // Each attachment is one route and keeps its own limiter table, so the key is
-// the client IP alone. An attachment that ends up with no limit — no config,
-// no instance limit — passes everything, which lets a router attach the
-// middleware unconditionally and leave the limit to configuration.
+// the client IP alone. An attachment that ends up with no limit at all passes
+// everything, which lets a router attach the middleware unconditionally and
+// leave the limit to configuration.
 package throttle
 
 import (
@@ -26,29 +29,16 @@ import (
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+
+	"github.com/xhanio/framingo/example/pkg/types/api"
 )
 
 var _ fapi.Middleware = (*middleware)(nil)
 
-type middleware struct {
-	rps   float64
-	burst int
-}
+type middleware struct{}
 
-// config is the router.yaml block under this middleware's name. When present
-// it replaces the instance limit for that route entirely, zeros meaning
-// unthrottled.
-type config struct {
-	RPS       float64 `yaml:"rps"`
-	BurstSize int     `yaml:"burst_size"`
-}
-
-func New(opts ...Option) fapi.Middleware {
-	m := &middleware{}
-	for _, opt := range opts {
-		opt(m)
-	}
-	return m
+func New() fapi.Middleware {
+	return &middleware{}
 }
 
 func (m *middleware) Name() string {
@@ -63,14 +53,13 @@ func (m *middleware) Dependencies() []common.Service {
 // Func builds the attachment for one route: its limit, and its own limiter
 // table, live in the returned closure.
 func (m *middleware) Func(raw []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
-	rps, burst := m.rps, m.burst
+	var cfg api.ThrottleConfig
 	if raw != nil {
-		var cfg config
 		if err := yaml.Unmarshal(raw, &cfg); err != nil {
 			return nil, errors.Wrapf(err, "invalid throttle config")
 		}
-		rps, burst = cfg.RPS, cfg.BurstSize
 	}
+	rps, burst := cfg.RPS, cfg.BurstSize
 	if rps == 0 || burst == 0 {
 		// No limit for this route: pass everything without bookkeeping.
 		return func(next echo.HandlerFunc) echo.HandlerFunc { return next }, nil

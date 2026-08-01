@@ -35,8 +35,8 @@ func info(ip string) *fapi.RequestInfo {
 	return &fapi.RequestInfo{IP: ip, Path: "/a"}
 }
 
-func TestInstanceLimit(t *testing.T) {
-	mw := funcOf(t, New(WithLimit(1, 2)), nil)
+func TestLimit(t *testing.T) {
+	mw := funcOf(t, New(), []byte("rps: 1\nburst_size: 2\n"))
 
 	// The burst passes, the request after it is limited.
 	require.NoError(t, serve(t, mw, info("1.2.3.4")))
@@ -47,7 +47,7 @@ func TestInstanceLimit(t *testing.T) {
 }
 
 func TestLimitIsPerIP(t *testing.T) {
-	mw := funcOf(t, New(WithLimit(1, 1)), nil)
+	mw := funcOf(t, New(), []byte("rps: 1\nburst_size: 1\n"))
 
 	require.NoError(t, serve(t, mw, info("1.2.3.4")))
 	require.Error(t, serve(t, mw, info("1.2.3.4")))
@@ -55,27 +55,11 @@ func TestLimitIsPerIP(t *testing.T) {
 	assert.NoError(t, serve(t, mw, info("5.6.7.8")))
 }
 
-func TestConfigOverridesInstanceLimit(t *testing.T) {
-	m := New(WithLimit(1, 100))
-	// The instance limit alone would allow the burst; the route's config
-	// tightens it to a single request.
-	mw := funcOf(t, m, []byte("rps: 1\nburst_size: 1\n"))
-
-	require.NoError(t, serve(t, mw, info("1.2.3.4")))
-	assert.Error(t, serve(t, mw, info("1.2.3.4")))
-}
-
-func TestConfigWithoutInstanceLimit(t *testing.T) {
-	mw := funcOf(t, New(), []byte("rps: 1\nburst_size: 1\n"))
-
-	require.NoError(t, serve(t, mw, info("1.2.3.4")))
-	assert.Error(t, serve(t, mw, info("1.2.3.4")))
-}
-
 func TestAttachmentsAreIndependent(t *testing.T) {
-	m := New(WithLimit(1, 1))
-	a := funcOf(t, m, nil)
-	b := funcOf(t, m, nil)
+	m := New()
+	limit := []byte("rps: 1\nburst_size: 1\n")
+	a := funcOf(t, m, limit)
+	b := funcOf(t, m, limit)
 
 	// Each attachment - each route - keeps its own limiter table, so
 	// exhausting one route does not starve another.
@@ -84,20 +68,18 @@ func TestAttachmentsAreIndependent(t *testing.T) {
 	assert.NoError(t, serve(t, b, info("1.2.3.4")))
 }
 
-func TestNoLimitMeansNoThrottle(t *testing.T) {
+func TestNoConfigMeansNoThrottle(t *testing.T) {
+	// A bare attachment on a server with no default for this middleware.
 	mw := funcOf(t, New(), nil)
 	for range 10 {
 		assert.NoError(t, serve(t, mw, info("1.2.3.4")))
 	}
 }
 
-func TestZeroLimitMeansNoThrottle(t *testing.T) {
+func TestZeroConfigMeansNoThrottle(t *testing.T) {
 	// The old server.WithThrottle treated a zero rps or burst as "no
-	// throttle"; WithLimit and the config keep that contract.
-	mw := funcOf(t, New(WithLimit(0, 100)), nil)
-	assert.NoError(t, serve(t, mw, info("1.2.3.4")))
-
-	mw = funcOf(t, New(WithLimit(1, 1)), []byte("rps: 0\nburst_size: 0\n"))
+	// throttle"; the config keeps that contract.
+	mw := funcOf(t, New(), []byte("rps: 0\nburst_size: 0\n"))
 	for range 5 {
 		assert.NoError(t, serve(t, mw, info("1.2.3.4")))
 	}
@@ -109,9 +91,18 @@ func TestBadConfigFailsToBuild(t *testing.T) {
 }
 
 func TestMissingRequestInfoIsAnError(t *testing.T) {
-	mw := funcOf(t, New(WithLimit(1, 1)), nil)
+	mw := funcOf(t, New(), []byte("rps: 1\nburst_size: 1\n"))
 	e := echo.New()
 	c := e.NewContext(httptest.NewRequest(http.MethodGet, "/", nil), httptest.NewRecorder())
 	err := mw(func(c echo.Context) error { return nil })(c)
 	assert.Error(t, err)
+}
+
+func TestPartialConfigMeansNoThrottle(t *testing.T) {
+	// A block with only rps and no burst_size leaves burst at zero, which the
+	// zeros contract reads as unthrottled - surprising enough to pin.
+	mw := funcOf(t, New(), []byte("rps: 5\n"))
+	for range 100 {
+		assert.NoError(t, serve(t, mw, info("1.2.3.4")))
+	}
 }

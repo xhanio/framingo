@@ -13,7 +13,7 @@
 
 - **Health Monitoring** — Kubernetes-style liveness/readiness probes with automatic restart on liveness failure
 
-- **HTTP API Server** — Echo-based server with declarative YAML routing, middleware pipeline, throttling, TLS, and WebSocket support
+- **HTTP API Server** — Echo-based server with declarative YAML routing, a middleware pipeline with per-route config, built-in CORS, TLS, and WebSocket support
 
 - **Database Integration** — GORM-backed manager for PostgreSQL, MySQL, SQLite, and ClickHouse with connection pooling, migrations, and context-aware transactions
 
@@ -131,7 +131,7 @@ sequenceDiagram
 
     Client->>APIServer: HTTP Request
     APIServer->>Middleware: Process Request
-    Note over Middleware: Recover<br/>Logger<br/>Info<br/>Error<br/>Auth/Custom
+    Note over Middleware: Recover<br/>CORS<br/>Logger<br/>Info<br/>Error<br/>Auth/Custom
     Middleware->>Router: Validated Request
     Router->>Service: Business Operation
     Service->>DB: Data Access
@@ -159,11 +159,11 @@ Production-ready service implementations:
   - Restart behavior is tunable: `WithMonitorInterval`, `WithRestartPolicy(maxRetries)`, `WithRestartDelay`, `WithShutdownTimeout`
 
 - **[api/server](pkg/services/api/server/)** — HTTP API server
-  - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithMiddlewares(...))`
+  - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithMiddlewares(...), WithMiddlewareConfigs(...))`
   - Declarative YAML routing via `api.Router`
   - Middleware pipeline with name-based resolution
   - WebSocket handlers (use method `WS` in router YAML)
-  - Built-in chain, applied in order: recover → logger → info → error, preceded by any server-level middlewares installed with `WithMiddlewares` (where a CORS middleware belongs, since preflight requests match no route)
+  - Built-in chain — recover, cors, logger, info, error — in a fixed order, with `WithMiddlewares` additions between cors and logger; cors is a standard `api.Middleware` configured under its name in the server's middleware configs, the other four are plain lifecycle functions taking no config
 
 - **[api/client](pkg/services/api/client/)** — HTTP client with TLS, headers, cookies, body encoding (deflate), and structured error parsing — `NewRequest` builds, `Do` executes an `*http.Request`, `Send` does both in one shot
 
@@ -752,12 +752,12 @@ func (r *router) Handlers() map[string]any {
 ### Middleware Pipeline
 
 ```
-Request → [server-level (cors, …)] → Recover → Logger → Info → Error → custom (auth, throttle, deflate, …) → Handler → Response
+Request → Recover → [CORS] → [server-level] → Logger → Info → Error → custom (auth, throttle, deflate, …) → Handler → Response
 ```
 
-Server-level middlewares are installed per server with `Add(name, WithMiddlewares(...))` and run ahead of the built-ins, before any route has been matched — the position a CORS middleware needs, since a preflight OPTIONS matches no route. The four built-ins are always applied, in that order, ahead of any route-attached custom middleware. Rate limiting and CORS are not built in: the example ships them as user middlewares (`example/pkg/middlewares/throttle`, `example/pkg/middlewares/cors`).
+The server ships its built-ins in a fixed order — four plain lifecycle functions (recover, logger, info, error) that take no config, plus cors, a standard `api.Middleware` configured through the server's middleware configs under its own name. Each position is forced by a dependency: recover outermost, since everything inside it may panic; cors next, answering preflight requests — which match no route, so no route-attached middleware could — before any user code; server-level middlewares from `WithMiddlewares` after cors but ahead of info, so they run on every request, matched or not; logger wrapping info, whose records it reads; error innermost. CORS declines attachment until configured — `cors: true` for echo's permissive development defaults, a policy block (`allow_origins`/`allow_methods`/`allow_headers`/`allow_credentials`/`max_age`) to tighten, `false` or absent to stay off; declining by returning no function is part of the `Func` contract, not a special case. Rate limiting stays an app concern: the example ships it as a user middleware (`example/pkg/middlewares/throttle`).
 
-A middleware implements one method — `Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)` — called once per attachment point at registration time, with the raw YAML written under its name in router.yaml, or nil when attached bare or from code. Per-route state lives in the returned closure, and a bad config fails startup, not the first request.
+A middleware implements one method — `Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)` — called once per attachment point at registration time, with the raw YAML written under its name. Config resolves most-specific-first: the handler entry's own block in router.yaml, else its group entry's, else the server's middleware config for that name (`WithMiddlewareConfigs` — a plain name-to-config mapping, typically fed from the app's config.yaml), else nil. Per-route state lives in the returned closure, and a bad config fails startup, not the first request.
 
 Custom middlewares are resolved by name from the set registered with `srv.RegisterMiddlewares(...)`, and the lookup happens while routers are being installed — so always register middlewares before routers, or registration fails with `NotImplemented: middleware <name> not found`.
 
@@ -817,9 +817,11 @@ api:
     host: 0.0.0.0
     port: 8080
     prefix: /api/v1
-    throttle:
-      rps: 100.0
-      burst_size: 200
+    middlewares:            # per-middleware default configs, by name
+      cors: true            # the server's built-in CORS
+      throttle:             # the example's throttle middleware
+        rps: 100.0
+        burst_size: 200
 
 pprof:
   port: 6060              # optional

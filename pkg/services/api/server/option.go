@@ -56,14 +56,38 @@ func WithTLS(cert certutil.CertBundle, auth bool) ServerOption {
 	}
 }
 
-// WithMiddlewares installs middlewares on the server itself, ahead of the
-// built-in chain and so ahead of any route match - where a concern that must
-// answer requests no route matches, such as CORS preflight, has to sit. They
-// run on every request to the server, are built with a nil config, and survive
-// the echo rebuild a restart performs. RequestInfo does not exist yet at this
-// position; a middleware that reads it belongs in router.yaml instead.
+// WithMiddlewares installs middlewares on the server itself, running on every
+// request - matched or not - inside the built-in recover and cors but ahead of
+// the rest of the lifecycle. Each is built with the server's middleware config
+// under its name and survives the echo rebuild a restart performs. RequestInfo
+// does not exist yet at this position; a middleware that reads it belongs in
+// router.yaml instead.
 func WithMiddlewares(mws ...api.Middleware) ServerOption {
 	return func(s *server) {
 		s.middlewares = append(s.middlewares, mws...)
+	}
+}
+
+// WithMiddlewareConfigs sets the server's default middleware configs, a plain
+// mapping of middleware name to config - unlike a router.yaml middleware list,
+// which stays a sequence because attachment order matters there:
+//
+//	cors: true
+//	throttle:
+//	  rps: 100.0
+//	  burst_size: 200
+//
+// The server's built-in cors middleware reads its block from the same mapping
+// under "cors", so that name is the server's own; the lifecycle built-ins
+// (recover, logger, info, error) take no config and claim no names.
+//
+// Each block is what a middleware's Func receives when nothing more specific
+// exists. Config resolves most-specific-first: a handler entry's own block,
+// else its group entry's, else this server config, else nil - and server-level
+// middlewares (WithMiddlewares) are built with theirs in place of nil. Invalid
+// YAML fails Add.
+func WithMiddlewareConfigs(defaults []byte) ServerOption {
+	return func(s *server) {
+		s.middlewareConfigs = defaults
 	}
 }

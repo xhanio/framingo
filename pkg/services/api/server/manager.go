@@ -84,45 +84,69 @@ func (m *manager) Dependencies() []common.Service {
 // reusing a server after Shutdown — on restart we need fresh echos.
 func (m *manager) Init(ctx context.Context) error {
 	for _, s := range m.servers {
-		if err := m.buildEcho(s); err != nil {
+		if err := m.rebuildServer(s); err != nil {
 			return err
 		}
-		for key, h := range s.handlers {
-			g := s.groups[key]
-			if err := m.installHandler(s, g, h); err != nil {
-				return err
-			}
+	}
+	return nil
+}
+
+// rebuildServer gives the server a fresh echo instance and reinstalls every
+// route it holds.
+func (m *manager) rebuildServer(s *server) error {
+	if err := m.buildEcho(s); err != nil {
+		return err
+	}
+	for key, h := range s.handlers {
+		g := s.groups[key]
+		if err := m.installHandler(s, g, h); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 // buildEcho creates a fresh echo instance for the given server and applies
-// the pre + core middlewares. Replaces any prior s.echo.
+// its middleware chain. Replaces any prior s.echo.
 func (m *manager) buildEcho(s *server) error {
-	mw := newMiddleware(s)
 	e := m.newEcho()
 	e.HTTPErrorHandler = s.errorHandler
 	e.Pre(middleware.RemoveTrailingSlash())
-	var middlewares []echo.MiddlewareFunc
-	// Server-level middlewares (WithMiddlewares) run ahead of the built-ins,
-	// before any route has been matched, so one that must answer requests no
-	// route matches - CORS preflight - can do so. Attached from code, they
-	// carry no router.yaml config.
-	for _, umw := range s.middlewares {
-		fn, err := umw.Func(nil)
+	configs, err := s.parseMiddlewareConfigs()
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse middleware configs for server %s", s.name)
+	}
+	// Each position in the chain is forced by a dependency: recover outermost,
+	// because everything inside it - the user's middlewares most of all - may
+	// panic; cors next, answering preflight requests that match no route
+	// before any user code runs; then the user's server-level middlewares;
+	// logger wrapping info, whose records it reads; error innermost,
+	// normalizing failures closest to the work.
+	//
+	// The user slot sits where it does because the lifecycle trio admits no
+	// insertion: between logger and info a short-circuiting middleware would
+	// leave logger reading records info never wrote, masking the real error,
+	// and inside info is just a route middleware with extra steps - router.yaml
+	// already expresses that. Ahead of the trio is the one position router.yaml
+	// cannot express: every request, matched or not. A request rejected there
+	// still gets its error normalized and printed by the errorHandler fallback.
+	mw := newMiddleware(s)
+	funcs := []echo.MiddlewareFunc{mw.Recover}
+	// cors and the user's server-level middlewares are standard
+	// api.Middlewares, each built with the server's config under its name;
+	// one that returns no function has declined attachment.
+	for _, umw := range append([]api.Middleware{&corsMiddleware{}}, s.middlewares...) {
+		fn, err := umw.Func(configs[umw.Name()])
 		if err != nil {
 			return errors.Wrapf(err, "middleware %s failed to build for server %s", umw.Name(), s.name)
 		}
-		middlewares = append(middlewares, fn)
+		if fn == nil {
+			continue
+		}
+		funcs = append(funcs, fn)
 	}
-	middlewares = append(middlewares,
-		mw.Recover,
-		mw.Logger,
-		mw.Info,
-		mw.Error,
-	)
-	e.Use(middlewares...)
+	funcs = append(funcs, mw.Logger, mw.Info, mw.Error)
+	e.Use(funcs...)
 	s.echo = e
 	return nil
 }
@@ -264,7 +288,7 @@ func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerCon
 	prefix := strings.TrimSuffix(path.Join(s.endpoint.Path, g.Prefix), "/")
 	group := s.echo.Group(prefix)
 
-	mwfuncs, err := m.collectMiddlewares(h, g)
+	mwfuncs, err := m.collectMiddlewares(s, h, g)
 	if err != nil {
 		return err
 	}
@@ -297,35 +321,70 @@ func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerCon
 // collectMiddlewares resolves the handler's and group's middleware refs into
 // functions for one route. Handler refs come first - they wrap outermost - and
 // a name the handler already claimed is skipped at group level, so a handler's
-// config overrides the group's attachment rather than stacking a second run.
-// Each ref costs one Func call, at registration, so a bad config fails startup.
-func (m *manager) collectMiddlewares(h *handlerConfig, g *handlerGroupConfig) ([]echo.MiddlewareFunc, error) {
-	refs := make([]*middlewareConfig, 0, len(h.Middlewares)+len(g.Middlewares))
-	seen := make(map[string]bool, len(h.Middlewares))
+// entry overrides the group's attachment rather than stacking a second run.
+// Config resolves most-specific-first: the entry's own block, else the group
+// entry's block for the same name, else the server's middleware config, else
+// nil. Each ref costs one Func call, at registration, so a bad config fails
+// startup.
+func (m *manager) collectMiddlewares(s *server, h *handlerConfig, g *handlerGroupConfig) ([]echo.MiddlewareFunc, error) {
+	groupConfigs := make(map[string][]byte, len(g.Middlewares))
+	for _, ref := range g.Middlewares {
+		if _, ok := groupConfigs[ref.Name]; !ok {
+			groupConfigs[ref.Name] = ref.Config
+		}
+	}
+	serverConfigs, err := s.parseMiddlewareConfigs()
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse middleware configs for server %s", s.name)
+	}
+
+	mwfuncs := make([]echo.MiddlewareFunc, 0, len(h.Middlewares)+len(g.Middlewares))
+	seen := make(map[string]bool, len(h.Middlewares)+len(g.Middlewares))
+	install := func(name string, cfg []byte) error {
+		mw, ok := m.middlewares[name]
+		if !ok {
+			return errors.NotImplemented.Newf("middleware %s not found", name)
+		}
+		fn, err := mw.Func(cfg)
+		if err != nil {
+			return errors.Wrapf(err, "middleware %s failed to build for %s %s", name, h.Method, h.Path)
+		}
+		if fn == nil {
+			// Attachment declined - the route serves as if the middleware
+			// were absent.
+			return nil
+		}
+		mwfuncs = append(mwfuncs, fn)
+		return nil
+	}
 	for _, ref := range h.Middlewares {
-		if !seen[ref.Name] {
-			seen[ref.Name] = true
-			refs = append(refs, ref)
+		if seen[ref.Name] {
+			continue
+		}
+		seen[ref.Name] = true
+		cfg := ref.Config
+		if cfg == nil {
+			cfg = groupConfigs[ref.Name]
+		}
+		if cfg == nil {
+			cfg = serverConfigs[ref.Name]
+		}
+		if err := install(ref.Name, cfg); err != nil {
+			return nil, err
 		}
 	}
 	for _, ref := range g.Middlewares {
-		if !seen[ref.Name] {
-			seen[ref.Name] = true
-			refs = append(refs, ref)
+		if seen[ref.Name] {
+			continue
 		}
-	}
-
-	mwfuncs := make([]echo.MiddlewareFunc, 0, len(refs))
-	for _, ref := range refs {
-		mw, ok := m.middlewares[ref.Name]
-		if !ok {
-			return nil, errors.NotImplemented.Newf("middleware %s not found", ref.Name)
+		seen[ref.Name] = true
+		cfg := ref.Config
+		if cfg == nil {
+			cfg = serverConfigs[ref.Name]
 		}
-		fn, err := mw.Func(ref.Config)
-		if err != nil {
-			return nil, errors.Wrapf(err, "middleware %s failed to build for %s %s", ref.Name, h.Method, h.Path)
+		if err := install(ref.Name, cfg); err != nil {
+			return nil, err
 		}
-		mwfuncs = append(mwfuncs, fn)
 	}
 	return mwfuncs, nil
 }

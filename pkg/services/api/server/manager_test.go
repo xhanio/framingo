@@ -689,3 +689,509 @@ handlers:
 		return resp.Header.Get("X-Permission") == "user.manage" && resp.Header.Get("X-Poll") == "true"
 	}, 2*time.Second, 10*time.Millisecond)
 }
+
+func TestMiddlewareDefaults(t *testing.T) {
+	newManagerWithDefaults := func(t *testing.T, cap *captureMiddleware) *manager {
+		t.Helper()
+		m := testManager()
+		require.NoError(t, m.Add("http",
+			WithEndpoint("127.0.0.1", 8080, "/"),
+			WithMiddlewareConfigs([]byte("capmw:\n  scope: default\n")),
+		))
+		require.NoError(t, m.RegisterMiddlewares(cap))
+		return m
+	}
+
+	t.Run("a bare route attachment receives the server default", func(t *testing.T) {
+		cap := &captureMiddleware{name: "capmw"}
+		m := newManagerWithDefaults(t, cap)
+		require.NoError(t, m.RegisterRouters(&mockRouter{
+			name: "test",
+			config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /bare
+    func: A
+    middlewares:
+      - capmw`),
+			handlers: map[string]any{"A": okHandler},
+		}))
+		require.Len(t, cap.configs, 1)
+		var cfg map[string]string
+		require.NoError(t, yaml.Unmarshal(cap.configs[0], &cfg))
+		assert.Equal(t, map[string]string{"scope": "default"}, cfg)
+	})
+
+	t.Run("a route's own config beats the server default", func(t *testing.T) {
+		cap := &captureMiddleware{name: "capmw"}
+		m := newManagerWithDefaults(t, cap)
+		require.NoError(t, m.RegisterRouters(&mockRouter{
+			name: "test",
+			config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /own
+    func: A
+    middlewares:
+      - capmw:
+          scope: route`),
+			handlers: map[string]any{"A": okHandler},
+		}))
+		require.Len(t, cap.configs, 1)
+		var cfg map[string]string
+		require.NoError(t, yaml.Unmarshal(cap.configs[0], &cfg))
+		assert.Equal(t, map[string]string{"scope": "route"}, cfg)
+	})
+
+	t.Run("a server-level middleware receives its default", func(t *testing.T) {
+		cap := &captureMiddleware{name: "capmw"}
+		m := testManager()
+		require.NoError(t, m.Add("http",
+			WithEndpoint("127.0.0.1", 8080, "/"),
+			WithMiddlewares(cap),
+			WithMiddlewareConfigs([]byte("capmw:\n  scope: server\n")),
+		))
+		require.NotEmpty(t, cap.configs)
+		var cfg map[string]string
+		require.NoError(t, yaml.Unmarshal(cap.configs[len(cap.configs)-1], &cfg))
+		assert.Equal(t, map[string]string{"scope": "server"}, cfg)
+	})
+
+	t.Run("a name mapped to null carries no config", func(t *testing.T) {
+		cap := &captureMiddleware{name: "capmw"}
+		m := testManager()
+		require.NoError(t, m.Add("http",
+			WithEndpoint("127.0.0.1", 8080, "/"),
+			WithMiddlewares(cap),
+			WithMiddlewareConfigs([]byte("capmw:\n")),
+		))
+		require.NotEmpty(t, cap.configs)
+		assert.Nil(t, cap.configs[len(cap.configs)-1])
+	})
+
+	t.Run("invalid defaults fail Add", func(t *testing.T) {
+		m := testManager()
+		err := m.Add("http",
+			WithEndpoint("127.0.0.1", 8080, "/"),
+			WithMiddlewareConfigs([]byte("not: [valid")),
+		)
+		assert.Error(t, err)
+	})
+}
+
+func TestMiddleware_ConfigPrecedence(t *testing.T) {
+	// A handler's own block beats the group's, the group's beats the server
+	// default - each ref falling through to the next level only where it
+	// carries nothing itself.
+	cap := &captureMiddleware{name: "capmw"}
+	m := testManager()
+	require.NoError(t, m.Add("http",
+		WithEndpoint("127.0.0.1", 8080, "/"),
+		WithMiddlewareConfigs([]byte("capmw:\n  scope: server\n")),
+	))
+	require.NoError(t, m.RegisterMiddlewares(cap))
+	require.NoError(t, m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+middlewares:
+  - capmw:
+      scope: group
+handlers:
+  - method: GET
+    path: /bare-handler
+    func: A
+    middlewares:
+      - capmw
+  - method: GET
+    path: /group-only
+    func: B
+  - method: GET
+    path: /own
+    func: C
+    middlewares:
+      - capmw:
+          scope: handler
+`),
+		handlers: map[string]any{"A": okHandler, "B": okHandler, "C": okHandler},
+	}))
+
+	require.Len(t, cap.configs, 3)
+	scopes := make([]string, 0, 3)
+	for _, raw := range cap.configs {
+		var cfg map[string]string
+		require.NoError(t, yaml.Unmarshal(raw, &cfg))
+		scopes = append(scopes, cfg["scope"])
+	}
+	// Route order follows the yaml: bare handler ref inherits the group's
+	// config, the group-only route takes it directly, the configured handler
+	// keeps its own.
+	assert.Equal(t, []string{"group", "group", "handler"}, scopes)
+}
+
+func TestCORS_BuiltIn(t *testing.T) {
+	start := func(t *testing.T, configs []byte) string {
+		t.Helper()
+		port := freePort(t)
+		m := testManager()
+		opts := []ServerOption{WithEndpoint("127.0.0.1", port, "/")}
+		if configs != nil {
+			opts = append(opts, WithMiddlewareConfigs(configs))
+		}
+		require.NoError(t, m.Add("http", opts...))
+		require.NoError(t, m.RegisterRouters(&mockRouter{
+			name: "test",
+			config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /test
+    func: Test`),
+			handlers: map[string]any{"Test": okHandler},
+		}))
+		require.NoError(t, m.Start(context.Background()))
+		t.Cleanup(func() { require.NoError(t, m.Stop(true)) })
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		require.Eventually(t, func() bool {
+			resp, err := http.Get(baseURL + "/")
+			if err != nil {
+				return false
+			}
+			resp.Body.Close()
+			return true
+		}, 2*time.Second, 10*time.Millisecond)
+		return baseURL
+	}
+
+	preflight := func(t *testing.T, baseURL string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodOptions, baseURL+"/api/test", nil)
+		require.NoError(t, err)
+		req.Header.Set("Origin", "http://localhost:3000")
+		req.Header.Set(echo.HeaderAccessControlRequestMethod, http.MethodGet)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() { resp.Body.Close() })
+		return resp
+	}
+
+	t.Run("enabled under its name like any middleware, it answers preflight", func(t *testing.T) {
+		baseURL := start(t, []byte("cors: true\n"))
+		resp := preflight(t, baseURL)
+		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+		assert.Equal(t, "*", resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
+	})
+
+	t.Run("a policy block restricts the origins", func(t *testing.T) {
+		baseURL := start(t, []byte("cors:\n  allow_origins:\n    - http://app.example.com\n"))
+		resp := preflight(t, baseURL)
+		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+		assert.Empty(t, resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
+	})
+
+	t.Run("false declines attachment", func(t *testing.T) {
+		baseURL := start(t, []byte("cors: false\n"))
+		resp := preflight(t, baseURL)
+		assert.Empty(t, resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
+		assert.NotEqual(t, http.StatusNoContent, resp.StatusCode)
+	})
+
+	t.Run("absent, no CORS at all", func(t *testing.T) {
+		baseURL := start(t, nil)
+		resp := preflight(t, baseURL)
+		assert.Empty(t, resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
+	})
+}
+
+func TestMiddleware_DeclineAttachment(t *testing.T) {
+	t.Run("a server-level middleware may decline attachment", func(t *testing.T) {
+		port := freePort(t)
+		m := testManager()
+		require.NoError(t, m.Add("http",
+			WithEndpoint("127.0.0.1", port, "/"),
+			WithMiddlewares(&decliningMiddleware{}),
+		))
+		require.NoError(t, m.RegisterRouters(&mockRouter{
+			name: "test",
+			config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /test
+    func: Test`),
+			handlers: map[string]any{"Test": okHandler},
+		}))
+		require.NoError(t, m.Start(context.Background()))
+		defer func() { require.NoError(t, m.Stop(true)) }()
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		require.Eventually(t, func() bool {
+			resp, err := http.Get(baseURL + "/api/test")
+			if err != nil {
+				return false
+			}
+			defer resp.Body.Close()
+			return resp.StatusCode == http.StatusOK
+		}, 2*time.Second, 10*time.Millisecond)
+	})
+}
+
+// decliningMiddleware returns no function: attachment declined, the server
+// skips it.
+type decliningMiddleware struct{}
+
+func (m *decliningMiddleware) Name() string                   { return "declining" }
+func (m *decliningMiddleware) Dependencies() []common.Service { return nil }
+func (m *decliningMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	return nil, nil
+}
+
+// panicMiddleware panics on every request - what recover must catch even when
+// the panic comes from a server-level middleware.
+type panicMiddleware struct{}
+
+func (m *panicMiddleware) Name() string                   { return "panicky" }
+func (m *panicMiddleware) Dependencies() []common.Service { return nil }
+func (m *panicMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			panic("server-level middleware panic")
+		}
+	}, nil
+}
+
+// witnessMiddleware records that a request reached it.
+type witnessMiddleware struct {
+	saw []string
+}
+
+func (m *witnessMiddleware) Name() string                   { return "witness" }
+func (m *witnessMiddleware) Dependencies() []common.Service { return nil }
+func (m *witnessMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			m.saw = append(m.saw, c.Request().Method)
+			return next(c)
+		}
+	}, nil
+}
+
+func TestChain_Order(t *testing.T) {
+	t.Run("recover wraps server-level middlewares", func(t *testing.T) {
+		port := freePort(t)
+		m := testManager()
+		require.NoError(t, m.Add("http",
+			WithEndpoint("127.0.0.1", port, "/"),
+			WithMiddlewares(&panicMiddleware{}),
+		))
+		require.NoError(t, m.Start(context.Background()))
+		defer func() { require.NoError(t, m.Stop(true)) }()
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+		// The panic must come back as a structured error response, not a
+		// dropped connection.
+		require.Eventually(t, func() bool {
+			resp, err := http.Get(baseURL + "/anything")
+			if err != nil {
+				return false
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			return resp.StatusCode == http.StatusInternalServerError && len(body) > 0
+		}, 2*time.Second, 10*time.Millisecond)
+	})
+
+	t.Run("cors answers preflight before server-level middlewares", func(t *testing.T) {
+		port := freePort(t)
+		m := testManager()
+		witness := &witnessMiddleware{}
+		require.NoError(t, m.Add("http",
+			WithEndpoint("127.0.0.1", port, "/"),
+			WithMiddlewares(witness),
+			WithMiddlewareConfigs([]byte("cors: true\n")),
+		))
+		require.NoError(t, m.RegisterRouters(&mockRouter{
+			name: "test",
+			config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /test
+    func: Test`),
+			handlers: map[string]any{"Test": okHandler},
+		}))
+		require.NoError(t, m.Start(context.Background()))
+		defer func() { require.NoError(t, m.Stop(true)) }()
+		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		require.Eventually(t, func() bool {
+			resp, err := http.Get(baseURL + "/api/test")
+			if err != nil {
+				return false
+			}
+			resp.Body.Close()
+			return true
+		}, 2*time.Second, 10*time.Millisecond)
+
+		req, err := http.NewRequest(http.MethodOptions, baseURL+"/api/test", nil)
+		require.NoError(t, err)
+		req.Header.Set("Origin", "http://localhost:3000")
+		req.Header.Set(echo.HeaderAccessControlRequestMethod, http.MethodGet)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+		// The GET reached the witness; the preflight never did.
+		assert.Contains(t, witness.saw, http.MethodGet)
+		assert.NotContains(t, witness.saw, http.MethodOptions)
+	})
+}
+
+func TestMiddleware_DeclineAtRoute(t *testing.T) {
+	// The contract's decline sentence must hold for route attachments exactly
+	// as it does for server-level ones: the route serves as if the middleware
+	// were absent.
+	port := freePort(t)
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", port, "/")))
+	require.NoError(t, m.RegisterMiddlewares(&decliningMiddleware{}))
+	require.NoError(t, m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+middlewares:
+  - declining
+handlers:
+  - method: GET
+    path: /test
+    func: Test
+    middlewares:
+      - declining`),
+		handlers: map[string]any{"Test": okHandler},
+	}))
+	require.NoError(t, m.Start(context.Background()))
+	defer func() { require.NoError(t, m.Stop(true)) }()
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(baseURL + "/api/test")
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode == http.StatusOK && string(body) == "ok"
+	}, 2*time.Second, 10*time.Millisecond)
+}
+
+func TestMiddleware_NullAndEmptyBlocks(t *testing.T) {
+	t.Run("a null handler entry inherits the group's block", func(t *testing.T) {
+		cap := &captureMiddleware{name: "capmw"}
+		m := testManager()
+		require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
+		require.NoError(t, m.RegisterMiddlewares(cap))
+		require.NoError(t, m.RegisterRouters(&mockRouter{
+			name: "test",
+			config: []byte(`server: http
+prefix: /api
+middlewares:
+  - capmw:
+      scope: group
+handlers:
+  - method: GET
+    path: /a
+    func: A
+    middlewares:
+      - capmw:
+`),
+			handlers: map[string]any{"A": okHandler},
+		}))
+		require.Len(t, cap.configs, 1)
+		var cfg map[string]string
+		require.NoError(t, yaml.Unmarshal(cap.configs[0], &cfg))
+		assert.Equal(t, map[string]string{"scope": "group"}, cfg)
+	})
+
+	t.Run("an empty block shadows instead of inheriting", func(t *testing.T) {
+		// `- name: {}` is how a route opts out of the group's or server's
+		// block without detaching the middleware.
+		cap := &captureMiddleware{name: "capmw"}
+		m := testManager()
+		require.NoError(t, m.Add("http",
+			WithEndpoint("127.0.0.1", 8080, "/"),
+			WithMiddlewareConfigs([]byte("capmw:\n  scope: server\n")),
+		))
+		require.NoError(t, m.RegisterMiddlewares(cap))
+		require.NoError(t, m.RegisterRouters(&mockRouter{
+			name: "test",
+			config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /a
+    func: A
+    middlewares:
+      - capmw: {}
+`),
+			handlers: map[string]any{"A": okHandler},
+		}))
+		require.Len(t, cap.configs, 1)
+		var cfg map[string]string
+		require.NoError(t, yaml.Unmarshal(cap.configs[0], &cfg))
+		assert.Empty(t, cfg)
+	})
+}
+
+func TestCORS_StrictPolicy(t *testing.T) {
+	t.Run("an unknown policy field fails Add", func(t *testing.T) {
+		m := testManager()
+		err := m.Add("http",
+			WithEndpoint("127.0.0.1", 8080, "/"),
+			WithMiddlewareConfigs([]byte("cors:\n  allowed_origins:\n    - http://a.example\n")),
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cors")
+	})
+
+	t.Run("credentials against a wildcard origin fails Add", func(t *testing.T) {
+		m := testManager()
+		err := m.Add("http",
+			WithEndpoint("127.0.0.1", 8080, "/"),
+			WithMiddlewareConfigs([]byte("cors:\n  allow_credentials: true\n")),
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "allow_origins")
+	})
+}
+
+func TestMiddlewareConfigs_SurviveRestartRebuild(t *testing.T) {
+	cap := &captureMiddleware{name: "capmw"}
+	m := testManager()
+	require.NoError(t, m.Add("http",
+		WithEndpoint("127.0.0.1", 8080, "/"),
+		WithMiddlewares(cap),
+		WithMiddlewareConfigs([]byte("capmw:\n  scope: server\n")),
+	))
+	require.NoError(t, m.RegisterMiddlewares(cap))
+	require.NoError(t, m.RegisterRouters(&mockRouter{
+		name: "test",
+		config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /a
+    func: A
+    middlewares:
+      - capmw`),
+		handlers: map[string]any{"A": okHandler},
+	}))
+	before := len(cap.configs)
+	require.NoError(t, m.Init(context.Background()))
+	require.Greater(t, len(cap.configs), before)
+	// Every build - first boot and rebuild alike - delivered the server block.
+	for i, raw := range cap.configs {
+		var cfg map[string]string
+		require.NoError(t, yaml.Unmarshal(raw, &cfg), "config %d", i)
+		assert.Equal(t, map[string]string{"scope": "server"}, cfg, "config %d", i)
+	}
+}

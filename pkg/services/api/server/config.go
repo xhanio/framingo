@@ -70,25 +70,40 @@ func (mc *middlewareConfig) UnmarshalYAML(node *yaml.Node) error {
 	case yaml.ScalarNode:
 		return node.Decode(&mc.Name)
 	case yaml.MappingNode:
-		if len(node.Content) != 2 {
+		var entry map[string]yaml.Node
+		if err := node.Decode(&entry); err != nil {
+			return errors.Wrap(err)
+		}
+		if len(entry) != 1 {
 			return errors.Newf("a middleware entry must map exactly one name to its config")
 		}
-		if err := node.Content[0].Decode(&mc.Name); err != nil {
-			return errors.Wrap(err)
+		for name, value := range entry {
+			mc.Name = name
+			raw, err := configBytes(&value)
+			if err != nil {
+				return err
+			}
+			mc.Config = raw
 		}
-		value := node.Content[1]
-		// "- name:" with nothing under it parses as a mapping to null; treat
-		// it as a bare attachment rather than handing the middleware "null".
-		if value.Tag == "!!null" {
-			return nil
-		}
-		raw, err := yaml.Marshal(value)
-		if err != nil {
-			return errors.Wrap(err)
-		}
-		mc.Config = raw
 		return nil
 	default:
 		return errors.Newf("a middleware entry must be a name or a single-key mapping")
 	}
+}
+
+// configBytes renders the YAML written under a middleware's name back to the
+// raw bytes Middleware.Func receives. A null value - a name with nothing
+// under it - is no config at all, not the string "null". This is the one
+// place the parsed tree turns back into bytes: the contract stays []byte so
+// middlewares owe nothing to the YAML library, at the price of this
+// re-marshal.
+func configBytes(node *yaml.Node) ([]byte, error) {
+	if node.Tag == "!!null" {
+		return nil, nil
+	}
+	raw, err := yaml.Marshal(node)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	return raw, nil
 }

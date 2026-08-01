@@ -33,10 +33,11 @@ api:
     host: 0.0.0.0
     port: 8080
     prefix: /api/v1
-    cors: true # permissive CORS for local development, applied server-wide
-    throttle: # instance limit for the throttle middleware; router.yaml can override per handler
-      rps: 100.0
-      burst_size: 200
+    middlewares: # per-middleware default configs; router.yaml overrides per group or handler
+      cors: true # the server's built-in; permissive for local development
+      throttle:
+        rps: 100.0
+        burst_size: 200
 
 # Example service configuration
 example:

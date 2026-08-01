@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/yaml.v3"
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/api/server"
@@ -20,7 +21,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
-	"github.com/xhanio/framingo/example/pkg/middlewares/cors"
 	"github.com/xhanio/framingo/example/pkg/services/example"
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/auth"
@@ -160,10 +160,17 @@ func (m *manager) initServices() error {
 				m.config.GetString(fmt.Sprintf("api.%s.prefix", name)),
 			),
 		}
-		// add CORS if configured - server-level, so preflight OPTIONS requests
-		// are answered before any route is consulted
-		if m.config.GetBool(fmt.Sprintf("api.%s.cors", name)) {
-			opts = append(opts, server.WithMiddlewares(cors.New()))
+		// Per-server middleware configs: a plain mapping of middleware name to
+		// its default config, unordered - order only matters in router.yaml,
+		// where attachment lives. Each block reaches its middleware wherever
+		// nothing more specific is configured, the server's own built-ins
+		// (cors, recover, logger, info, error) included.
+		if mws := m.config.GetStringMap(fmt.Sprintf("api.%s.middlewares", name)); len(mws) > 0 {
+			raw, err := yaml.Marshal(mws)
+			if err != nil {
+				return errors.Wrap(err)
+			}
+			opts = append(opts, server.WithMiddlewareConfigs(raw))
 		}
 		// add TLS if configured
 		if m.config.IsSet(fmt.Sprintf("api.%s.cert", name)) {
