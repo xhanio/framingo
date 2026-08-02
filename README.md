@@ -376,7 +376,13 @@ type router struct {
     helloSvc hello.Manager
 }
 
+// New returns the interface; newRouter returns the concrete type, the form
+// package tests construct.
 func New(svc hello.Manager, log log.Logger) fapi.Router {
+    return newRouter(svc, log)
+}
+
+func newRouter(svc hello.Manager, log log.Logger) *router {
     return &router{helloSvc: svc, log: log}
 }
 
@@ -694,7 +700,13 @@ The service layer converts between representations, keeping API contracts indepe
 Required dependencies become constructor arguments; optional config flows through functional options. The supervisor uses `Dependencies()` to topologically sort startup and shutdown.
 
 ```go
+// New returns the interface; newManager returns the concrete type for
+// package tests.
 func New(database db.Manager, opts ...Option) Manager {
+    return newManager(database, opts...)
+}
+
+func newManager(database db.Manager, opts ...Option) *manager {
     m := &manager{db: database}
     for _, opt := range opts {
         opt(m)

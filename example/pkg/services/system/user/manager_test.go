@@ -74,7 +74,7 @@ func setup() (*manager, model.Database, error) {
 	); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}
-	m := newUser(repository.New(db))
+	m := newManager(repository.New(db))
 	if err := m.Init(context.Background()); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}

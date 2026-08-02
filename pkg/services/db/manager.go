@@ -26,6 +26,11 @@ type manager struct {
 }
 
 func New(opts ...Option) Manager {
+	return newManager(opts...)
+}
+
+// newManager returns the concrete manager, the form package tests construct.
+func newManager(opts ...Option) *manager {
 	m := &manager{
 		log: log.Default,
 	}

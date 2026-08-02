@@ -53,13 +53,18 @@ files are real, compile-verified Go, not sketches.
 ## Versioning
 
 The plugin has a version of its own, separate from the framework module's:
-`plugin.json` and the skill's `metadata.version` carry it, bumped together
-whenever the docs change — the plugin cache is keyed by it, so an unbumped
-version never reaches installed copies. Which framework release the docs
-describe is pinned separately, in the skill's `compatibility` line and
-`metadata.framingo`; refresh the pin with every framingo release that touches
-these docs. Where a repo's go.mod pins a different framingo version, the code
-outranks this prose.
+`plugin.json` and the skill's `metadata.version` carry it, and the plugin
+cache is keyed by it, so an unbumped version never reaches installed copies.
+Which framework release the docs describe is pinned separately, in the
+skill's `compatibility` line and `metadata.framingo`. Where a repo's go.mod
+pins a different framingo version, the code outranks this prose.
+
+Every framingo shipment ends with a single Release commit that bumps every
+version surface at once — the plugin version and skill mirror (when docs
+changed since the last release), both framingo pins here, and the example's
+`project.yaml` version and `go.mod` requirement — and the tag lands on that
+commit, so a tag always contains metadata naming itself. The marketplace
+mirror syncs after.
 
 ## Source
 

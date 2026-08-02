@@ -677,8 +677,14 @@ type manager struct {
     db   db.Manager
 }
 
-// Factory function returns the exported interface
+// Factory function returns the exported interface; newManager returns the
+// concrete type, so package tests construct *manager without the interface
+// in the way.
 func New(database db.Manager, opts ...Option) Manager {
+    return newManager(database, opts...)
+}
+
+func newManager(database db.Manager, opts ...Option) *manager {
     m := &manager{
         log: log.Default,
         db:  database,

@@ -26,6 +26,11 @@ type router struct {
 }
 
 func New(em model.Example, log log.Logger) fapi.Router {
+	return newRouter(em, log)
+}
+
+// newRouter returns the concrete router, the form package tests construct.
+func newRouter(em model.Example, log log.Logger) *router {
 	r := &router{
 		em:  em,
 		log: log,

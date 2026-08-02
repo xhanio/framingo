@@ -18,6 +18,11 @@ type manager struct {
 }
 
 func New(repo repository.Repository, opts ...Option) Manager {
+	return newManager(repo, opts...)
+}
+
+// newManager returns the concrete manager, the form package tests construct.
+func newManager(repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 	}

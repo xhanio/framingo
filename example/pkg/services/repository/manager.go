@@ -18,10 +18,10 @@ type manager struct {
 }
 
 func New(db model.Database, opts ...Option) Repository {
-	return newRepo(db, opts...)
+	return newManager(db, opts...)
 }
 
-func newRepo(db model.Database, opts ...Option) *manager {
+func newManager(db model.Database, opts ...Option) *manager {
 	m := &manager{db: db}
 	for _, opt := range opts {
 		opt(m)

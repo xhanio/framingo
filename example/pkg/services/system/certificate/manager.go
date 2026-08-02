@@ -20,11 +20,11 @@ type manager struct {
 }
 
 func New(repo repository.Repository, opts ...Option) Manager {
-	return newCert(repo, opts...)
+	return newManager(repo, opts...)
 }
 
-// For test use
-func newCert(repo repository.Repository, opts ...Option) *manager {
+// newManager returns the concrete manager, the form package tests construct.
+func newManager(repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 	}

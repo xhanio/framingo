@@ -119,7 +119,13 @@ type router struct {
     svc  user.Manager
 }
 
+// New returns the interface; newRouter returns the concrete type, the form
+// package tests construct.
 func New(svc user.Manager, log log.Logger) fapi.Router {
+    return newRouter(svc, log)
+}
+
+func newRouter(svc user.Manager, log log.Logger) *router {
     return &router{svc: svc, log: log}
 }
 
