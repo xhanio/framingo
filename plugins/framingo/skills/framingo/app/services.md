@@ -20,7 +20,9 @@ services/example/
 The example groups its services in tiers, mirroring the server component's
 registration layers ([components-server.md](components-server.md)):
 `services/repository/` (data access — one service implementing every
-`types/repo/` interface plus `Transaction`), `services/system/` (auth, user,
+`types/repo/` interface plus `Transaction`, and the health probes:
+`Ready()` pings the database, `Alive()` guards only its own wiring —
+[supervisor.md](../pkgs/supervisor.md)), `services/system/` (auth, user,
 role, organization, certificate), and business services such as
 `services/example/` on top. System and business services take
 `repository.Repository`, never `db.Manager` — only the repository touches
