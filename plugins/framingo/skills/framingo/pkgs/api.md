@@ -11,7 +11,7 @@ Two different packages are in play throughout this document. Router code imports
 | `github.com/xhanio/framingo/pkg/types/api` | `fapi` | framingo | `Router`, `Middleware`, `RequestInfo`, `ErrorBody`, `WrapError`, `ContextKey*`, `Endpoint` |
 | `<project>/pkg/types/api` | none (`api`) | **you** | `Context`, `HandlerFunc`, `WebSocketHandlerFunc`, `WrapHandler`, `WrapWebSocket`, `DiscoverHandlers`, request/response DTOs |
 
-**`api.Context` in this document is always the project's**, e.g. [`example/pkg/types/api/api.go`](_templates/api-context.go). Framingo does **not** define a `Context` interface — don't go looking for one in `fapi`, and don't import both packages unaliased (compile error).
+**`api.Context` in this document is always the project's**, e.g. [`example/pkg/types/api/api.go`](../_templates/api-context.go). Framingo does **not** define a `Context` interface — don't go looking for one in `fapi`, and don't import both packages unaliased (compile error).
 
 ## Route Registration Flow
 
@@ -74,7 +74,7 @@ A Router provides two things: a YAML config declaring routes, and a map of handl
 
 ### Handler signature: use the project `api.Context`, not `echo.Context`
 
-**Declare every handler as `func(c api.Context) error`** — where `api.Context` is the interface **your project** defines (`<project>/pkg/types/api`, *not* framingo's `fapi`), embedding `echo.Context` + `context.Context`. Canonical implementation to copy: [`example/pkg/types/api/api.go`](_templates/api-context.go).
+**Declare every handler as `func(c api.Context) error`** — where `api.Context` is the interface **your project** defines (`<project>/pkg/types/api`, *not* framingo's `fapi`), embedding `echo.Context` + `context.Context`. Canonical implementation to copy: [`example/pkg/types/api/api.go`](../_templates/api-context.go).
 
 What you get over a bare `echo.Context`:
 
@@ -315,7 +315,7 @@ func (r *router) Feed(c api.Context, conn *websocket.Conn) error {
 
 ## Middleware Resolution
 
-Middlewares are registered by name via `RegisterMiddlewares()`. The YAML config references them by the name returned from `Middleware.Name()`. (Writing one is covered in [middlewares.md](middlewares.md); this section is how the server resolves them.) During route registration:
+Middlewares are registered by name via `RegisterMiddlewares()`. The YAML config references them by the name returned from `Middleware.Name()`. (Writing one is covered in [middlewares.md](../app/middlewares.md); this section is how the server resolves them.) During route registration:
 
 1. Handler-specific middlewares are resolved first (from `handler.middlewares`)
 2. Group-level middlewares are resolved next (from `group.middlewares`)

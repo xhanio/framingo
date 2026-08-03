@@ -3,9 +3,9 @@
 The project-side router pattern: the `router.go`/`handler.go`/`router.yaml`
 triple, the project `api.Context`, and handler discovery. For the server that
 consumes routers — registration flow, YAML schema, middleware resolution,
-WebSockets — see [api-server.md](api-server.md).
+WebSockets — see [api.md](../pkgs/api.md).
 
-Routes are defined declaratively: each `fapi.Router` ships an embedded `router.yaml` plus a `Handlers()` map; the server manager binds them at registration time. The recommended layout splits each package into `router.go` (factory + `Handlers()` boilerplate) and `handler.go` (handler bodies). Templates: [`_templates/router.go`](_templates/router.go), [`_templates/handler.go`](_templates/handler.go), [`_templates/router.yaml`](_templates/router.yaml).
+Routes are defined declaratively: each `fapi.Router` ships an embedded `router.yaml` plus a `Handlers()` map; the server manager binds them at registration time. The recommended layout splits each package into `router.go` (factory + `Handlers()` boilerplate) and `handler.go` (handler bodies). Templates: [`_templates/router.go`](../_templates/router.go), [`_templates/handler.go`](../_templates/handler.go), [`_templates/router.yaml`](../_templates/router.yaml).
 
 `New` returns `fapi.Router`; the unexported `newRouter` returns the concrete `*router`, so package tests construct it directly — the convention every router and service follows.
 
@@ -27,7 +27,7 @@ import (
 
 ## Handler signature — use the project `api.Context`
 
-**When defining an API, write handlers as `func(c api.Context) error` — not `func(c echo.Context) error`.** `api.Context` is the interface *your project* defines (canonical version: [`_templates/api-context.go`](_templates/api-context.go)) that embeds `echo.Context` **and** `context.Context`, and adds project helpers:
+**When defining an API, write handlers as `func(c api.Context) error` — not `func(c echo.Context) error`.** `api.Context` is the interface *your project* defines (canonical version: [`_templates/api-context.go`](../_templates/api-context.go)) that embeds `echo.Context` **and** `context.Context`, and adds project helpers:
 
 ```go
 // pkg/routers/user/handler.go
@@ -57,7 +57,7 @@ Why this is the recommendation:
 
 Same for WebSocket handlers: `func(c api.Context, conn *websocket.Conn) error`.
 
-If a project has no `pkg/types/api/api.go` yet (i.e. it wasn't forked from `example/`), copy [`_templates/api-context.go`](_templates/api-context.go) into it before writing handlers, and adjust the `entity` import to the project's own.
+If a project has no `pkg/types/api/api.go` yet (i.e. it wasn't forked from `example/`), copy [`_templates/api-context.go`](../_templates/api-context.go) into it before writing handlers, and adjust the `entity` import to the project's own.
 
 ## `Handlers()` — call `DiscoverHandlers` in each `router.go`
 
@@ -96,4 +96,4 @@ if err := srvMgr.RegisterRouters(userRouter, orderRouter); err != nil {
 }
 ```
 
-For the full registration flow, router/middleware contracts, YAML format, handler key format, WebSocket handling, and middleware resolution, see [api-server.md](api-server.md).
+For the full registration flow, router/middleware contracts, YAML format, handler key format, WebSocket handling, and middleware resolution, see [api.md](../pkgs/api.md).

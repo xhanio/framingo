@@ -30,24 +30,36 @@ Framingo is a modular, production-ready Go framework for building HTTP API appli
 
 ## Reference Map
 
-One file per concept — load the one the task touches:
+One file per concept, in two halves — `pkgs/` is how to **use framingo's packages**, `app/` is how to **write an application** shaped like `example/`. Load the one the task touches:
+
+**Using the framework packages — `pkgs/`**
 
 | File | Covers |
 |---|---|
-| [services.md](services.md) | Lifecycle interfaces, supervisor, config-from-context, creating a new service (interface-in-two-places, `New`/`newManager`) |
-| [routers.md](routers.md) | Authoring routers: the `router.go`/`handler.go`/`router.yaml` triple, the two `api` packages, project `api.Context`, `DiscoverHandlers` |
-| [middlewares.md](middlewares.md) | Authoring `api.Middleware`: the `Func(config)` contract, config-free vs configured, decline, attachment, reading `RequestInfo`/permissions |
-| [api-server.md](api-server.md) | The server that consumes routers and middlewares: registration flow, router.yaml schema, middleware model + configs, WebSockets, error format |
-| [components.md](components.md) | The `components/` wiring: cobra `cmd/`, the server daemon, the client SDK |
-| [database.md](database.md) | `db.Manager`: drivers, options, transactions, dynamic pool config |
-| [pubsub.md](pubsub.md) | Pub/sub primitive, message bus, message interfaces, slow subscribers |
-| [planner.md](planner.md) | Scheduled/ad-hoc task execution: plans, jobs, stats selectors |
-| [types.md](types.md) | The `types/` categories, the two `api` packages' contents, ORM base types, context keys |
-| [client.md](client.md) | HTTP client (`api/client`) and the project client-component SDK pattern |
-| [config-reference.md](config-reference.md) | The annotated config.yaml template, env layering, dynamic keys |
-| [errors-reference.md](errors-reference.md) | `xhanio/errors`: categories, wrapping, checking |
-| [package-layout.md](package-layout.md) | The categorized `pkg/` layout, server component structure, import order |
-| [utilities.md](utilities.md) | Logging, `pkg/structs/` data structures, notable `pkg/utils/` helpers |
+| [pkgs/supervisor.md](pkgs/supervisor.md) | Lifecycle interfaces, supervisor orchestration, config-from-context |
+| [pkgs/api.md](pkgs/api.md) | The API server: registration flow, router.yaml schema, middleware model + configs, WebSockets, error format |
+| [pkgs/client.md](pkgs/client.md) | The framework HTTP client (`api/client`): requests, encoding, global headers |
+| [pkgs/db.md](pkgs/db.md) | `db.Manager`: drivers, options, transactions, dynamic pool config |
+| [pkgs/pubsub.md](pkgs/pubsub.md) | Pub/sub primitive, message bus, message interfaces, slow subscribers |
+| [pkgs/planner.md](pkgs/planner.md) | Scheduled/ad-hoc task execution: plans, jobs, stats selectors |
+| [pkgs/types.md](pkgs/types.md) | Framework types: `common` interfaces, the `fapi` surface, ORM base types, context keys |
+| [pkgs/config.md](pkgs/config.md) | The annotated config.yaml template, env layering, dynamic keys |
+| [pkgs/errors.md](pkgs/errors.md) | `xhanio/errors`: categories, wrapping, checking |
+| [pkgs/utils.md](pkgs/utils.md) | Logging, `pkg/structs/` data structures, notable `pkg/utils/` helpers |
+
+**Writing the application — `app/`**
+
+| File | Covers |
+|---|---|
+| [app/layout.md](app/layout.md) | The categorized `pkg/` layout, import order |
+| [app/services.md](app/services.md) | Writing a service: interface-in-two-places, `New`/`newManager`, options |
+| [app/routers.md](app/routers.md) | Authoring routers: the `router.go`/`handler.go`/`router.yaml` triple, the two `api` packages, project `api.Context`, `DiscoverHandlers` |
+| [app/middlewares.md](app/middlewares.md) | Authoring `api.Middleware`: the `Func(config)` contract, config-free vs configured, decline, attachment |
+| [app/types.md](app/types.md) | The project's five `types/` categories and the two `api` packages |
+| [app/components.md](app/components.md) | The `components/` wiring category and how its three subtrees fit together |
+| [app/components-server.md](app/components-server.md) | The application daemon: file structure, layered service creation, registration order, signals |
+| [app/components-cmd.md](app/components-cmd.md) | Cobra CLI wiring: thin `main`s, the daemon subcommand, the operator CLI over the SDK |
+| [app/components-client.md](app/components-client.md) | The app SDK component: typed operations, credential/session handling over the HTTP client |
 
 ## Starting a New Backend
 
@@ -89,16 +101,16 @@ cp <skill>/_templates/api-context.go pkg/types/api/api.go
 mkdir -p pkg/routers/order pkg/services/order
 cp <skill>/_templates/{router.go,handler.go,router.yaml} pkg/routers/order/
 
-# The service's two interface halves (see services.md)
+# The service's two interface halves (see app/services.md)
 cp <skill>/_templates/types-model-order.go    pkg/types/model/order.go
 cp <skill>/_templates/services-order-model.go pkg/services/order/model.go
 ```
 
-All five `types/` subdirs are part of the layout ([package-layout.md](package-layout.md)); `model/` in particular is **not optional** — the router template imports `myapp/pkg/types/model`.
+All five `types/` subdirs are part of the layout ([app/layout.md](app/layout.md)); `model/` in particular is **not optional** — the router template imports `myapp/pkg/types/model`.
 
 `_templates/api-context.go` is self-contained (no project types). Its trailing comment shows how to add `Credential()`/`Session()` accessors over your own `entity` package once you have one.
 
-Then: write services ([services.md](services.md)), wire them in `pkg/components/server/` ([package-layout.md](package-layout.md)), and register routers with the API server ([routers.md](routers.md), [api-server.md](api-server.md)).
+Then: write services ([app/services.md](app/services.md)), wire them in `pkg/components/server/` ([app/components-server.md](app/components-server.md)), and register routers with the API server ([app/routers.md](app/routers.md), [pkgs/api.md](pkgs/api.md)).
 
 Either route, the reference map above is the per-concept guide for the work inside the new project.
 
@@ -106,21 +118,21 @@ Either route, the reference map above is the per-concept guide for the work insi
 
 | Concern | Package | Interface / Key Type | Docs |
 |---|---|---|---|
-| Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` | [services.md](services.md) |
-| Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1` | [database.md](database.md) |
-| HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware` | [api-server.md](api-server.md) |
-| Handler request context | **project's own** `<project>/pkg/types/api` (unaliased `api`) | `api.Context` — use as the handler ctx instead of `echo.Context`; not a framingo type, you own it | [routers.md](routers.md) |
-| Middlewares | project `pkg/middlewares/<name>/` | `fapi.Middleware` — `Func(config []byte)` | [middlewares.md](middlewares.md) |
-| App wiring | project `pkg/components/{cmd,server,client}/` | the server daemon + CLI + SDK components | [components.md](components.md) |
-| HTTP client | `pkg/services/api/client` | `client.Client` | [client.md](client.md) |
-| Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers | [pubsub.md](pubsub.md) |
-| Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` | [pubsub.md](pubsub.md) |
-| Task planner | `pkg/services/planner` | `planner.Manager`, `model.Planner` | [planner.md](planner.md) |
-| Message interfaces | `pkg/types/common` | `Message`, `MessageSender`, `MessageHandler`, `RawMessageHandler` | [pubsub.md](pubsub.md) |
-| Service interfaces | `pkg/types/model` | `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Planner` | [types.md](types.md) |
-| Logging | `pkg/utils/log` | `log.Logger` | [utilities.md](utilities.md) |
-| Errors | `github.com/xhanio/errors` | `errors.Newf`, `errors.Wrap`, category sentinels | [errors-reference.md](errors-reference.md) |
-| Config | `pkg/utils/confutil` | `confutil.FromContext(ctx)` | [services.md](services.md), [config-reference.md](config-reference.md) |
+| Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` | [pkgs/supervisor.md](pkgs/supervisor.md) |
+| Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1` | [pkgs/db.md](pkgs/db.md) |
+| HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware` | [pkgs/api.md](pkgs/api.md) |
+| Handler request context | **project's own** `<project>/pkg/types/api` (unaliased `api`) | `api.Context` — use as the handler ctx instead of `echo.Context`; not a framingo type, you own it | [app/routers.md](app/routers.md) |
+| Middlewares | project `pkg/middlewares/<name>/` | `fapi.Middleware` — `Func(config []byte)` | [app/middlewares.md](app/middlewares.md) |
+| App wiring | project `pkg/components/{cmd,server,client}/` | the server daemon + CLI + SDK components | [app/components.md](app/components.md) and its `components-*.md` files |
+| HTTP client | `pkg/services/api/client` | `client.Client` | [pkgs/client.md](pkgs/client.md) |
+| Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers | [pkgs/pubsub.md](pkgs/pubsub.md) |
+| Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` | [pkgs/pubsub.md](pkgs/pubsub.md) |
+| Task planner | `pkg/services/planner` | `planner.Manager`, `model.Planner` | [pkgs/planner.md](pkgs/planner.md) |
+| Message interfaces | `pkg/types/common` | `Message`, `MessageSender`, `MessageHandler`, `RawMessageHandler` | [pkgs/pubsub.md](pkgs/pubsub.md) |
+| Service interfaces | `pkg/types/model` | `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Planner` | [pkgs/types.md](pkgs/types.md) |
+| Logging | `pkg/utils/log` | `log.Logger` | [pkgs/utils.md](pkgs/utils.md) |
+| Errors | `github.com/xhanio/errors` | `errors.Newf`, `errors.Wrap`, category sentinels | [pkgs/errors.md](pkgs/errors.md) |
+| Config | `pkg/utils/confutil` | `confutil.FromContext(ctx)` | [pkgs/supervisor.md](pkgs/supervisor.md), [pkgs/config.md](pkgs/config.md) |
 
 ## Architecture
 
@@ -147,7 +159,7 @@ if err := s.db.FromContext(ctx).Create(u).Error; err != nil {
 }
 ```
 
-For the full category table, wrapping rules, combining, checking, and custom categories, see [errors-reference.md](errors-reference.md).
+For the full category table, wrapping rules, combining, checking, and custom categories, see [pkgs/errors.md](pkgs/errors.md).
 
 ## Package Organization
 
@@ -161,7 +173,7 @@ Categories:
 - `types/api/`, `types/entity/`, `types/model/`, `types/orm/`, `types/repo/` — request DTOs, domain entities, service interfaces, DB models, and repo interfaces, kept strictly separate
 - `utils/` — stateless shared helpers
 
-For the full category rules, type-separation example, server component file structure, and import organization, see [package-layout.md](package-layout.md).
+For the full category rules, type-separation example, server component file structure, and import organization, see [app/layout.md](app/layout.md).
 
 ## Common Mistakes
 

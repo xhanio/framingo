@@ -22,21 +22,19 @@ invoke it by name with `/framingo`.
 
 ## What's inside
 
-One skill, `framingo`, with four reference documents it pulls in on demand, plus a
+One skill, `framingo`, whose reference files split into two halves, plus a
 set of copy-ready templates:
 
-- **SKILL.md** — the entry point: architecture, core concepts, the service
-  lifecycle interfaces, database and pub/sub usage, how to create a new
-  service, common mistakes, and the recipe for starting a new backend.
-- **api-server.md** — the API server in full: registration flow, `fapi.Router`
-  and middleware contracts, `router.yaml` format, handler keys, route mapping,
-  WebSocket handlers, and middleware resolution.
-- **package-layout.md** — the required `pkg/` structure, category rules, type
-  separation, server component file layout, and import organization.
-- **config-reference.md** — annotated config YAML template covering log, db,
-  api, pprof, and custom service keys.
-- **errors-reference.md** — `github.com/xhanio/errors`: creating, wrapping,
-  combining, and checking errors, plus the category → HTTP status table.
+- **SKILL.md** — the entry point: the two-half reference map, quick
+  reference, architecture, common mistakes, and the recipe for starting a
+  new backend.
+- **pkgs/** — how to *use framingo's packages*: supervisor & service
+  lifecycle, the API server and HTTP client, db, pubsub & messagebus,
+  planner, framework types, config, errors, and utilities.
+- **app/** — how to *write an application* shaped like `example/`: package
+  layout, authoring services, routers, and middlewares, the project
+  `types/` categories, and the components family (server daemon, cobra
+  cmd, client SDK).
 
 Only SKILL.md is read up front; the references load when the task calls for
 them.

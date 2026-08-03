@@ -2,7 +2,7 @@
 
 How to write a middleware and attach it. The server's side of the story —
 the chain order, config resolution, the built-ins — is in
-[api-server.md](api-server.md).
+[api.md](../pkgs/api.md).
 
 ## The Contract
 
@@ -109,7 +109,7 @@ router.yaml.
   `srvMgr.RegisterMiddlewares(mw)` *before* routers, then reference by name
   in router.yaml at group or handler level — bare, or with a config block.
   Config resolves handler > group > server default > nil; see
-  [api-server.md](api-server.md) for the entry forms and the server
+  [api.md](../pkgs/api.md) for the entry forms and the server
   middleware configs mapping.
 - **Server-level** (must see every request, before routing): pass to
   `server.Add(name, server.WithMiddlewares(mw))`. CORS is the built-in

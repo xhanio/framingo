@@ -54,7 +54,7 @@ Available in `pkg/structs/`:
 
 ## Notable `pkg/utils/` Helpers
 
-- `confutil` — Viper-from-context delivery ([services.md](services.md) Configuration Pattern)
+- `confutil` — Viper-from-context delivery ([supervisor.md](supervisor.md) Configuration Pattern)
 - `paramutil` — ordered key/value params and the notations they're spelled in (`a=b&c=d`, `a=b c=d`, command lines); backs env/arg merging and DSN building
 - `reflectutil` — `Locate` (package-path service names), struct field scan/apply
 - `certutil` — cert bundle loading for TLS options
