@@ -37,6 +37,8 @@ func (m *manager) Services() []common.Service {
 	return m.c.services
 }
 
+// Stats returns a point-in-time copy of each service's stats, so callers
+// read them without racing the monitor's ongoing sweeps.
 func (m *manager) Stats() ([]*entity.SupervisorStats, error) {
 	var result []*entity.SupervisorStats
 	sorted := make([]common.Service, len(m.c.services))
@@ -45,7 +47,7 @@ func (m *manager) Stats() ([]*entity.SupervisorStats, error) {
 		return sorted[i].Name() > sorted[j].Name()
 	})
 	for _, svc := range sorted {
-		result = append(result, m.c.stat(svc.Name()))
+		result = append(result, m.c.snapshot(svc.Name()))
 	}
 	var errs []error
 	for _, stat := range result {

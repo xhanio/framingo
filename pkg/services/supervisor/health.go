@@ -14,7 +14,7 @@ import (
 func (m *manager) Ready(_ context.Context) error {
 	var errs []error
 	for _, svc := range m.c.services {
-		stat := m.c.stat(svc.Name())
+		stat := m.c.snapshot(svc.Name())
 		if stat == nil || stat.Ready {
 			continue
 		}
@@ -40,7 +40,7 @@ func (m *manager) Alive(_ context.Context) error {
 	}
 	var errs []error
 	for _, svc := range m.c.services {
-		stat := m.c.stat(svc.Name())
+		stat := m.c.snapshot(svc.Name())
 		if stat == nil || stat.LivenessErr == nil {
 			continue
 		}

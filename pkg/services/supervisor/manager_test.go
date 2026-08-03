@@ -204,7 +204,7 @@ func TestInitAndStart(t *testing.T) {
 		err := m.Init(context.Background())
 		assert.Error(t, err)
 
-		stat := m.c.stat("bad")
+		stat := m.c.snapshot("bad")
 		assert.False(t, stat.Initialized)
 		assert.False(t, stat.Ready)
 		assert.EqualError(t, stat.InitializationErr, "init boom")
@@ -221,7 +221,7 @@ func TestInitAndStart(t *testing.T) {
 		err := m.Start(context.Background())
 		assert.Error(t, err)
 
-		stat := m.c.stat("bad")
+		stat := m.c.snapshot("bad")
 		assert.True(t, stat.Started)
 		assert.False(t, stat.Ready)
 		assert.EqualError(t, stat.StartErr, "start boom")
@@ -237,12 +237,12 @@ func TestInitAndStart(t *testing.T) {
 		require.NoError(t, m.Init(context.Background()))
 		assert.Equal(t, 1, svc.initCalled)
 
-		stat := m.c.stat("config")
+		stat := m.c.snapshot("config")
 		assert.True(t, stat.Initialized)
 		assert.True(t, stat.Ready)
 
 		require.NoError(t, m.Start(context.Background()))
-		assert.False(t, stat.Started)
+		assert.False(t, m.c.snapshot("config").Started)
 		require.NoError(t, m.Stop(true))
 	})
 }
@@ -299,7 +299,7 @@ func TestStopOrder(t *testing.T) {
 
 		// Verify stats
 		for _, name := range []string{"db", "api"} {
-			stat := m.c.stat(name)
+			stat := m.c.snapshot(name)
 			assert.True(t, stat.Stopped)
 			assert.False(t, stat.Ready)
 		}
@@ -334,7 +334,7 @@ func TestPerServiceLifecycle(t *testing.T) {
 		assert.Equal(t, 2, svc.stopCalled)
 		assert.Equal(t, 2, svc.initCalled)
 		assert.Equal(t, 2, svc.startCalled)
-		stat := m.c.stat("svc")
+		stat := m.c.snapshot("svc")
 		assert.Equal(t, 1, stat.Restarts)
 	})
 
@@ -406,7 +406,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 
 		err := m.monitor.healthcheck(context.Background(), svc)
 		assert.Error(t, err)
-		stat := m.c.stat("svc")
+		stat := m.c.snapshot("svc")
 		assert.EqualError(t, stat.LivenessErr, "dead")
 		assert.Equal(t, 1, svc.aliveCalled)
 
@@ -423,7 +423,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		require.NoError(t, m.Start(context.Background()))
 
 		_ = m.monitor.healthcheck(context.Background(), svc)
-		stat := m.c.stat("svc")
+		stat := m.c.snapshot("svc")
 		assert.Nil(t, stat.LivenessErr)
 		assert.False(t, stat.Ready)
 		assert.EqualError(t, stat.ReadinessErr, "not ready")
@@ -441,7 +441,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		require.NoError(t, m.Start(context.Background()))
 
 		_ = m.monitor.healthcheck(context.Background(), svc)
-		stat := m.c.stat("svc")
+		stat := m.c.snapshot("svc")
 		assert.Nil(t, stat.LivenessErr)
 		assert.True(t, stat.Ready)
 		assert.Nil(t, stat.ReadinessErr)
@@ -466,7 +466,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 		time.Sleep(150 * time.Millisecond)
 		require.NoError(t, m.Stop(true))
 
-		stat := m.c.stat("svc")
+		stat := m.c.snapshot("svc")
 		assert.GreaterOrEqual(t, stat.Restarts, 1)
 	})
 
@@ -485,7 +485,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 		time.Sleep(150 * time.Millisecond)
 		require.NoError(t, m.Stop(true))
 
-		stat := m.c.stat("svc")
+		stat := m.c.snapshot("svc")
 		assert.Equal(t, 0, stat.Restarts)
 		assert.False(t, stat.Ready)
 	})
@@ -506,7 +506,7 @@ func TestMonitorMaxRetries(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	require.NoError(t, m.Stop(true))
 
-	stat := m.c.stat("svc")
+	stat := m.c.snapshot("svc")
 	assert.Equal(t, 2, stat.Restarts)
 }
 
@@ -563,22 +563,20 @@ func TestReadyStateTransitions(t *testing.T) {
 	m.Register(svc)
 	require.NoError(t, m.TopoSort())
 
-	stat := m.c.stat("svc")
-
 	// before init: not ready
-	assert.False(t, stat.Ready)
+	assert.False(t, m.c.snapshot("svc").Ready)
 
 	// after init: ready
 	require.NoError(t, m.Init(context.Background()))
-	assert.True(t, stat.Ready)
+	assert.True(t, m.c.snapshot("svc").Ready)
 
 	// after start: ready
 	require.NoError(t, m.Start(context.Background()))
-	assert.True(t, stat.Ready)
+	assert.True(t, m.c.snapshot("svc").Ready)
 
 	// after stop: not ready
 	require.NoError(t, m.Stop(true))
-	assert.False(t, stat.Ready)
+	assert.False(t, m.c.snapshot("svc").Ready)
 }
 
 func TestOptions(t *testing.T) {

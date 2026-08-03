@@ -22,7 +22,11 @@ type controller struct {
 	shutdownTimeout time.Duration
 	graph           graph.Graph[common.Service]
 	services        []common.Service
-	stats           map[string]*entity.SupervisorStats
+	// statMu guards the stats map and every field of the records it holds:
+	// the monitor goroutine writes probe results while health endpoints
+	// read them. All access goes through snapshot and update.
+	statMu sync.RWMutex
+	stats  map[string]*entity.SupervisorStats
 }
 
 func newController(config *viper.Viper) *controller {
@@ -34,6 +38,7 @@ func newController(config *viper.Viper) *controller {
 }
 
 func (c *controller) register(service common.Service) {
+	c.statMu.Lock()
 	if _, ok := c.stats[service.Name()]; !ok {
 		c.stats[service.Name()] = &entity.SupervisorStats{
 			Name:   service.Name(),
@@ -44,6 +49,7 @@ func (c *controller) register(service common.Service) {
 			c.services = append(c.services, service)
 		}
 	}
+	c.statMu.Unlock()
 	c.graph.Add(service)
 }
 
@@ -70,30 +76,55 @@ func (c *controller) find(name string) common.Service {
 	return nil
 }
 
-func (c *controller) stat(name string) *entity.SupervisorStats {
-	return c.stats[name]
+// snapshot returns a copy of the named service's stats, or nil if the
+// service is unknown. Copies are what leave the lock: callers read them
+// freely while the monitor keeps writing the live record.
+func (c *controller) snapshot(name string) *entity.SupervisorStats {
+	c.statMu.RLock()
+	defer c.statMu.RUnlock()
+	stat, ok := c.stats[name]
+	if !ok {
+		return nil
+	}
+	cp := *stat
+	return &cp
+}
+
+// update mutates the named service's stats under the write lock. Blocking
+// work (probes, Init/Start/Stop) stays outside fn.
+func (c *controller) update(name string, fn func(stat *entity.SupervisorStats)) {
+	c.statMu.Lock()
+	defer c.statMu.Unlock()
+	if stat, ok := c.stats[name]; ok {
+		fn(stat)
+	}
 }
 
 func (c *controller) init(ctx context.Context, service common.Service) (bool, error) {
+	name := service.Name()
 	svc, ok := service.(common.Initializable)
 	if !ok {
-		if stat := c.stat(service.Name()); stat != nil {
+		c.update(name, func(stat *entity.SupervisorStats) {
 			stat.Initialized = true
 			stat.Ready = true
-		}
+		})
 		return false, nil
 	}
-	c.log.Debugf("initializing %s", service.Name())
+	c.log.Debugf("initializing %s", name)
 	if c.config != nil {
 		ctx = confutil.WrapContext(ctx, c.config)
 	}
-	stat := c.stat(service.Name())
-	stat.InitializedAt = time.Now()
+	initializedAt := time.Now()
+	c.update(name, func(stat *entity.SupervisorStats) {
+		stat.InitializedAt = initializedAt
+	})
 	err := svc.Init(ctx)
-	stat.InitDuration = time.Since(stat.InitializedAt)
-	stat.Initialized = err == nil
-	stat.InitializationErr = err
-	stat.Ready = err == nil
+	c.update(name, func(stat *entity.SupervisorStats) {
+		stat.InitDuration = time.Since(initializedAt)
+		stat.Initialized = err == nil
+		stat.InitializationErr = err
+		stat.Ready = err == nil
+	})
 	return true, err
 }
 
@@ -102,15 +133,21 @@ func (c *controller) start(service common.Service) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	c.log.Debugf("starting %s", service.Name())
-	stat := c.stat(service.Name())
-	stat.Started = true
-	stat.Stopped = false
-	stat.StartedAt = time.Now()
-	stat.StartErr = svc.Start(context.Background())
-	stat.StartDuration = time.Since(stat.StartedAt)
-	stat.Ready = stat.StartErr == nil
-	return true, stat.StartErr
+	name := service.Name()
+	c.log.Debugf("starting %s", name)
+	startedAt := time.Now()
+	c.update(name, func(stat *entity.SupervisorStats) {
+		stat.Started = true
+		stat.Stopped = false
+		stat.StartedAt = startedAt
+	})
+	err := svc.Start(context.Background())
+	c.update(name, func(stat *entity.SupervisorStats) {
+		stat.StartErr = err
+		stat.StartDuration = time.Since(startedAt)
+		stat.Ready = err == nil
+	})
+	return true, err
 }
 
 func (c *controller) stop(service common.Service, wait bool) (bool, error) {
@@ -118,41 +155,56 @@ func (c *controller) stop(service common.Service, wait bool) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	c.log.Debugf("stopping %s", service.Name())
-	stat := c.stat(service.Name())
-	stat.Stopped = true
-	stat.Ready = false
-	stat.StoppedAt = time.Now()
-	stat.StopErr = svc.Stop(wait)
-	stat.StopDuration = time.Since(stat.StoppedAt)
-	return true, stat.StopErr
+	name := service.Name()
+	c.log.Debugf("stopping %s", name)
+	stoppedAt := time.Now()
+	c.update(name, func(stat *entity.SupervisorStats) {
+		stat.Stopped = true
+		stat.Ready = false
+		stat.StoppedAt = stoppedAt
+	})
+	err := svc.Stop(wait)
+	c.update(name, func(stat *entity.SupervisorStats) {
+		stat.StopErr = err
+		stat.StopDuration = time.Since(stoppedAt)
+	})
+	return true, err
 }
 
 func (c *controller) restart(ctx context.Context, service common.Service) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	stat := c.stat(service.Name())
-	c.log.Infof("restarting service %s (attempt %d)", service.Name(), stat.Restarts+1)
+	name := service.Name()
+	if stat := c.snapshot(name); stat != nil {
+		c.log.Infof("restarting service %s (attempt %d)", name, stat.Restarts+1)
+	}
 	if svc, ok := service.(common.Daemon); ok {
 		if err := svc.Stop(true); err != nil {
-			c.log.Errorf("failed to stop service %s for restart: %s", service.Name(), err)
+			c.log.Errorf("failed to stop service %s for restart: %s", name, err)
 		}
-		stat.Stopped = false
+		c.update(name, func(stat *entity.SupervisorStats) {
+			stat.Stopped = false
+		})
+	}
+	restarted := func(healthy bool) {
+		c.update(name, func(stat *entity.SupervisorStats) {
+			stat.Restarts++
+			stat.RestartedAt = time.Now()
+			if healthy {
+				stat.HealthcheckErr = nil
+			}
+		})
 	}
 	if _, err := c.init(ctx, service); err != nil {
-		stat.Restarts++
-		stat.RestartedAt = time.Now()
+		restarted(false)
 		return err
 	}
 	if _, err := c.start(service); err != nil {
-		stat.Restarts++
-		stat.RestartedAt = time.Now()
+		restarted(false)
 		return err
 	}
-	stat.Restarts++
-	stat.RestartedAt = time.Now()
-	stat.HealthcheckErr = nil
-	c.log.Infof("service %s restarted successfully", service.Name())
+	restarted(true)
+	c.log.Infof("service %s restarted successfully", name)
 	return nil
 }
 
@@ -166,16 +218,18 @@ func (c *controller) initAll(ctx context.Context) error {
 			if dep == nil {
 				panic(errors.Newf("%s dependency should not be nil, pls remove optional service from Dependencies()", service.Name()))
 			}
-			if stat := c.stat(dep.Name()); stat != nil && !stat.Initialized {
+			if stat := c.snapshot(dep.Name()); stat != nil && !stat.Initialized {
 				c.log.Debugf("%s dependency %s is not initialized", service.Name(), dep.Name())
 				ready = false
 				break
 			}
 		}
 		if !ready {
-			stat := c.stat(service.Name())
-			stat.InitializationErr = errors.Newf("dependencies not ready")
-			errs = append(errs, errors.Wrapf(stat.InitializationErr, "service %s", service.Name()))
+			initErr := errors.Newf("dependencies not ready")
+			c.update(service.Name(), func(stat *entity.SupervisorStats) {
+				stat.InitializationErr = initErr
+			})
+			errs = append(errs, errors.Wrapf(initErr, "service %s", service.Name()))
 			failed++
 			continue
 		}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -40,13 +41,15 @@ func (mon *monitor) checkAll(ctx context.Context) {
 			return
 		default:
 		}
-		stat := mon.c.stat(service.Name())
-		if stat.Stopped {
+		stat := mon.c.snapshot(service.Name())
+		if stat == nil || stat.Stopped {
 			continue
 		}
 		if err := mon.check(ctx, service, sw); err != nil {
 			mon.log.Warnf("healthcheck failed for %s: %s", service.Name(), err)
 		}
+		// re-snapshot: check just wrote the probe results this decision reads
+		stat = mon.c.snapshot(service.Name())
 		// only restart on liveness or stat-based failures, not readiness-only
 		if stat.LivenessErr == nil && stat.Healthcheck() == nil {
 			continue
@@ -116,32 +119,39 @@ func (mon *monitor) check(ctx context.Context, service common.Service, sw *sweep
 	for _, dep := range service.Dependencies() {
 		errs = append(errs, mon.check(ctx, dep, sw))
 	}
-	stat := mon.c.stat(name)
+	stat := mon.c.snapshot(name)
 	if stat == nil {
 		err := errors.Combine(errs...)
 		sw.done[name] = err
 		return err
 	}
 	errs = append(errs, stat.Healthcheck())
-	stat.LivenessErr = nil
+	// probe without the lock held - probes may do I/O and take a while
+	var livenessErr error
 	if liveness, ok := service.(common.Liveness); ok {
 		if err := liveness.Alive(ctx); err != nil {
-			stat.LivenessErr = err
-			errs = append(errs, errors.Wrapf(err, "liveness %s", service.Name()))
+			livenessErr = err
+			errs = append(errs, errors.Wrapf(err, "liveness %s", name))
 		}
 	}
-	stat.ReadinessErr = nil
-	if readiness, ok := service.(common.Readiness); ok {
+	var readinessErr error
+	readiness, probesReadiness := service.(common.Readiness)
+	if probesReadiness {
 		if err := readiness.Ready(ctx); err != nil {
-			stat.ReadinessErr = err
-			stat.Ready = false
-			errs = append(errs, errors.Wrapf(err, "readiness %s", service.Name()))
-		} else {
-			stat.Ready = true
+			readinessErr = err
+			errs = append(errs, errors.Wrapf(err, "readiness %s", name))
 		}
 	}
-	stat.HealthcheckedAt = time.Now()
-	stat.HealthcheckErr = errors.Combine(errs...)
-	sw.done[name] = stat.HealthcheckErr
-	return stat.HealthcheckErr
+	healthcheckErr := errors.Combine(errs...)
+	mon.c.update(name, func(stat *entity.SupervisorStats) {
+		stat.LivenessErr = livenessErr
+		stat.ReadinessErr = readinessErr
+		if probesReadiness {
+			stat.Ready = readinessErr == nil
+		}
+		stat.HealthcheckedAt = time.Now()
+		stat.HealthcheckErr = healthcheckErr
+	})
+	sw.done[name] = healthcheckErr
+	return healthcheckErr
 }

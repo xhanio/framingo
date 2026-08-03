@@ -55,7 +55,7 @@ func TestSweepRollsUpMemoizedDependencyFailure(t *testing.T) {
 
 	assert.Equal(t, 1, db.readyCalled)
 	for _, name := range []string{"a", "b"} {
-		stat := m.c.stat(name)
+		stat := m.c.snapshot(name)
 		require.NotNil(t, stat)
 		require.Error(t, stat.HealthcheckErr, "%s must inherit db's failure", name)
 		assert.Contains(t, stat.HealthcheckErr.Error(), "db down")
