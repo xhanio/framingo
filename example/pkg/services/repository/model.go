@@ -11,6 +11,9 @@ import (
 
 type Repository interface {
 	common.Service
+	// health.go
+	common.Readiness
+	common.Liveness
 	Transaction(ctx context.Context, fn func(context.Context) error, opts ...*sql.TxOptions) error
 	repo.User
 	repo.Organization
