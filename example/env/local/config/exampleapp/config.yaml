@@ -29,6 +29,10 @@ db:
 
 # API server configuration
 api:
+  internal: # ops listener: /healthz + /readyz, kept off the public server
+    host: 0.0.0.0
+    port: 8081
+    prefix: /
   http:
     host: 0.0.0.0
     port: 8080

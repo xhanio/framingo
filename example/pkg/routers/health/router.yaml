@@ -1,0 +1,11 @@
+server: internal # the ops listener - probes stay off the public server
+prefix: /
+handlers:
+  # No middlewares on purpose: kubelet probes must be unauthenticated,
+  # unthrottled, and cheap.
+  - method: GET
+    path: /healthz
+    func: Healthz
+  - method: GET
+    path: /readyz
+    func: Readyz

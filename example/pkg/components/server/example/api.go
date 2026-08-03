@@ -11,6 +11,7 @@ import (
 	authRouter "github.com/xhanio/framingo/example/pkg/routers/auth"
 	certRouter "github.com/xhanio/framingo/example/pkg/routers/certificate"
 	exampleRouter "github.com/xhanio/framingo/example/pkg/routers/example"
+	healthRouter "github.com/xhanio/framingo/example/pkg/routers/health"
 	messagebusRouter "github.com/xhanio/framingo/example/pkg/routers/messagebus"
 	roleRouter "github.com/xhanio/framingo/example/pkg/routers/role"
 	userRouter "github.com/xhanio/framingo/example/pkg/routers/user"
@@ -30,6 +31,7 @@ func (m *manager) initAPI() error {
 	}
 	routers := []api.Router{
 		exampleRouter.New(m.example, m.log),
+		healthRouter.New(m.services, m.log),
 		authRouter.New(m.auth, m.role, m.log),
 		userRouter.New(m.user, m.role, m.auth, m.log),
 		roleRouter.New(m.role, m.log),
