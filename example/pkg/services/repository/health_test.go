@@ -60,31 +60,31 @@ func newFakeDB(connectErr error) *fakeDB {
 
 func TestReadyPingsDatabase(t *testing.T) {
 	m := newManager(newFakeDB(nil))
-	require.NoError(t, m.Ready())
+	require.NoError(t, m.Ready(context.Background()))
 
 	m = newManager(newFakeDB(sql.ErrConnDone))
-	err := m.Ready()
+	err := m.Ready(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ping")
 }
 
 func TestReadyWithoutHandle(t *testing.T) {
 	m := newManager(&fakeDB{db: nil})
-	require.Error(t, m.Ready())
+	require.Error(t, m.Ready(context.Background()))
 }
 
 func TestAliveChecksOwnWiringOnly(t *testing.T) {
 	// Wired: alive, trivially.
 	m := newManager(newFakeDB(nil))
-	require.NoError(t, m.Alive())
+	require.NoError(t, m.Alive(context.Background()))
 
 	// An unreachable database must NOT fail liveness: the supervisor restarts
 	// a service whose Alive fails, and no repository restart fixes a database
 	// outage. That is Ready's story.
 	m = newManager(newFakeDB(sql.ErrConnDone))
-	assert.NoError(t, m.Alive())
+	assert.NoError(t, m.Alive(context.Background()))
 
 	// A missing handle is the repository's own wiring being broken.
 	m = newManager(&fakeDB{db: nil})
-	require.Error(t, m.Alive())
+	require.Error(t, m.Alive(context.Background()))
 }

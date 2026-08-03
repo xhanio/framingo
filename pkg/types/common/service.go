@@ -26,10 +26,14 @@ type Debuggable interface {
 	Info(w io.Writer, debug bool)
 }
 
+// Liveness and Readiness probes take the caller's context: probes may do
+// I/O (a database ping), and the caller owns the deadline budget and the
+// shutdown signal. Implementations may layer their own tighter timeout on
+// top, never a looser one.
 type Liveness interface {
-	Alive() error
+	Alive(ctx context.Context) error
 }
 
 type Readiness interface {
-	Ready() error
+	Ready(ctx context.Context) error
 }

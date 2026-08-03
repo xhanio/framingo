@@ -73,7 +73,7 @@ func (m *manager) Info(w io.Writer, debug bool) {
 	stats, _ := m.Stats() // errors are displayed in the table below
 	sw := newSweep()      // one sweep for the whole table: shared deps probed once
 	for _, stat := range stats {
-		_ = m.monitor.check(stat.Source, sw) // refreshes stat fields for display
+		_ = m.monitor.check(context.Background(), stat.Source, sw) // refreshes stat fields for display
 		alive := stat.LivenessErr == nil && stat.Healthcheck() == nil
 		t.Row(stat.Name, alive, stat.Ready, stat.Uptime(), stat.InitializationErr, stat.StartErr, stat.HealthcheckErr)
 	}

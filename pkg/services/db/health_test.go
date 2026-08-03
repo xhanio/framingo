@@ -34,10 +34,10 @@ func (stubConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSki
 func TestReadyPingsDatabase(t *testing.T) {
 	m := newManager()
 	m.sqlDB = sql.OpenDB(stubConnector{})
-	require.NoError(t, m.Ready())
+	require.NoError(t, m.Ready(context.Background()))
 
 	m.sqlDB = sql.OpenDB(stubConnector{err: sql.ErrConnDone})
-	err := m.Ready()
+	err := m.Ready(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ping")
 }
@@ -46,17 +46,17 @@ func TestAliveChecksOwnWiringOnly(t *testing.T) {
 	// Connected handle: alive.
 	m := newManager()
 	m.sqlDB = sql.OpenDB(stubConnector{})
-	require.NoError(t, m.Alive())
+	require.NoError(t, m.Alive(context.Background()))
 
 	// An unreachable database must NOT fail liveness: restarting the client
 	// does not raise a database server, so the futile-restart loop stays off.
 	// That is Ready's story.
 	m.sqlDB = sql.OpenDB(stubConnector{err: sql.ErrConnDone})
-	assert.NoError(t, m.Alive())
+	assert.NoError(t, m.Alive(context.Background()))
 
 	// No handle at all is broken wiring - Init reconnects, so a restart is
 	// exactly the remedy.
 	m.sqlDB = nil
-	require.Error(t, m.Alive())
-	require.Error(t, m.Ready())
+	require.Error(t, m.Alive(context.Background()))
+	require.Error(t, m.Ready(context.Background()))
 }

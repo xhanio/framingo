@@ -1,6 +1,7 @@
 package health
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,8 +25,8 @@ type fakeSupervisor struct {
 	stats []*entity.SupervisorStats
 }
 
-func (f *fakeSupervisor) Alive() error                              { return f.alive }
-func (f *fakeSupervisor) Ready() error                              { return f.ready }
+func (f *fakeSupervisor) Alive(ctx context.Context) error           { return f.alive }
+func (f *fakeSupervisor) Ready(ctx context.Context) error           { return f.ready }
 func (f *fakeSupervisor) Stats() ([]*entity.SupervisorStats, error) { return f.stats, nil }
 
 func serve(t *testing.T, sv *fakeSupervisor, handler func(*router) api.HandlerFunc, path string) *httptest.ResponseRecorder {

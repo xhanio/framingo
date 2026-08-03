@@ -55,12 +55,12 @@ func (s *mockService) Stop(wait bool) error {
 	return s.stopErr
 }
 
-func (s *mockService) Alive() error {
+func (s *mockService) Alive(ctx context.Context) error {
 	s.aliveCalled++
 	return s.aliveErr
 }
 
-func (s *mockService) Ready() error {
+func (s *mockService) Ready(ctx context.Context) error {
 	s.readyCalled++
 	return s.readyErr
 }
@@ -404,7 +404,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
 
-		err := m.monitor.healthcheck(svc)
+		err := m.monitor.healthcheck(context.Background(), svc)
 		assert.Error(t, err)
 		stat := m.c.stat("svc")
 		assert.EqualError(t, stat.LivenessErr, "dead")
@@ -422,7 +422,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
 
-		_ = m.monitor.healthcheck(svc)
+		_ = m.monitor.healthcheck(context.Background(), svc)
 		stat := m.c.stat("svc")
 		assert.Nil(t, stat.LivenessErr)
 		assert.False(t, stat.Ready)
@@ -440,7 +440,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
 
-		_ = m.monitor.healthcheck(svc)
+		_ = m.monitor.healthcheck(context.Background(), svc)
 		stat := m.c.stat("svc")
 		assert.Nil(t, stat.LivenessErr)
 		assert.True(t, stat.Ready)
@@ -625,7 +625,7 @@ func TestHealthcheckDependencyRecursion(t *testing.T) {
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 
-	err := m.monitor.healthcheck(svc)
+	err := m.monitor.healthcheck(context.Background(), svc)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "dep dead")
 }

@@ -15,7 +15,7 @@ import (
 // the pod. While the supervisor is still working a problem, answering 200
 // is the point: a pod restart would fight the recovery in progress.
 func (r *router) Healthz(c api.Context) error {
-	if err := r.sv.Alive(); err != nil {
+	if err := r.sv.Alive(c); err != nil {
 		return c.String(http.StatusServiceUnavailable, err.Error())
 	}
 	return c.String(http.StatusOK, "ok")
@@ -25,7 +25,7 @@ func (r *router) Healthz(c api.Context) error {
 // balancers and kubelet to stop routing traffic here while the monitor
 // works the problem, with the not-ready services itemized in the body.
 func (r *router) Readyz(c api.Context) error {
-	if err := r.sv.Ready(); err != nil {
+	if err := r.sv.Ready(c); err != nil {
 		// Stats' error return restates per-service healthcheck state, not a
 		// failure to fetch - the report below already carries the detail.
 		stats, _ := r.sv.Stats()

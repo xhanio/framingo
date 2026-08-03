@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"context"
 	"io"
 	"testing"
 
@@ -21,15 +22,15 @@ func TestSupervisorReady(t *testing.T) {
 	require.NoError(t, m.TopoSort())
 
 	// Nothing has started: nothing is ready.
-	require.Error(t, m.Ready())
+	require.Error(t, m.Ready(context.Background()))
 
 	m.c.stat("alpha").Ready = true
 	m.c.stat("beta").Ready = true
-	require.NoError(t, m.Ready())
+	require.NoError(t, m.Ready(context.Background()))
 
 	m.c.stat("beta").Ready = false
 	m.c.stat("beta").ReadinessErr = errors.Newf("database ping failed")
-	err := m.Ready()
+	err := m.Ready(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "beta")
 	assert.Contains(t, err.Error(), "ping")
@@ -45,15 +46,15 @@ func TestSupervisorAlive(t *testing.T) {
 		m := newTestManager(WithRestartPolicy(3))
 		m.Register(svc)
 		require.NoError(t, m.TopoSort())
-		require.NoError(t, m.Alive())
+		require.NoError(t, m.Alive(context.Background()))
 
 		stat := m.c.stat("omega")
 		stat.LivenessErr = errors.Newf("dead")
 		stat.Restarts = 2
-		assert.NoError(t, m.Alive(), "recovery still in progress must not escalate")
+		assert.NoError(t, m.Alive(context.Background()), "recovery still in progress must not escalate")
 
 		stat.Restarts = 3
-		err := m.Alive()
+		err := m.Alive(context.Background())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "omega")
 	})
@@ -66,7 +67,7 @@ func TestSupervisorAlive(t *testing.T) {
 		stat := m.c.stat("omega")
 		stat.LivenessErr = errors.Newf("dead")
 		stat.Restarts = 100
-		assert.NoError(t, m.Alive())
+		assert.NoError(t, m.Alive(context.Background()))
 	})
 
 	t.Run("restarts disabled escalate immediately", func(t *testing.T) {
@@ -75,7 +76,7 @@ func TestSupervisorAlive(t *testing.T) {
 		m.Register(svc)
 		require.NoError(t, m.TopoSort())
 		m.c.stat("omega").LivenessErr = errors.Newf("dead")
-		require.Error(t, m.Alive(),
+		require.Error(t, m.Alive(context.Background()),
 			"with no in-process recovery configured, the platform is the recovery path")
 	})
 }

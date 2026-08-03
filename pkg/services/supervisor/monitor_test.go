@@ -74,7 +74,7 @@ func TestHealthcheckSurvivesDependencyCycle(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_ = m.monitor.healthcheck(x)
+		_ = m.monitor.healthcheck(context.Background(), x)
 		close(done)
 	}()
 	select {

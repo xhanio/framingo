@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+
 	"github.com/xhanio/errors"
 )
 
@@ -8,11 +10,11 @@ import (
 // serving fails liveness because a restart genuinely fixes it - Init
 // rebuilds the echo instances, so the supervisor's restart re-binds it -
 // and a server not accepting connections is equally not ready for traffic.
-func (m *manager) Alive() error {
+func (m *manager) Alive(_ context.Context) error {
 	return m.listenersServing()
 }
 
-func (m *manager) Ready() error {
+func (m *manager) Ready(_ context.Context) error {
 	return m.listenersServing()
 }
 

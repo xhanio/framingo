@@ -1,6 +1,8 @@
 package supervisor
 
 import (
+	"context"
+
 	"github.com/xhanio/errors"
 )
 
@@ -9,7 +11,7 @@ import (
 // maintains. Probing stays the monitor's job; readiness is the transient
 // signal - stop routing traffic here, keep the process, let the monitor
 // work the problem.
-func (m *manager) Ready() error {
+func (m *manager) Ready(_ context.Context) error {
 	var errs []error
 	for _, svc := range m.c.services {
 		stat := m.c.stat(svc.Name())
@@ -31,7 +33,7 @@ func (m *manager) Ready() error {
 // configured (maxRetries 0), in which case the platform is the recovery
 // path and escalation is immediate. Unlimited retries (maxRetries < 0)
 // never escalate: the monitor keeps trying, so the process stays alive.
-func (m *manager) Alive() error {
+func (m *manager) Alive(_ context.Context) error {
 	maxRetries := m.monitor.maxRetries
 	if maxRetries < 0 {
 		return nil

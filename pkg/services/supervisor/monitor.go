@@ -44,7 +44,7 @@ func (mon *monitor) checkAll(ctx context.Context) {
 		if stat.Stopped {
 			continue
 		}
-		if err := mon.check(service, sw); err != nil {
+		if err := mon.check(ctx, service, sw); err != nil {
 			mon.log.Warnf("healthcheck failed for %s: %s", service.Name(), err)
 		}
 		// only restart on liveness or stat-based failures, not readiness-only
@@ -93,11 +93,11 @@ func newSweep() *sweep {
 // healthcheck runs an ad-hoc check of one service and its dependency chain.
 // The periodic monitor goes through checkAll instead, which shares a single
 // sweep across all services.
-func (mon *monitor) healthcheck(service common.Service) error {
-	return mon.check(service, newSweep())
+func (mon *monitor) healthcheck(ctx context.Context, service common.Service) error {
+	return mon.check(ctx, service, newSweep())
 }
 
-func (mon *monitor) check(service common.Service, sw *sweep) error {
+func (mon *monitor) check(ctx context.Context, service common.Service, sw *sweep) error {
 	if service == nil {
 		return nil
 	}
@@ -114,7 +114,7 @@ func (mon *monitor) check(service common.Service, sw *sweep) error {
 	defer delete(sw.inflight, name)
 	var errs []error
 	for _, dep := range service.Dependencies() {
-		errs = append(errs, mon.check(dep, sw))
+		errs = append(errs, mon.check(ctx, dep, sw))
 	}
 	stat := mon.c.stat(name)
 	if stat == nil {
@@ -125,14 +125,14 @@ func (mon *monitor) check(service common.Service, sw *sweep) error {
 	errs = append(errs, stat.Healthcheck())
 	stat.LivenessErr = nil
 	if liveness, ok := service.(common.Liveness); ok {
-		if err := liveness.Alive(); err != nil {
+		if err := liveness.Alive(ctx); err != nil {
 			stat.LivenessErr = err
 			errs = append(errs, errors.Wrapf(err, "liveness %s", service.Name()))
 		}
 	}
 	stat.ReadinessErr = nil
 	if readiness, ok := service.(common.Readiness); ok {
-		if err := readiness.Ready(); err != nil {
+		if err := readiness.Ready(ctx); err != nil {
 			stat.ReadinessErr = err
 			stat.Ready = false
 			errs = append(errs, errors.Wrapf(err, "readiness %s", service.Name()))
