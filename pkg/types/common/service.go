@@ -25,6 +25,7 @@ type Initializable interface {
 type Debuggable interface {
 	Info(w io.Writer, debug bool)
 }
+
 type Liveness interface {
 	Alive() error
 }

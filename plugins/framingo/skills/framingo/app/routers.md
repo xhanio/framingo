@@ -12,9 +12,10 @@ registration time. Each package splits into `router.go` (wiring) and
 `auth`, `certificate`, `example`, `health`, `messagebus`, `role`, `user` —
 and `routers/example` is the smallest business one, so it is quoted below in
 full. (`routers/health` mounts `/healthz` + `/readyz` on the dedicated
-`internal` listener: probes read the supervisor's cached stats, take no
-middlewares, and declare no dependencies — the supervisor can't be a node in
-its own graph.) Templates:
+`internal` listener: `Healthz` follows `supervisor.Alive()` — red only when
+recovery is spent — and `Readyz` follows `supervisor.Ready()`, itemizing the
+not-ready services. The router takes no middlewares and declares no
+dependencies — the supervisor can't be a node in its own graph.) Templates:
 [`_templates/router.go`](../_templates/router.go),
 [`_templates/handler.go`](../_templates/handler.go),
 [`_templates/router.yaml`](../_templates/router.yaml).

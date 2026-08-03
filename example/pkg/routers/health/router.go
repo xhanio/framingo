@@ -6,7 +6,7 @@ import (
 
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/types/model"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 
@@ -15,6 +15,16 @@ import (
 
 var _ fapi.Router = (*router)(nil)
 
+// Supervisor is the narrow view this router needs: the two graph verdicts,
+// plus the stats behind the readiness body. supervisor.Manager satisfies it;
+// model interfaces stay lifecycle-free and the service package stays out of
+// the router.
+type Supervisor interface {
+	common.Liveness
+	common.Readiness
+	Stats() ([]*entity.SupervisorStats, error)
+}
+
 //go:embed router.yaml
 var config []byte
 
@@ -22,15 +32,15 @@ type router struct {
 	name string
 	log  log.Logger
 
-	sv model.Supervisor // read-only view over the service graph's stats
+	sv Supervisor // read-only view over the service graph's stats
 }
 
-func New(sv model.Supervisor, log log.Logger) fapi.Router {
+func New(sv Supervisor, log log.Logger) fapi.Router {
 	return newRouter(sv, log)
 }
 
 // newRouter returns the concrete router, the form package tests construct.
-func newRouter(sv model.Supervisor, log log.Logger) *router {
+func newRouter(sv Supervisor, log log.Logger) *router {
 	r := &router{
 		sv:  sv,
 		log: log,
