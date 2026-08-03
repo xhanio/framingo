@@ -45,6 +45,9 @@ func newManager(opts ...Option) *manager {
 		middlewares:  make(map[string]api.Middleware),
 	}
 	m.apply(opts...)
+	if m.name == "" {
+		m.name = nameutil.Name(m)
+	}
 	return m
 }
 
@@ -69,9 +72,6 @@ func (m *manager) newEcho() *echo.Echo {
 // ============================================================================
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
 	return m.name
 }
 

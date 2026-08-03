@@ -34,14 +34,14 @@ func newManager(opts ...Option) *manager {
 		log: log.Default,
 	}
 	m.apply(opts...)
+	if m.name == "" {
+		m.name = nameutil.Name(m)
+	}
 	m.log = m.log.By(m)
 	return m
 }
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
 	return m.name
 }
 

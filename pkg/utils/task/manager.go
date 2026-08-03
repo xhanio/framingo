@@ -57,6 +57,9 @@ func newScheduler(opts ...Option) *manager {
 		wg:        &sync.WaitGroup{},
 	}
 	m.apply(opts...)
+	if m.name == "" {
+		m.name = nameutil.Name(m)
+	}
 	if m.cm == nil {
 		m.cm = cron.New(
 			cron.WithLocation(infra.Timezone),
@@ -74,9 +77,6 @@ func newScheduler(opts ...Option) *manager {
 }
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
 	return m.name
 }
 

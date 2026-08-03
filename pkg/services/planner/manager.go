@@ -37,6 +37,9 @@ func newManager(es common.MessageSender, opts ...Option) *manager {
 		todos: make(map[string]*entity.Plan),
 	}
 	m.apply(opts...)
+	if m.name == "" {
+		m.name = nameutil.Name(m)
+	}
 	m.log = m.log.By(m)
 	m.tm = task.New(
 		task.MaxConcurrency(10),
@@ -46,9 +49,6 @@ func newManager(es common.MessageSender, opts ...Option) *manager {
 }
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
 	return m.name
 }
 

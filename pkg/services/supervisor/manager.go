@@ -37,6 +37,9 @@ func newManager(config *viper.Viper, opts ...Option) *manager {
 		},
 	}
 	m.apply(opts...)
+	if m.name == "" {
+		m.name = nameutil.Name(m)
+	}
 	m.log = m.log.By(m)
 	m.c.log = m.log
 	m.monitor.log = m.log
@@ -44,9 +47,6 @@ func newManager(config *viper.Viper, opts ...Option) *manager {
 }
 
 func (m *manager) Name() string {
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
 	return m.name
 }
 
