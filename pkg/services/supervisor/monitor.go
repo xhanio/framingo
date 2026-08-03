@@ -33,6 +33,7 @@ func (mon *monitor) run(ctx context.Context) {
 }
 
 func (mon *monitor) checkAll(ctx context.Context) {
+	sw := newSweep()
 	for _, service := range mon.c.services {
 		select {
 		case <-ctx.Done():
@@ -43,7 +44,7 @@ func (mon *monitor) checkAll(ctx context.Context) {
 		if stat.Stopped {
 			continue
 		}
-		if err := mon.healthcheck(service); err != nil {
+		if err := mon.check(service, sw); err != nil {
 			mon.log.Warnf("healthcheck failed for %s: %s", service.Name(), err)
 		}
 		// only restart on liveness or stat-based failures, not readiness-only
@@ -51,13 +52,17 @@ func (mon *monitor) checkAll(ctx context.Context) {
 			continue
 		}
 		if mon.maxRetries != 0 {
+			if mon.restartDelay > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(mon.restartDelay):
+				}
+			}
 			select {
 			case <-ctx.Done():
 				return
 			default:
-			}
-			if mon.restartDelay > 0 {
-				time.Sleep(mon.restartDelay)
 			}
 			if mon.maxRetries >= 0 && stat.Restarts >= mon.maxRetries {
 				mon.log.Warnf("service %s reached max restart attempts (%d)", service.Name(), mon.maxRetries)
@@ -70,17 +75,52 @@ func (mon *monitor) checkAll(ctx context.Context) {
 	}
 }
 
+// A sweep is one monitoring pass. Probes are memoized per sweep, so a
+// dependency shared by many services is checked exactly once and every
+// dependent reuses its result.
+type sweep struct {
+	done     map[string]error
+	inflight map[string]bool
+}
+
+func newSweep() *sweep {
+	return &sweep{
+		done:     make(map[string]error),
+		inflight: make(map[string]bool),
+	}
+}
+
+// healthcheck runs an ad-hoc check of one service and its dependency chain.
+// The periodic monitor goes through checkAll instead, which shares a single
+// sweep across all services.
 func (mon *monitor) healthcheck(service common.Service) error {
+	return mon.check(service, newSweep())
+}
+
+func (mon *monitor) check(service common.Service, sw *sweep) error {
 	if service == nil {
 		return nil
 	}
+	name := service.Name()
+	if err, checked := sw.done[name]; checked {
+		return err
+	}
+	if sw.inflight[name] {
+		// TopoSort rejects cycles at wiring time; if one slips through
+		// anyway, stop the walk here instead of recursing forever.
+		return nil
+	}
+	sw.inflight[name] = true
+	defer delete(sw.inflight, name)
 	var errs []error
 	for _, dep := range service.Dependencies() {
-		errs = append(errs, mon.healthcheck(dep))
+		errs = append(errs, mon.check(dep, sw))
 	}
-	stat := mon.c.stat(service.Name())
+	stat := mon.c.stat(name)
 	if stat == nil {
-		return errors.Combine(errs...)
+		err := errors.Combine(errs...)
+		sw.done[name] = err
+		return err
 	}
 	errs = append(errs, stat.Healthcheck())
 	stat.LivenessErr = nil
@@ -102,5 +142,6 @@ func (mon *monitor) healthcheck(service common.Service) error {
 	}
 	stat.HealthcheckedAt = time.Now()
 	stat.HealthcheckErr = errors.Combine(errs...)
+	sw.done[name] = stat.HealthcheckErr
 	return stat.HealthcheckErr
 }
