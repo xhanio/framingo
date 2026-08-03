@@ -1,4 +1,4 @@
-server: internal # the ops listener - probes stay off the public server
+server: health # the probe listener - stays off the public server
 prefix: /
 handlers:
   # No middlewares on purpose: kubelet probes must be unauthenticated,

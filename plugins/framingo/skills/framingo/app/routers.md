@@ -12,7 +12,7 @@ registration time. Each package splits into `router.go` (wiring) and
 `auth`, `certificate`, `example`, `health`, `messagebus`, `role`, `user` —
 and `routers/example` is the smallest business one, so it is quoted below in
 full. (`routers/health` mounts `/healthz` + `/readyz` on the dedicated
-`internal` listener: `Healthz` follows `supervisor.Alive()` — red only when
+`health` listener: `Healthz` follows `supervisor.Alive()` — red only when
 recovery is spent — and `Readyz` follows `supervisor.Ready()`, itemizing the
 not-ready services. Since the probes live on `supervisor.Manager` — model
 interfaces stay lifecycle-free — the router declares its own narrow
