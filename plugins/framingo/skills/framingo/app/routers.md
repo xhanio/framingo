@@ -14,7 +14,10 @@ and `routers/example` is the smallest business one, so it is quoted below in
 full. (`routers/health` mounts `/healthz` + `/readyz` on the dedicated
 `internal` listener: `Healthz` follows `supervisor.Alive()` — red only when
 recovery is spent — and `Readyz` follows `supervisor.Ready()`, itemizing the
-not-ready services. The router takes no middlewares and declares no
+not-ready services. Since the probes live on `supervisor.Manager` — model
+interfaces stay lifecycle-free — the router declares its own narrow
+`Supervisor` interface (the two verdicts + `Stats`), which
+`supervisor.Manager` satisfies. It takes no middlewares and declares no
 dependencies — the supervisor can't be a node in its own graph.) Templates:
 [`_templates/router.go`](../_templates/router.go),
 [`_templates/handler.go`](../_templates/handler.go),

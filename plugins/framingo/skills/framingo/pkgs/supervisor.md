@@ -71,11 +71,9 @@ mgr.Start(ctx)
 Full signature set — `Register` and `TopoSort` differ in whether they return an error, so don't guess:
 
 ```go
-type Manager interface {          // = model.Supervisor + Initializable + Daemon + Debuggable
+type Manager interface {          // = model.Supervisor + health + Initializable + Daemon + Debuggable
     Name() string
     Dependencies() []common.Service
-    Alive() error                                 // fails only when recovery is spent: a service dead with restarts exhausted
-    Ready() error                                 // the roll-up: nil iff every registered service is ready
     Register(services ...common.Service)          // no return value
     TopoSort() error
     Services() []common.Service
@@ -85,6 +83,9 @@ type Manager interface {          // = model.Supervisor + Initializable + Daemon
     Start(ctx context.Context) error
     Stop(wait bool) error
     Info(w io.Writer, debug bool)
+
+    Alive() error                                 // health, on Manager not model.Supervisor: fails only when recovery is spent (a service dead with restarts exhausted)
+    Ready() error                                 // health: the roll-up, nil iff every registered service is ready
 
     InitService(ctx context.Context, name string) error
     StartService(name string) error
@@ -98,7 +99,7 @@ The manager:
 - Resolves dependencies via topological sort
 - Calls `Init(ctx)` on `Initializable` services in dependency order
 - Calls `Start(ctx)` on `Daemon` services
-- Monitors `Liveness` and `Readiness` probes; only liveness failure triggers restart (readiness is reported only). Each sweep probes every service exactly once — a shared dependency is checked once, its result reused by every dependent with failures still rolling up. The example's repository is the canonical implementer: `Ready()` pings the database (dependency outage = not ready, reported), `Alive()` checks only its own wiring — a restart can't fix a dead database, so a dependency outage must not fail liveness. The supervisor itself implements both as the graph's verdicts (they're on `model.Supervisor`): `Ready()` rolls up every service's readiness; `Alive()` fails only once in-process recovery is spent — a service dead with restarts exhausted (or restarts disabled) — the signal a `/healthz` probe hands the platform to replace the pod; unlimited retries never escalate
+- Monitors `Liveness` and `Readiness` probes; only liveness failure triggers restart (readiness is reported only). Each sweep probes every service exactly once — a shared dependency is checked once, its result reused by every dependent with failures still rolling up. The example's repository is the canonical implementer: `Ready()` pings the database (dependency outage = not ready, reported), `Alive()` checks only its own wiring — a restart can't fix a dead database, so a dependency outage must not fail liveness. The supervisor itself implements both as the graph's verdicts (declared on `supervisor.Manager` beside its lifecycle half — model interfaces stay lifecycle-free; the example's health router takes its own narrow interface instead): `Ready()` rolls up every service's readiness; `Alive()` fails only once in-process recovery is spent — a service dead with restarts exhausted (or restarts disabled) — the signal a `/healthz` probe hands the platform to replace the pod; unlimited retries never escalate
 - Restart behaviour tunes via `WithMonitorInterval`, `WithRestartPolicy(maxRetries)`, `WithRestartDelay`, `WithShutdownTimeout`
 
 **The supervisor does NOT install signal handlers.** There is no `os/signal` anywhere in framingo. Trapping SIGINT/SIGTERM/SIGHUP/SIGUSR1/SIGUSR2 and calling `Stop`/`Restart` is application code you write in `pkg/components/server/<app>/signal.go` — see [layout.md](../app/layout.md).
