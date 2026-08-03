@@ -18,8 +18,11 @@ type Service interface {
 // Optional lifecycle interfaces - implement as needed
 type Initializable interface { Init(ctx context.Context) error }       // setup (called on start AND restart)
 type Daemon interface { Start(ctx context.Context) error; Stop(wait bool) error }  // long-running
-type Liveness interface { Alive() error }                              // health probe (failure = auto-restart)
-type Readiness interface { Ready() error }                             // readiness probe (failure = reported only)
+type Liveness interface { Alive(ctx context.Context) error }           // health probe (failure = auto-restart)
+type Readiness interface { Ready(ctx context.Context) error }          // readiness probe (failure = reported only)
+// Probes take the caller's context - probes may do I/O (a database ping), and
+// the caller owns the deadline and shutdown signal. Implementations may layer
+// a tighter timeout on top, never a looser one.
 type Debuggable interface { Info(w io.Writer, debug bool) }            // debug output
 ```
 
@@ -84,8 +87,8 @@ type Manager interface {          // = model.Supervisor + health + Initializable
     Stop(wait bool) error
     Info(w io.Writer, debug bool)
 
-    Alive() error                                 // health, on Manager not model.Supervisor: fails only when recovery is spent (a service dead with restarts exhausted)
-    Ready() error                                 // health: the roll-up, nil iff every registered service is ready
+    Alive(ctx context.Context) error              // health, on Manager not model.Supervisor: fails only when recovery is spent (a service dead with restarts exhausted)
+    Ready(ctx context.Context) error              // health: the roll-up, nil iff every registered service is ready
 
     InitService(ctx context.Context, name string) error
     StartService(name string) error
