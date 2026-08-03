@@ -55,7 +55,7 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [app/services.md](app/services.md) | Writing a service: interface-in-two-places, `New`/`newManager`, options |
 | [app/routers.md](app/routers.md) | Authoring routers: the `router.go`/`handler.go`/`router.yaml` triple, the two `api` packages, project `api.Context`, `DiscoverHandlers` |
 | [app/middlewares.md](app/middlewares.md) | Authoring `api.Middleware`: the `Func(config)` contract, config-free vs configured, decline, attachment |
-| [app/types.md](app/types.md) | The project's five `types/` categories and the two `api` packages |
+| [app/types.md](app/types.md) | The project's `types/` categories (five core + grown ones) and the two `api` packages |
 | [app/components.md](app/components.md) | The `components/` wiring category and how its three subtrees fit together |
 | [app/components-server.md](app/components-server.md) | The application daemon: file structure, layered service creation, registration order, signals |
 | [app/components-cmd.md](app/components-cmd.md) | Cobra CLI wiring: thin `main`s, the daemon subcommand, the operator CLI over the SDK |
