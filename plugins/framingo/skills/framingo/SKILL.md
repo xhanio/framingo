@@ -54,7 +54,7 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [app/layout.md](app/layout.md) | The categorized `pkg/` layout, the three-layer access rule, import order |
 | [app/services.md](app/services.md) | Writing a service: interface-in-two-places, `New`/`newManager`, options, health probes |
 | [app/routers.md](app/routers.md) | Authoring routers: the `router.go`/`handler.go`/`router.yaml` triple, the two `api` packages, project `api.Context`, `DiscoverHandlers` |
-| [app/middlewares.md](app/middlewares.md) | Authoring `api.Middleware`: the `Func(config)` contract, config-free vs configured, decline, attachment |
+| [app/middlewares.md](app/middlewares.md) | Authoring `api.Middleware`: the `Func(enabled, config)` contract, switches, config-free vs configured, decline, attachment |
 | [app/types.md](app/types.md) | The project's `types/` categories, which layer owns each, the types-first design order, the two `api` packages |
 | [app/components.md](app/components.md) | The `components/` wiring category and how its three subtrees fit together |
 | [app/components-server.md](app/components-server.md) | The application daemon: file structure, layered service creation, registration order, signals |
@@ -122,7 +122,7 @@ Either route, the reference map above is the per-concept guide for the work insi
 | Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1` | [pkgs/db.md](pkgs/db.md) |
 | HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware` | [pkgs/api.md](pkgs/api.md) |
 | Handler request context | **project's own** `<project>/pkg/types/api` (unaliased `api`) | `api.Context` — use as the handler ctx instead of `echo.Context`; not a framingo type, you own it | [app/routers.md](app/routers.md) |
-| Middlewares | project `pkg/middlewares/<name>/` | `fapi.Middleware` — `Func(config []byte)` | [app/middlewares.md](app/middlewares.md) |
+| Middlewares | project `pkg/middlewares/<name>/` | `fapi.Middleware` — `Func(enabled bool, config []byte)` | [app/middlewares.md](app/middlewares.md) |
 | App wiring | project `pkg/components/{cmd,server,client}/` | the server daemon + CLI + SDK components | [app/components.md](app/components.md) and its `components-*.md` files |
 | HTTP client | `pkg/services/api/client` | `client.Client` | [pkgs/client.md](pkgs/client.md) |
 | Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers | [pkgs/pubsub.md](pkgs/pubsub.md) |
