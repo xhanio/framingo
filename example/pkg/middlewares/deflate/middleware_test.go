@@ -28,10 +28,10 @@ func deflateOf(t *testing.T, n int) []byte {
 
 // funcOf builds the attachment the way the server does, with no config.
 func funcOf(t *testing.T, m interface {
-	Func([]byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)
+	Func(bool, []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)
 }) echo.MiddlewareFunc {
 	t.Helper()
-	fn, err := m.Func(nil)
+	fn, err := m.Func(true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

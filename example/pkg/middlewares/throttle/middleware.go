@@ -4,7 +4,8 @@
 //
 //	middlewares:
 //	  - throttle            # the server's default limit for this middleware
-//	  - throttle:           # or this route's own, overriding it
+//	  - throttle: false     # or switched off for this route
+//	  - throttle:           # or this route's own limit, overriding it
 //	      rps: 1
 //	      burst_size: 3
 //
@@ -51,7 +52,10 @@ func (m *middleware) Dependencies() []common.Service {
 
 // Func builds the attachment for one route: its limit, and its own limiter
 // table, live in the returned closure.
-func (m *middleware) Func(raw []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+func (m *middleware) Func(enabled bool, raw []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if !enabled {
+		return nil, nil
+	}
 	var cfg api.ThrottleConfig
 	if raw != nil {
 		if err := yaml.Unmarshal(raw, &cfg); err != nil {

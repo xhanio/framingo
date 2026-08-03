@@ -15,7 +15,7 @@ import (
 // funcOf builds one attachment the way the server does at registration.
 func funcOf(t *testing.T, m fapi.Middleware, config []byte) echo.MiddlewareFunc {
 	t.Helper()
-	fn, err := m.Func(config)
+	fn, err := m.Func(true, config)
 	require.NoError(t, err)
 	return fn
 }
@@ -86,7 +86,7 @@ func TestZeroConfigMeansNoThrottle(t *testing.T) {
 }
 
 func TestBadConfigFailsToBuild(t *testing.T) {
-	_, err := New().Func([]byte("rps: [not, a, number]"))
+	_, err := New().Func(true, []byte("rps: [not, a, number]"))
 	assert.Error(t, err)
 }
 

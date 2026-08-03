@@ -426,13 +426,18 @@ handlers:
 // see how many attachments were minted and what each one received.
 type captureMiddleware struct {
 	name    string
+	enabled []bool
 	configs [][]byte
 }
 
 func (m *captureMiddleware) Name() string                   { return m.name }
 func (m *captureMiddleware) Dependencies() []common.Service { return nil }
-func (m *captureMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+func (m *captureMiddleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	m.enabled = append(m.enabled, enabled)
 	m.configs = append(m.configs, config)
+	if !enabled {
+		return nil, nil
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc { return next }, nil
 }
 
@@ -442,7 +447,10 @@ type rejectMiddleware struct{}
 
 func (m *rejectMiddleware) Name() string                   { return "rejectmw" }
 func (m *rejectMiddleware) Dependencies() []common.Service { return nil }
-func (m *rejectMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+func (m *rejectMiddleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if !enabled {
+		return nil, nil
+	}
 	if config != nil {
 		return nil, fmt.Errorf("rejectmw takes no config")
 	}
@@ -565,7 +573,10 @@ type stampMiddleware struct{}
 
 func (m *stampMiddleware) Name() string                   { return "stamp" }
 func (m *stampMiddleware) Dependencies() []common.Service { return nil }
-func (m *stampMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+func (m *stampMiddleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if !enabled {
+		return nil, nil
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			c.Response().Header().Set("X-Stamp", "ran")
@@ -583,6 +594,7 @@ func TestWithMiddlewares_ServerLevel(t *testing.T) {
 	require.NoError(t, m.Add("http",
 		WithEndpoint("127.0.0.1", port, "/"),
 		WithMiddlewares(&stampMiddleware{}),
+		WithMiddlewareConfigs([]byte("stamp:\n")),
 	))
 	require.NoError(t, m.RegisterRouters(&mockRouter{
 		name: "test",
@@ -645,7 +657,10 @@ type permissionEcho struct{}
 
 func (m *permissionEcho) Name() string                   { return "permecho" }
 func (m *permissionEcho) Dependencies() []common.Service { return nil }
-func (m *permissionEcho) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+func (m *permissionEcho) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if !enabled {
+		return nil, nil
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req, _ := c.Get(api.ContextKeyRequestInfo).(*api.RequestInfo)
@@ -832,80 +847,6 @@ handlers:
 	assert.Equal(t, []string{"group", "group", "handler"}, scopes)
 }
 
-func TestCORS_BuiltIn(t *testing.T) {
-	start := func(t *testing.T, configs []byte) string {
-		t.Helper()
-		port := freePort(t)
-		m := testManager()
-		opts := []ServerOption{WithEndpoint("127.0.0.1", port, "/")}
-		if configs != nil {
-			opts = append(opts, WithMiddlewareConfigs(configs))
-		}
-		require.NoError(t, m.Add("http", opts...))
-		require.NoError(t, m.RegisterRouters(&mockRouter{
-			name: "test",
-			config: []byte(`server: http
-prefix: /api
-handlers:
-  - method: GET
-    path: /test
-    func: Test`),
-			handlers: map[string]any{"Test": okHandler},
-		}))
-		require.NoError(t, m.Start(context.Background()))
-		t.Cleanup(func() { require.NoError(t, m.Stop(true)) })
-		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-		require.Eventually(t, func() bool {
-			resp, err := http.Get(baseURL + "/")
-			if err != nil {
-				return false
-			}
-			resp.Body.Close()
-			return true
-		}, 2*time.Second, 10*time.Millisecond)
-		return baseURL
-	}
-
-	preflight := func(t *testing.T, baseURL string) *http.Response {
-		t.Helper()
-		req, err := http.NewRequest(http.MethodOptions, baseURL+"/api/test", nil)
-		require.NoError(t, err)
-		req.Header.Set("Origin", "http://localhost:3000")
-		req.Header.Set(echo.HeaderAccessControlRequestMethod, http.MethodGet)
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		t.Cleanup(func() { resp.Body.Close() })
-		return resp
-	}
-
-	t.Run("enabled under its name like any middleware, it answers preflight", func(t *testing.T) {
-		baseURL := start(t, []byte("cors: true\n"))
-		resp := preflight(t, baseURL)
-		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-		assert.Equal(t, "*", resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
-	})
-
-	t.Run("a policy block restricts the origins", func(t *testing.T) {
-		baseURL := start(t, []byte("cors:\n  allow_origins:\n    - http://app.example.com\n"))
-		resp := preflight(t, baseURL)
-		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
-		assert.Empty(t, resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
-	})
-
-	t.Run("false declines attachment", func(t *testing.T) {
-		baseURL := start(t, []byte("cors: false\n"))
-		resp := preflight(t, baseURL)
-		assert.Empty(t, resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
-		assert.NotEqual(t, http.StatusNoContent, resp.StatusCode)
-	})
-
-	t.Run("absent, no CORS at all", func(t *testing.T) {
-		baseURL := start(t, nil)
-		resp := preflight(t, baseURL)
-		assert.Empty(t, resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
-	})
-}
-
 func TestMiddleware_DeclineAttachment(t *testing.T) {
 	t.Run("a server-level middleware may decline attachment", func(t *testing.T) {
 		port := freePort(t)
@@ -913,6 +854,7 @@ func TestMiddleware_DeclineAttachment(t *testing.T) {
 		require.NoError(t, m.Add("http",
 			WithEndpoint("127.0.0.1", port, "/"),
 			WithMiddlewares(&decliningMiddleware{}),
+			WithMiddlewareConfigs([]byte("declining:\n")),
 		))
 		require.NoError(t, m.RegisterRouters(&mockRouter{
 			name: "test",
@@ -944,7 +886,10 @@ type decliningMiddleware struct{}
 
 func (m *decliningMiddleware) Name() string                   { return "declining" }
 func (m *decliningMiddleware) Dependencies() []common.Service { return nil }
-func (m *decliningMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+func (m *decliningMiddleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if !enabled {
+		return nil, nil
+	}
 	return nil, nil
 }
 
@@ -954,7 +899,10 @@ type panicMiddleware struct{}
 
 func (m *panicMiddleware) Name() string                   { return "panicky" }
 func (m *panicMiddleware) Dependencies() []common.Service { return nil }
-func (m *panicMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+func (m *panicMiddleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if !enabled {
+		return nil, nil
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			panic("server-level middleware panic")
@@ -969,7 +917,10 @@ type witnessMiddleware struct {
 
 func (m *witnessMiddleware) Name() string                   { return "witness" }
 func (m *witnessMiddleware) Dependencies() []common.Service { return nil }
-func (m *witnessMiddleware) Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+func (m *witnessMiddleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if !enabled {
+		return nil, nil
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			m.saw = append(m.saw, c.Request().Method)
@@ -985,6 +936,7 @@ func TestChain_Order(t *testing.T) {
 		require.NoError(t, m.Add("http",
 			WithEndpoint("127.0.0.1", port, "/"),
 			WithMiddlewares(&panicMiddleware{}),
+			WithMiddlewareConfigs([]byte("panicky:\n")),
 		))
 		require.NoError(t, m.Start(context.Background()))
 		defer func() { require.NoError(t, m.Stop(true)) }()
@@ -1003,14 +955,17 @@ func TestChain_Order(t *testing.T) {
 		}, 2*time.Second, 10*time.Millisecond)
 	})
 
-	t.Run("cors answers preflight before server-level middlewares", func(t *testing.T) {
+	t.Run("server-level middlewares run in WithMiddlewares order", func(t *testing.T) {
+		// The slot's ordering guarantee is what lets an app put its cors
+		// middleware first and trust that a short-circuited preflight never
+		// reaches the middlewares behind it.
 		port := freePort(t)
 		m := testManager()
 		witness := &witnessMiddleware{}
 		require.NoError(t, m.Add("http",
 			WithEndpoint("127.0.0.1", port, "/"),
-			WithMiddlewares(witness),
-			WithMiddlewareConfigs([]byte("cors: true\n")),
+			WithMiddlewares(&optionsShortCircuitMiddleware{}, witness),
+			WithMiddlewareConfigs([]byte("optshort:\nwitness:\n")),
 		))
 		require.NoError(t, m.RegisterRouters(&mockRouter{
 			name: "test",
@@ -1036,17 +991,35 @@ handlers:
 
 		req, err := http.NewRequest(http.MethodOptions, baseURL+"/api/test", nil)
 		require.NoError(t, err)
-		req.Header.Set("Origin", "http://localhost:3000")
-		req.Header.Set(echo.HeaderAccessControlRequestMethod, http.MethodGet)
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		resp.Body.Close()
 		require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-		// The GET reached the witness; the preflight never did.
+		// The GET reached the witness; the short-circuited OPTIONS never did.
 		assert.Contains(t, witness.saw, http.MethodGet)
 		assert.NotContains(t, witness.saw, http.MethodOptions)
 	})
+}
+
+// optionsShortCircuitMiddleware answers OPTIONS itself, the shape of a
+// server-level cors middleware handling preflight.
+type optionsShortCircuitMiddleware struct{}
+
+func (m *optionsShortCircuitMiddleware) Name() string                   { return "optshort" }
+func (m *optionsShortCircuitMiddleware) Dependencies() []common.Service { return nil }
+func (m *optionsShortCircuitMiddleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	if !enabled {
+		return nil, nil
+	}
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if c.Request().Method == http.MethodOptions {
+				return c.NoContent(http.StatusNoContent)
+			}
+			return next(c)
+		}
+	}, nil
 }
 
 func TestMiddleware_DeclineAtRoute(t *testing.T) {
@@ -1140,28 +1113,6 @@ handlers:
 		var cfg map[string]string
 		require.NoError(t, yaml.Unmarshal(cap.configs[0], &cfg))
 		assert.Empty(t, cfg)
-	})
-}
-
-func TestCORS_StrictPolicy(t *testing.T) {
-	t.Run("an unknown policy field fails Add", func(t *testing.T) {
-		m := testManager()
-		err := m.Add("http",
-			WithEndpoint("127.0.0.1", 8080, "/"),
-			WithMiddlewareConfigs([]byte("cors:\n  allowed_origins:\n    - http://a.example\n")),
-		)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "cors")
-	})
-
-	t.Run("credentials against a wildcard origin fails Add", func(t *testing.T) {
-		m := testManager()
-		err := m.Add("http",
-			WithEndpoint("127.0.0.1", 8080, "/"),
-			WithMiddlewareConfigs([]byte("cors:\n  allow_credentials: true\n")),
-		)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "allow_origins")
 	})
 }
 

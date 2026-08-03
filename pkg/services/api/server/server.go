@@ -95,31 +95,40 @@ func (s *server) stop(ctx context.Context) error {
 }
 
 // parseMiddlewareConfigs resolves the raw block handed to
-// WithMiddlewareConfigs into a name-to-config map. Unlike a router.yaml
-// middleware list, the block is a plain mapping - defaults carry no order:
+// WithMiddlewareConfigs, splitting each entry once into its two meanings.
+// Unlike a router.yaml middleware list, the block is a plain mapping -
+// defaults carry no order:
 //
-//	cors: true
 //	throttle:
 //	  rps: 100.0
 //	  burst_size: 200
+//	cors: true
 //
-// A name mapped to null carries a nil config. Called wherever the configs are
-// consumed; Add surfaces an invalid block before the server exists.
-func (s *server) parseMiddlewareConfigs() (map[string][]byte, error) {
+// A boolean value is a switch and lands in switches (cors: false disables
+// the cors middleware); anything else is config and lands in configs, a
+// null entry as a present key with nil bytes. Switches come first, the way
+// Func takes them. Called wherever the mapping is consumed; Add surfaces an
+// invalid block before the server exists.
+func (s *server) parseMiddlewareConfigs() (switches map[string]bool, configs map[string][]byte, err error) {
 	if s.middlewareConfigs == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var entries map[string]yaml.Node
 	if err := yaml.Unmarshal(s.middlewareConfigs, &entries); err != nil {
-		return nil, errors.Wrapf(err, "invalid middleware configs")
+		return nil, nil, errors.Wrapf(err, "invalid middleware configs")
 	}
-	result := make(map[string][]byte, len(entries))
+	switches = make(map[string]bool, len(entries))
+	configs = make(map[string][]byte, len(entries))
 	for name, node := range entries {
-		raw, err := configBytes(&node)
+		enabled, raw, err := splitMiddlewareValue(&node)
 		if err != nil {
-			return nil, errors.Wrapf(err, "invalid middleware config %s", name)
+			return nil, nil, errors.Wrapf(err, "invalid middleware config %s", name)
 		}
-		result[name] = raw
+		if enabled != nil {
+			switches[name] = *enabled
+			continue
+		}
+		configs[name] = raw
 	}
-	return result, nil
+	return switches, configs, nil
 }

@@ -52,17 +52,23 @@ type handlerConfig struct {
 	Func        string              `json:"func"`
 }
 
-// middlewareConfig names a middleware and carries the raw YAML written under
-// it. In router.yaml an entry is either a bare name or a single-key mapping:
+// middlewareConfig names a middleware and carries the value written under it,
+// already split into its two meanings: a boolean is the switch, anything else
+// is the config. In router.yaml an entry is a bare name or a single-key
+// mapping:
 //
 //	middlewares:
-//	  - authnuser          # bare: Config is nil
-//	  - throttle:          # configured: Config holds the block's YAML
+//	  - authnuser          # bare: no switch, no config
+//	  - authz: false       # boolean: Enabled, the switch
+//	  - throttle:          # block: Config holds the raw YAML
 //	      rps: 1
 //	      burst_size: 3
+//
+// Parsed once, here - the resolution layer never re-inspects the bytes.
 type middlewareConfig struct {
-	Name   string
-	Config []byte
+	Name    string
+	Enabled *bool  // a boolean value under the name; nil when none
+	Config  []byte // a non-boolean value under the name; nil when none
 }
 
 func (mc *middlewareConfig) UnmarshalYAML(node *yaml.Node) error {
@@ -79,16 +85,34 @@ func (mc *middlewareConfig) UnmarshalYAML(node *yaml.Node) error {
 		}
 		for name, value := range entry {
 			mc.Name = name
-			raw, err := configBytes(&value)
+			enabled, raw, err := splitMiddlewareValue(&value)
 			if err != nil {
 				return err
 			}
-			mc.Config = raw
+			mc.Enabled, mc.Config = enabled, raw
 		}
 		return nil
 	default:
 		return errors.Newf("a middleware entry must be a name or a single-key mapping")
 	}
+}
+
+// splitMiddlewareValue reads the value under a middleware's name as either
+// the switch (a YAML boolean - a quoted "false" is a string and stays
+// config) or the config bytes.
+func splitMiddlewareValue(value *yaml.Node) (*bool, []byte, error) {
+	if value.Kind == yaml.ScalarNode && value.Tag == "!!bool" {
+		var b bool
+		if err := value.Decode(&b); err != nil {
+			return nil, nil, errors.Wrap(err)
+		}
+		return &b, nil, nil
+	}
+	raw, err := configBytes(value)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nil, raw, nil
 }
 
 // configBytes renders the YAML written under a middleware's name back to the

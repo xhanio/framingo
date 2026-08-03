@@ -112,15 +112,14 @@ func (m *manager) buildEcho(s *server) error {
 	e := m.newEcho()
 	e.HTTPErrorHandler = s.errorHandler
 	e.Pre(middleware.RemoveTrailingSlash())
-	configs, err := s.parseMiddlewareConfigs()
+	switches, configs, err := s.parseMiddlewareConfigs()
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse middleware configs for server %s", s.name)
 	}
 	// Each position in the chain is forced by a dependency: recover outermost,
 	// because everything inside it - the user's middlewares most of all - may
-	// panic; cors next, answering preflight requests that match no route
-	// before any user code runs; then the user's server-level middlewares;
-	// logger wrapping info, whose records it reads; error innermost,
+	// panic; then the user's server-level middlewares, in WithMiddlewares
+	// order; logger wrapping info, whose records it reads; error innermost,
 	// normalizing failures closest to the work.
 	//
 	// The user slot sits where it does because the lifecycle trio admits no
@@ -128,15 +127,25 @@ func (m *manager) buildEcho(s *server) error {
 	// leave logger reading records info never wrote, masking the real error,
 	// and inside info is just a route middleware with extra steps - router.yaml
 	// already expresses that. Ahead of the trio is the one position router.yaml
-	// cannot express: every request, matched or not. A request rejected there
-	// still gets its error normalized and printed by the errorHandler fallback.
+	// cannot express: every request, matched or not - which is why an app's
+	// cors middleware belongs here, answering preflight requests that match no
+	// route. A request rejected in this slot still gets its error normalized
+	// and printed by the errorHandler fallback.
 	mw := newMiddleware(s)
 	funcs := []echo.MiddlewareFunc{mw.Recover}
-	// cors and the user's server-level middlewares are standard
-	// api.Middlewares, each built with the server's config under its name;
-	// one that returns no function has declined attachment.
-	for _, umw := range append([]api.Middleware{&corsMiddleware{}}, s.middlewares...) {
-		fn, err := umw.Func(configs[umw.Name()])
+	// Server-level middlewares are standard api.Middlewares. WithMiddlewares
+	// declares the roster and its order; the server's middleware configs
+	// activate each entry - a name with no entry stays dormant, `name:` or
+	// `name: true` enables with no config, a block enables and configures,
+	// and `name: false` switches it off. One that returns no function has
+	// declined attachment.
+	for _, umw := range s.middlewares {
+		raw, configured := configs[umw.Name()]
+		enabled, switched := switches[umw.Name()]
+		if !switched {
+			enabled = configured
+		}
+		fn, err := umw.Func(enabled, raw)
 		if err != nil {
 			return errors.Wrapf(err, "middleware %s failed to build for server %s", umw.Name(), s.name)
 		}
@@ -321,72 +330,81 @@ func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerCon
 // collectMiddlewares resolves the handler's and group's middleware refs into
 // functions for one route. Handler refs come first - they wrap outermost - and
 // a name the handler already claimed is skipped at group level, so a handler's
-// entry overrides the group's attachment rather than stacking a second run.
-// Config resolves most-specific-first: the entry's own block, else the group
-// entry's block for the same name, else the server's middleware config, else
-// nil. Each ref costs one Func call, at registration, so a bad config fails
-// startup.
+// entry overrides the group's rather than stacking a second run. The switch
+// and the config resolve independently through resolveMiddleware; each ref
+// costs one Func call, at registration, so a bad config fails startup.
 func (m *manager) collectMiddlewares(s *server, h *handlerConfig, g *handlerGroupConfig) ([]echo.MiddlewareFunc, error) {
-	groupConfigs := make(map[string][]byte, len(g.Middlewares))
+	groupRefs := make(map[string]*middlewareConfig, len(g.Middlewares))
 	for _, ref := range g.Middlewares {
-		if _, ok := groupConfigs[ref.Name]; !ok {
-			groupConfigs[ref.Name] = ref.Config
+		if _, ok := groupRefs[ref.Name]; !ok {
+			groupRefs[ref.Name] = ref
 		}
 	}
-	serverConfigs, err := s.parseMiddlewareConfigs()
+	serverSwitches, serverConfigs, err := s.parseMiddlewareConfigs()
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse middleware configs for server %s", s.name)
 	}
 
-	mwfuncs := make([]echo.MiddlewareFunc, 0, len(h.Middlewares)+len(g.Middlewares))
-	seen := make(map[string]bool, len(h.Middlewares)+len(g.Middlewares))
-	install := func(name string, cfg []byte) error {
-		mw, ok := m.middlewares[name]
-		if !ok {
-			return errors.NotImplemented.Newf("middleware %s not found", name)
+	// One pass, handler refs first so they wrap outermost and shadow the
+	// group's entries. The candidate chain is the same for both scopes: a
+	// group ref's own config IS groupConfigs[name], so walking it twice is
+	// harmless.
+	refs := make([]*middlewareConfig, 0, len(h.Middlewares)+len(g.Middlewares))
+	refs = append(refs, h.Middlewares...)
+	refs = append(refs, g.Middlewares...)
+
+	mwfuncs := make([]echo.MiddlewareFunc, 0, len(refs))
+	seen := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if seen[ref.Name] {
+			continue
 		}
-		fn, err := mw.Func(cfg)
+		seen[ref.Name] = true
+		mw, ok := m.middlewares[ref.Name]
+		if !ok {
+			// Checked before the switch: turning off a middleware that does
+			// not exist is a typo, not a no-op.
+			return nil, errors.NotImplemented.Newf("middleware %s not found", ref.Name)
+		}
+		enabled, cfg := resolveMiddleware(ref, groupRefs[ref.Name], serverSwitches, serverConfigs)
+		fn, err := mw.Func(enabled, cfg)
 		if err != nil {
-			return errors.Wrapf(err, "middleware %s failed to build for %s %s", name, h.Method, h.Path)
+			return nil, errors.Wrapf(err, "middleware %s failed to build for %s %s", ref.Name, h.Method, h.Path)
 		}
 		if fn == nil {
-			// Attachment declined - the route serves as if the middleware
-			// were absent.
-			return nil
+			// Attachment declined - switched off, or the middleware's own
+			// choice; the route serves as if the middleware were absent.
+			continue
 		}
 		mwfuncs = append(mwfuncs, fn)
-		return nil
-	}
-	for _, ref := range h.Middlewares {
-		if seen[ref.Name] {
-			continue
-		}
-		seen[ref.Name] = true
-		cfg := ref.Config
-		if cfg == nil {
-			cfg = groupConfigs[ref.Name]
-		}
-		if cfg == nil {
-			cfg = serverConfigs[ref.Name]
-		}
-		if err := install(ref.Name, cfg); err != nil {
-			return nil, err
-		}
-	}
-	for _, ref := range g.Middlewares {
-		if seen[ref.Name] {
-			continue
-		}
-		seen[ref.Name] = true
-		cfg := ref.Config
-		if cfg == nil {
-			cfg = serverConfigs[ref.Name]
-		}
-		if err := install(ref.Name, cfg); err != nil {
-			return nil, err
-		}
 	}
 	return mwfuncs, nil
+}
+
+// resolveMiddleware walks a route attachment's chain - handler entry, group
+// entry, server mapping, most specific first - already split by parsing:
+// the first switch decides enabled (defaulting to true, since the ref's
+// presence is the intent), the first config wins, independently.
+func resolveMiddleware(h, g *middlewareConfig, serverSwitches map[string]bool, serverConfigs map[string][]byte) (enabled bool, cfg []byte) {
+	enabled, decided := true, false
+	for _, ref := range []*middlewareConfig{h, g} {
+		if ref == nil {
+			continue
+		}
+		if ref.Enabled != nil && !decided {
+			enabled, decided = *ref.Enabled, true
+		}
+		if ref.Config != nil && cfg == nil {
+			cfg = ref.Config
+		}
+	}
+	if b, ok := serverSwitches[h.Name]; ok && !decided {
+		enabled = b
+	}
+	if cfg == nil {
+		cfg = serverConfigs[h.Name]
+	}
+	return enabled, cfg
 }
 
 // wrapWebSocket wraps a WebSocketHandlerFunc into an echo.HandlerFunc

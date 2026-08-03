@@ -38,7 +38,7 @@ api:
     port: 8080
     prefix: /api/v1
     middlewares: # per-middleware default configs; router.yaml overrides per group or handler
-      cors: true # the server's built-in; permissive for local development
+      cors: true # the example's server-level cors middleware; permissive for local development
       throttle:
         rps: 100.0
         burst_size: 200

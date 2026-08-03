@@ -57,11 +57,13 @@ func WithTLS(cert certutil.CertBundle, auth bool) ServerOption {
 }
 
 // WithMiddlewares installs middlewares on the server itself, running on every
-// request - matched or not - inside the built-in recover and cors but ahead of
-// the rest of the lifecycle. Each is built with the server's middleware config
-// under its name and survives the echo rebuild a restart performs. RequestInfo
-// does not exist yet at this position; a middleware that reads it belongs in
-// router.yaml instead.
+// request - matched or not - inside the built-in recover but ahead of the
+// rest of the lifecycle, in the order given. This is the position router.yaml
+// cannot express, which is where an app's cors middleware belongs: preflight
+// requests match no route. Each is built with the server's middleware config
+// under its name and survives the echo rebuild a restart performs.
+// RequestInfo does not exist yet at this position; a middleware that reads it
+// belongs in router.yaml instead.
 func WithMiddlewares(mws ...api.Middleware) ServerOption {
 	return func(s *server) {
 		s.middlewares = append(s.middlewares, mws...)
@@ -69,7 +71,7 @@ func WithMiddlewares(mws ...api.Middleware) ServerOption {
 }
 
 // WithMiddlewareConfigs sets the server's default middleware configs, a plain
-// mapping of middleware name to config - unlike a router.yaml middleware list,
+// mapping of middleware name to value - unlike a router.yaml middleware list,
 // which stays a sequence because attachment order matters there:
 //
 //	cors: true
@@ -77,15 +79,18 @@ func WithMiddlewares(mws ...api.Middleware) ServerOption {
 //	  rps: 100.0
 //	  burst_size: 200
 //
-// The server's built-in cors middleware reads its block from the same mapping
-// under "cors", so that name is the server's own; the lifecycle built-ins
-// (recover, logger, info, error) take no config and claim no names.
+// A boolean value is a switch, not config: cors: false disables the cors
+// middleware wherever nothing more specific overrides it, and cors: true
+// enables it with no config. A block is config and resolves
+// most-specific-first into Func's config argument: a handler entry's own
+// block, else its group entry's, else this mapping's, else nil.
 //
-// Each block is what a middleware's Func receives when nothing more specific
-// exists. Config resolves most-specific-first: a handler entry's own block,
-// else its group entry's, else this server config, else nil - and server-level
-// middlewares (WithMiddlewares) are built with theirs in place of nil. Invalid
-// YAML fails Add.
+// For server-level middlewares (WithMiddlewares) this mapping is also the
+// activation: no entry leaves one dormant, a null or true entry enables it,
+// a block enables and configures, false switches it off. The lifecycle
+// built-ins (recover, logger, info, error) take no config and claim no
+// names - every name here belongs to the app's middlewares. Invalid YAML
+// fails Add.
 func WithMiddlewareConfigs(defaults []byte) ServerOption {
 	return func(s *server) {
 		s.middlewareConfigs = defaults
