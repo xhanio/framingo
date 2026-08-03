@@ -13,6 +13,11 @@ type Server interface {
 // Manager manages multiple server instances.
 type Manager interface {
 	common.Service
+	// health.go: a listener that stopped serving fails both probes - a
+	// restart rebuilds the echo instances and re-binds it, so it is
+	// liveness-fixable, and it is equally not ready for traffic.
+	common.Liveness
+	common.Readiness
 	common.Initializable
 	common.Daemon
 	Get(name string) (Server, error)

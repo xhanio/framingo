@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"sync"
 
 	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v3"
@@ -16,6 +17,8 @@ var _ Server = (*server)(nil)
 
 // server holds an echo instance with its configuration and implements model.APIServer interface
 type server struct {
+	sync.Mutex
+
 	name string
 	log  log.Logger
 
@@ -27,6 +30,34 @@ type server struct {
 
 	groups   map[handlerKey]*handlerGroupConfig
 	handlers map[handlerKey]*handlerConfig
+
+	err error // why the serve loop exited; nil while serving or after a graceful shutdown
+}
+
+// serve runs the listener until it stops and remembers why. The record is
+// cleared on every launch, so a rebuilt listener starts with a clean slate;
+// http.ErrServerClosed is the expected return after a graceful Shutdown and
+// is not worth remembering.
+func (s *server) serve() {
+	s.Lock()
+	s.err = nil
+	s.Unlock()
+	err := s.start()
+	if err == nil || err == http.ErrServerClosed {
+		return
+	}
+	s.Lock()
+	s.err = err
+	s.Unlock()
+	s.log.Warnf("server %s stopped serving: %v", s.name, err)
+}
+
+// serveError reports why the serve loop exited: nil while serving, or after
+// a graceful shutdown.
+func (s *server) serveError() error {
+	s.Lock()
+	defer s.Unlock()
+	return s.err
 }
 
 func (s *server) Name() string {

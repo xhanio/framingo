@@ -446,13 +446,7 @@ func (m *manager) RegisterMiddlewares(middlewares ...api.Middleware) error {
 // Start starts all servers in goroutines
 func (m *manager) Start(ctx context.Context) error {
 	for _, s := range m.servers {
-		go func(srv *server) {
-			// http.ErrServerClosed is the expected return from echo.Start
-			// after a graceful Shutdown — not an error worth logging.
-			if err := srv.start(); err != nil && err != http.ErrServerClosed {
-				srv.log.Debugf("server %s start error: %v", srv.name, err)
-			}
-		}(s)
+		go s.serve()
 	}
 	return nil
 }
