@@ -36,6 +36,10 @@ db:
 # API servers — iterated by m.config.GetStringMap("api") in service.go
 # Each key becomes a named server instance via m.api.Add(name, ...)
 api:
+  internal:                   # ops listener: /healthz + /readyz mount here,
+    host: 0.0.0.0             # off the public server (see the example's
+    port: 8081                # routers/health)
+    prefix: /
   http:                       # server name: "http"
     host: 0.0.0.0
     port: 8080
