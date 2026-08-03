@@ -3,7 +3,6 @@ package example
 import (
 	"context"
 	_ "net/http/pprof"
-	"path"
 
 	"github.com/spf13/viper"
 	"github.com/xhanio/framingo/pkg/services/api/server"
@@ -12,7 +11,7 @@ import (
 	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/example"
 	"github.com/xhanio/framingo/example/pkg/services/repository"
@@ -61,7 +60,7 @@ func New(configPath string) Server {
 		config: newConfig(configPath),
 	}
 	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
+		m.name = nameutil.Name(m)
 	}
 	return m
 }

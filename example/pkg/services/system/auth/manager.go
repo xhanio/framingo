@@ -1,12 +1,11 @@
 package auth
 
 import (
-	"path"
 	"sync"
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/model"
@@ -41,7 +40,7 @@ func newManager(um model.UserAuthN, lm model.LDAPAuthN, tm model.APITokenAuthN, 
 		opt(m)
 	}
 	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
+		m.name = nameutil.Name(m)
 	}
 	if m.log == nil {
 		m.log = log.Default

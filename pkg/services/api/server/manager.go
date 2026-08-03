@@ -17,7 +17,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 // manager implements the Manager interface
@@ -70,7 +70,7 @@ func (m *manager) newEcho() *echo.Echo {
 
 func (m *manager) Name() string {
 	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
+		m.name = nameutil.Name(m)
 	}
 	return m.name
 }

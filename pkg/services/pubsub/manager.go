@@ -1,13 +1,12 @@
 package pubsub
 
 import (
-	"path"
 	"sync/atomic"
 
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 var _ Manager = (*manager)(nil)
@@ -37,7 +36,7 @@ func newManager(b driver.Driver, opts ...Option) *manager {
 
 func (m *manager) Name() string {
 	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
+		m.name = nameutil.Name(m)
 	}
 	return m.name
 }

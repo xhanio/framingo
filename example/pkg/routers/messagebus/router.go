@@ -2,13 +2,12 @@ package messagebus
 
 import (
 	_ "embed"
-	"path"
 
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/api"
 )
@@ -36,7 +35,7 @@ func newRouter(mb model.MessageBus, log log.Logger) *router {
 		log: log,
 	}
 	if r.name == "" {
-		r.name = path.Join(reflectutil.Locate(r))
+		r.name = nameutil.Name(r)
 	}
 	return r
 }

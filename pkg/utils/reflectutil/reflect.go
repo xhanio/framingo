@@ -13,7 +13,7 @@ import (
 
 const tagKey = "scan"
 
-// returns pkg dir (relative to project dir) and virable name
+// returns the package import path and type name
 func Locate(obj any) (string, string) {
 	ot := reflect.TypeOf(obj)
 	if ot == nil {

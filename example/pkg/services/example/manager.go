@@ -2,12 +2,11 @@ package example
 
 import (
 	"context"
-	"path"
 	"sync"
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 )
@@ -40,7 +39,7 @@ func newManager(repo repository.Repository, mb common.RawMessageSender, opts ...
 	}
 	m.apply(opts...)
 	if m.name == "" {
-		m.name = path.Join(reflectutil.Locate(m))
+		m.name = nameutil.Name(m)
 	}
 	m.log = m.log.By(m)
 	if m.ctx == nil {
