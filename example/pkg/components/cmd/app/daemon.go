@@ -19,7 +19,7 @@ func NewDaemonCmd() *cobra.Command {
 		RunE:         runDaemon,
 		SilenceUsage: true,
 	}
-	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "config.json", "filter targets by regex")
+	cmd.PersistentFlags().StringVarP(&configPath, "config", "c", "config.json", "config file path")
 	return cmd
 }
 
