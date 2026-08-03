@@ -51,11 +51,11 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 
 | File | Covers |
 |---|---|
-| [app/layout.md](app/layout.md) | The categorized `pkg/` layout, import order |
+| [app/layout.md](app/layout.md) | The categorized `pkg/` layout, the three-layer access rule, import order |
 | [app/services.md](app/services.md) | Writing a service: interface-in-two-places, `New`/`newManager`, options |
 | [app/routers.md](app/routers.md) | Authoring routers: the `router.go`/`handler.go`/`router.yaml` triple, the two `api` packages, project `api.Context`, `DiscoverHandlers` |
 | [app/middlewares.md](app/middlewares.md) | Authoring `api.Middleware`: the `Func(config)` contract, config-free vs configured, decline, attachment |
-| [app/types.md](app/types.md) | The project's `types/` categories (five core + grown ones) and the two `api` packages |
+| [app/types.md](app/types.md) | The project's `types/` categories, which layer owns each, the types-first design order, the two `api` packages |
 | [app/components.md](app/components.md) | The `components/` wiring category and how its three subtrees fit together |
 | [app/components-server.md](app/components-server.md) | The application daemon: file structure, layered service creation, registration order, signals |
 | [app/components-cmd.md](app/components-cmd.md) | Cobra CLI wiring: thin `main`s, the daemon subcommand, the operator CLI over the SDK |
@@ -187,6 +187,7 @@ For the full category rules, type-separation example, server component file stru
 - Don't look for `Context` in framingo's `pkg/types/api` — it isn't there. `Context`/`DiscoverHandlers` are **project**-side (`example/pkg/types/api/api.go`); framingo's package (aliased `fapi`) only has `Router`, `Middleware`, `ErrorBody`, `ContextKey*`. Importing both unaliased is a compile error — alias the framework one `fapi`.
 - Don't hand-write `api.Context`/`DiscoverHandlers` from this skill's prose — copy [_templates/api-context.go](_templates/api-context.go). A reconstruction compiles but diverges, and every handler in the project then depends on the divergence.
 - Don't give a router a `pkg/services/...` dependency — it takes the `model.X` business interface. Importing the service package leaks the implementation and its lifecycle methods.
+- Don't skip a layer: routers and middlewares call services only — never `services/repository/`, `types/orm/`, or `db`; services persist through the repo level (`repository.Repository`), never `db.Manager`/GORM directly. `orm` types stop at the service boundary (mapped to `entity` there), `api` DTOs stop at the router.
 - `SendMessage`/`SendRawMessage` return **nothing** and take the sender as the second arg: `mb.SendRawMessage(ctx, m, kind, payload)`. `if err := mb.SendMessage(...)` does not compile.
 - `pubsub.Subscribe(name, topic)` returns a **channel**, not a handler registration — there is no `Subscribe(topic, handler)`. For handler-style dispatch use `messagebus`.
 - Ports are `uint`, not `int`: `server.WithEndpoint(host, port uint, prefix)` and `db.Source.Port uint`. Feed them `config.GetUint(...)` — `GetInt` is a compile error.
@@ -206,3 +207,5 @@ For the full category rules, type-separation example, server component file stru
 7. **Concrete Constructors** - `New` returns the exported interface; unexported `newRouter`/`newManager` return the concrete type for package tests
 8. **Error Handling** - ALWAYS use `github.com/xhanio/errors`, NEVER use `fmt.Errorf` or stdlib `errors`
 9. **Import Order** - Three groups: stdlib, third-party, project — always separated by blank lines
+10. **Layered Access** - the api level (routers, middlewares) calls services only; services persist through the repo level only; only `services/repository/` touches the database
+11. **Types First** - for a new feature, design `types/*` (api → entity/model → orm/repo) before implementing the router, service, or repo

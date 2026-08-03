@@ -75,6 +75,15 @@ Why this is the pattern:
 - **You own it.** The interface is project-side; extending it needs no framingo change.
 - **Zero framework cost.** `api.DiscoverHandlers(r)` wraps each `func(api.Context) error` into the `echo.HandlerFunc` the server registers. Raw `echo.Context` handlers still work as the fallback for third-party code — not the pattern for new handlers.
 
+**Routers stay at the api level.** The handler above touches exactly two
+type categories: it binds a `types/api` DTO and returns what the service
+hands back — a `types/entity` value, serialized as JSON. It calls the
+service level through `model.Example` and nothing lower: no
+`services/repository/`, no `types/orm/`, no `db`. The constructor is the
+boundary — all six example routers take only `model.*` interfaces and a
+logger ([layout.md](layout.md)). And the DTO and the `model.*` method are
+designed before the handler is written — [types.md](types.md).
+
 Same for WebSocket handlers: `func(c api.Context, conn *websocket.Conn) error`.
 
 If a project has no `pkg/types/api/api.go` yet (i.e. it wasn't forked from `example/`), copy [`_templates/api-context.go`](../_templates/api-context.go) into it before writing handlers, and adjust the `entity` import to the project's own.

@@ -26,6 +26,17 @@ role, organization, certificate), and business services such as
 `repository.Repository`, never `db.Manager` — only the repository touches
 the database.
 
+**Stay in your layer.** A service reaches down only to the repo level —
+`repository.Repository` / `repo.*` interfaces — and its currency is the
+service level's own types: it receives `orm` values at the repo boundary and
+maps them to `entity` right there (`business.go` below does exactly this);
+`orm` never travels further up, and `api` DTOs never come down — routers
+unpack those first. Peer services compose through `model.*` interfaces
+(auth is built on `model.UserAuthN`), never by reaching into each other's
+persistence. And before writing the five files, write the contracts —
+`model.X`, the entities, the `repo`/`orm` pair if it persists: the order is
+in [types.md](types.md).
+
 ## The Interface Goes in Two Places
 
 Both halves get called "the service interface"; they are different files

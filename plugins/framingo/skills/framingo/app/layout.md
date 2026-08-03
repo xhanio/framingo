@@ -10,6 +10,39 @@ projects mirror it.
 directory structure under `pkg/`. This is a strict convention — do NOT place
 code outside these categories or flatten the hierarchy.
 
+## The Three Layers
+
+The categories arrange into three layers. Calls go strictly downward, one
+layer at a time — and each layer owns its `types/` categories:
+
+```
+api level        routers/  middlewares/               owns: types/api
+   │  may call: services, via model.* interfaces
+   ▼
+service level    services/system/  services/example/  owns: types/entity  types/model
+   │  may call: the repo level, via repo.* interfaces
+   ▼
+repo level       services/repository/                 owns: types/orm  types/repo
+                 — the only code that touches db.Manager / GORM
+```
+
+- **Routers and middlewares call services, nothing lower.** Every example
+  router constructor takes `model.*` interfaces only; middlewares take the
+  service they lean on (`authz` → the role service). None of them imports
+  `services/repository/`, `types/orm/`, or `db`.
+- **Services call the repo level, nothing lower.** They persist through
+  `repository.Repository` / `repo.*` interfaces and hand `entity` values
+  upward. No system or business service imports `db.Manager` or GORM —
+  grep the example: only `services/repository/` does. Peer services compose
+  through `model.*` interfaces (auth is built on `model.UserAuthN`), never
+  by reaching past each other into the repo.
+- **The repo level owns persistence.** `services/repository/` implements
+  every `types/repo/` interface over `types/orm/` models; SQL, GORM, and
+  transactions live there and nowhere else.
+
+Design in the same shape: the types are each layer's contract, so **write
+`types/*` first** — the order is in [types.md](types.md).
+
 ## The `pkg/` Tree
 
 ```

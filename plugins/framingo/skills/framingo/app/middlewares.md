@@ -64,6 +64,10 @@ func (m *middleware) Dependencies() []common.Service {
 }
 ```
 
+Middlewares sit at the api level beside routers, and the same layer rule
+applies ([layout.md](layout.md)): they may call services — as `authz` calls
+the role service — but never the repo level, `types/orm/`, or `db`.
+
 ## Config-Free Middleware
 
 Most middlewares take no config. Refuse a block rather than ignore it — a
