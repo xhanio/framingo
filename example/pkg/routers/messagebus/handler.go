@@ -5,7 +5,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
-
 	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/example/pkg/types/api"

@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/xhanio/errors"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-
-	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"

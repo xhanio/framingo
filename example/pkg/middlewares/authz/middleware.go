@@ -4,7 +4,6 @@ import (
 	"path"
 
 	"github.com/labstack/echo/v4"
-
 	"github.com/xhanio/errors"
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"

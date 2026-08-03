@@ -3,9 +3,8 @@ package repository
 import (
 	"context"
 
-	"gorm.io/gorm"
-
 	"github.com/xhanio/errors"
+	"gorm.io/gorm"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/structs/lease"
 

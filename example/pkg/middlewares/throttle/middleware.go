@@ -23,12 +23,11 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/xhanio/errors"
-	"golang.org/x/time/rate"
-	"gopkg.in/yaml.v3"
-
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
+	"golang.org/x/time/rate"
+	"gopkg.in/yaml.v3"
 
 	"github.com/xhanio/framingo/example/pkg/types/api"
 )

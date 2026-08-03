@@ -3,9 +3,6 @@ package example
 import (
 	"fmt"
 
-	"go.uber.org/zap/zapcore"
-	"gopkg.in/yaml.v3"
-
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/api/server"
 	"github.com/xhanio/framingo/pkg/services/db"
@@ -20,6 +17,8 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
+	"go.uber.org/zap/zapcore"
+	"gopkg.in/yaml.v3"
 
 	"github.com/xhanio/framingo/example/pkg/services/example"
 	"github.com/xhanio/framingo/example/pkg/services/repository"

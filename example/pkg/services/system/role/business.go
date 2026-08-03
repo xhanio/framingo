@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"github.com/xhanio/errors"
+	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
-	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 )
 
 func (m *manager) Create(ctx context.Context, opts entity.RoleCreateOptions) error {

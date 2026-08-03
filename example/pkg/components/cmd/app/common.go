@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
 	"github.com/xhanio/framingo/pkg/types/info"
 )
 

@@ -10,7 +10,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/xhanio/errors"
-
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
