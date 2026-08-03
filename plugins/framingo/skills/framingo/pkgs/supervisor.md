@@ -96,7 +96,7 @@ The manager:
 - Resolves dependencies via topological sort
 - Calls `Init(ctx)` on `Initializable` services in dependency order
 - Calls `Start(ctx)` on `Daemon` services
-- Monitors `Liveness` and `Readiness` probes; only liveness failure triggers restart (readiness is reported only). The example's repository is the canonical implementer: `Ready()` pings the database (dependency outage = not ready, reported), `Alive()` checks only its own wiring — a restart can't fix a dead database, so a dependency outage must not fail liveness
+- Monitors `Liveness` and `Readiness` probes; only liveness failure triggers restart (readiness is reported only). Each sweep probes every service exactly once — a shared dependency is checked once, its result reused by every dependent with failures still rolling up. The example's repository is the canonical implementer: `Ready()` pings the database (dependency outage = not ready, reported), `Alive()` checks only its own wiring — a restart can't fix a dead database, so a dependency outage must not fail liveness
 - Restart behaviour tunes via `WithMonitorInterval`, `WithRestartPolicy(maxRetries)`, `WithRestartDelay`, `WithShutdownTimeout`
 
 **The supervisor does NOT install signal handlers.** There is no `os/signal` anywhere in framingo. Trapping SIGINT/SIGTERM/SIGHUP/SIGUSR1/SIGUSR2 and calling `Stop`/`Restart` is application code you write in `pkg/components/server/<app>/signal.go` — see [layout.md](../app/layout.md).
