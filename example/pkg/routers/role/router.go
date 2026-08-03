@@ -34,9 +34,7 @@ func newRouter(rm model.Role, log log.Logger) *router {
 		rm:  rm,
 		log: log,
 	}
-	if r.name == "" {
-		r.name = nameutil.Name(r)
-	}
+	r.name = nameutil.Name(r)
 	return r
 }
 

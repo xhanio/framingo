@@ -44,9 +44,7 @@ func newRouter(sv Supervisor, log log.Logger) *router {
 		sv:  sv,
 		log: log,
 	}
-	if r.name == "" {
-		r.name = nameutil.Name(r)
-	}
+	r.name = nameutil.Name(r)
 	return r
 }
 

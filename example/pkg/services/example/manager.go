@@ -38,9 +38,7 @@ func newManager(repo repository.Repository, mb common.RawMessageSender, opts ...
 		wg:         &sync.WaitGroup{},
 	}
 	m.apply(opts...)
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
+	m.name = nameutil.Name(m)
 	m.log = m.log.By(m)
 	if m.ctx == nil {
 		m.ctx = context.Background()

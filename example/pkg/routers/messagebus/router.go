@@ -34,9 +34,7 @@ func newRouter(mb model.MessageBus, log log.Logger) *router {
 		mb:  mb,
 		log: log,
 	}
-	if r.name == "" {
-		r.name = nameutil.Name(r)
-	}
+	r.name = nameutil.Name(r)
 	return r
 }
 

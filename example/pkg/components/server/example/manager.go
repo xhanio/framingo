@@ -59,9 +59,7 @@ func New(configPath string) Server {
 	m := &manager{
 		config: newConfig(configPath),
 	}
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
+	m.name = nameutil.Name(m)
 	return m
 }
 

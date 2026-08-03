@@ -39,9 +39,7 @@ func newManager(um model.UserAuthN, lm model.LDAPAuthN, tm model.APITokenAuthN, 
 	for _, opt := range opts {
 		opt(m)
 	}
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
+	m.name = nameutil.Name(m)
 	if m.log == nil {
 		m.log = log.Default
 	}
