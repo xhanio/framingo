@@ -315,7 +315,7 @@ func (r *router) Feed(c api.Context, conn *websocket.Conn) error {
 
 ## Middleware Resolution
 
-Middlewares are registered by name via `RegisterMiddlewares()`. The YAML config references them by the name returned from `Middleware.Name()`. During route registration:
+Middlewares are registered by name via `RegisterMiddlewares()`. The YAML config references them by the name returned from `Middleware.Name()`. (Writing one is covered in [middlewares.md](middlewares.md); this section is how the server resolves them.) During route registration:
 
 1. Handler-specific middlewares are resolved first (from `handler.middlewares`)
 2. Group-level middlewares are resolved next (from `group.middlewares`)

@@ -36,9 +36,12 @@ One file per concept — load the one the task touches:
 |---|---|
 | [services.md](services.md) | Lifecycle interfaces, supervisor, config-from-context, creating a new service (interface-in-two-places, `New`/`newManager`) |
 | [routers.md](routers.md) | Authoring routers: the `router.go`/`handler.go`/`router.yaml` triple, the two `api` packages, project `api.Context`, `DiscoverHandlers` |
-| [api-server.md](api-server.md) | The server that consumes routers: registration flow, router.yaml schema, middleware model + configs, WebSockets, error format |
+| [middlewares.md](middlewares.md) | Authoring `api.Middleware`: the `Func(config)` contract, config-free vs configured, decline, attachment, reading `RequestInfo`/permissions |
+| [api-server.md](api-server.md) | The server that consumes routers and middlewares: registration flow, router.yaml schema, middleware model + configs, WebSockets, error format |
+| [components.md](components.md) | The `components/` wiring: cobra `cmd/`, the server daemon, the client SDK |
 | [database.md](database.md) | `db.Manager`: drivers, options, transactions, dynamic pool config |
 | [pubsub.md](pubsub.md) | Pub/sub primitive, message bus, message interfaces, slow subscribers |
+| [planner.md](planner.md) | Scheduled/ad-hoc task execution: plans, jobs, stats selectors |
 | [types.md](types.md) | The `types/` categories, the two `api` packages' contents, ORM base types, context keys |
 | [client.md](client.md) | HTTP client (`api/client`) and the project client-component SDK pattern |
 | [config-reference.md](config-reference.md) | The annotated config.yaml template, env layering, dynamic keys |
@@ -107,10 +110,12 @@ Either route, the reference map above is the per-concept guide for the work insi
 | Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1` | [database.md](database.md) |
 | HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware` | [api-server.md](api-server.md) |
 | Handler request context | **project's own** `<project>/pkg/types/api` (unaliased `api`) | `api.Context` — use as the handler ctx instead of `echo.Context`; not a framingo type, you own it | [routers.md](routers.md) |
+| Middlewares | project `pkg/middlewares/<name>/` | `fapi.Middleware` — `Func(config []byte)` | [middlewares.md](middlewares.md) |
+| App wiring | project `pkg/components/{cmd,server,client}/` | the server daemon + CLI + SDK components | [components.md](components.md) |
 | HTTP client | `pkg/services/api/client` | `client.Client` | [client.md](client.md) |
 | Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers | [pubsub.md](pubsub.md) |
 | Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` | [pubsub.md](pubsub.md) |
-| Task planner | `pkg/services/planner` | `planner.Manager`, `model.Planner` | — |
+| Task planner | `pkg/services/planner` | `planner.Manager`, `model.Planner` | [planner.md](planner.md) |
 | Message interfaces | `pkg/types/common` | `Message`, `MessageSender`, `MessageHandler`, `RawMessageHandler` | [pubsub.md](pubsub.md) |
 | Service interfaces | `pkg/types/model` | `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Planner` | [types.md](types.md) |
 | Logging | `pkg/utils/log` | `log.Logger` | [utilities.md](utilities.md) |
