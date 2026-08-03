@@ -7,7 +7,7 @@ require (
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
 	github.com/xhanio/errors v1.0.3
-	github.com/xhanio/framingo v0.6.5
+	github.com/xhanio/framingo v0.6.6
 )
 
 // remove this when you bootstrap your own project
