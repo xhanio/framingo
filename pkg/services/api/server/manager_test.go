@@ -323,6 +323,7 @@ handlers:
 	wsURL := "ws" + base[4:] + "/ws/echo" // http:// → ws://
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(t, err)
+	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	// Send and receive a message

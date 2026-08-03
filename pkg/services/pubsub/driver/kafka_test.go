@@ -40,6 +40,7 @@ func TestKafkaSubscribeAndGet(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, b.Start(context.Background()))
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b.Stop(true)
 
 	ch, err := b.Subscribe("svc1", "test/topic")
@@ -58,6 +59,7 @@ func TestKafkaHierarchicalTopics(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, b.Start(context.Background()))
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b.Stop(true)
 
 	_, _ = b.Subscribe("root", "app")
@@ -81,6 +83,7 @@ func TestKafkaUnsubscribe(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, b.Start(context.Background()))
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b.Stop(true)
 
 	_, _ = b.Subscribe("svc1", "topic")

@@ -44,6 +44,7 @@ func newWSTestServer(t *testing.T, name string, opts ...Option) *wsTestServer {
 			t.Errorf("accept failed: %v", err)
 			return
 		}
+		//nolint:errcheck // nothing to do with a failure to close here
 		defer ws.CloseNow()
 		messenger, err := mb.NewMessenger(name)
 		if err != nil {
@@ -71,6 +72,7 @@ func dialWS(t *testing.T, url string) *websocket.Conn {
 func TestAttachWebSocket_OutboundDeliversBusMessageToClient(t *testing.T) {
 	env := newWSTestServer(t, "ws-out")
 	conn := dialWS(t, env.wsURL)
+	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready
@@ -90,6 +92,7 @@ func TestAttachWebSocket_OutboundDeliversBusMessageToClient(t *testing.T) {
 func TestAttachWebSocket_InboundDeliversClientMessageToBus(t *testing.T) {
 	env := newWSTestServer(t, "ws-in")
 	conn := dialWS(t, env.wsURL)
+	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready
@@ -122,6 +125,7 @@ func TestAttachWebSocket_ClientCloseTearsDownSession(t *testing.T) {
 func TestAttachWebSocket_PingKeepsConnectionAlive(t *testing.T) {
 	env := newWSTestServer(t, "ws-ping-ok", WithPing(50*time.Millisecond, 500*time.Millisecond))
 	conn := dialWS(t, env.wsURL)
+	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready
@@ -159,6 +163,7 @@ func TestAttachWebSocket_PingKeepsConnectionAlive(t *testing.T) {
 func TestAttachWebSocket_PingTimeoutClosesSession(t *testing.T) {
 	env := newWSTestServer(t, "ws-ping-stall", WithPing(50*time.Millisecond, 150*time.Millisecond))
 	conn := dialWS(t, env.wsURL)
+	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready
@@ -176,6 +181,7 @@ func TestAttachWebSocket_PingTimeoutClosesSession(t *testing.T) {
 func TestAttachWebSocket_PingDisabledLeavesSessionOpen(t *testing.T) {
 	env := newWSTestServer(t, "ws-ping-off", WithPing(0, 0))
 	conn := dialWS(t, env.wsURL)
+	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready

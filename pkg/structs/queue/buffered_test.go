@@ -169,6 +169,7 @@ func TestBufferedReadAfterClose(t *testing.T) {
 
 	// Write some data first
 	testData := []byte("hello")
+	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	queue.Write(testData)
 
 	// Close the queue

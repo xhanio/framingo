@@ -41,6 +41,7 @@ func TestRedisSubscribeAndGet(t *testing.T) {
 
 	b, err := NewRedis(client, log.Default)
 	require.NoError(t, err)
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b.Stop(true)
 
 	ch, err := b.Subscribe("svc1", "test/topic")
@@ -57,6 +58,7 @@ func TestRedisHierarchicalTopics(t *testing.T) {
 
 	b, err := NewRedis(client, log.Default)
 	require.NoError(t, err)
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b.Stop(true)
 
 	_, _ = b.Subscribe("root", "app")
@@ -78,6 +80,7 @@ func TestRedisUnsubscribe(t *testing.T) {
 
 	b, err := NewRedis(client, log.Default)
 	require.NoError(t, err)
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b.Stop(true)
 
 	_, _ = b.Subscribe("svc1", "topic")
@@ -108,7 +111,9 @@ func TestRedisCrossInstance(t *testing.T) {
 	require.NoError(t, b1.Start(context.Background()))
 	require.NoError(t, b2.Start(context.Background()))
 
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b1.Stop(true)
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b2.Stop(true)
 
 	// Give Redis time to set up subscriptions

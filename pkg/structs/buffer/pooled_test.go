@@ -129,6 +129,7 @@ func TestPooledBufferRead(t *testing.T) {
 func TestPooledBufferSeek(t *testing.T) {
 	buffer := NewPooledBuffer(10, test_pool)
 	testData := []byte("hello world")
+	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
 
 	tests := []struct {
@@ -176,8 +177,10 @@ func TestPooledBufferReset(t *testing.T) {
 	testData := []byte("hello world")
 
 	// Write and read some data
+	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
 	readBuf := make([]byte, 5)
+	//nolint:errcheck // in-memory read; the assertions below surface any failure
 	buffer.Read(readBuf)
 
 	if buffer.Len() != 11 {
@@ -213,8 +216,10 @@ func TestPooledBufferResetRead(t *testing.T) {
 	testData := []byte("hello")
 
 	// Write and read some data
+	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
 	readBuf := make([]byte, 3)
+	//nolint:errcheck // in-memory read; the assertions below surface any failure
 	buffer.Read(readBuf) // read "hel"
 
 	if buffer.Available() != 2 {
@@ -248,6 +253,7 @@ func TestPooledBufferResetRead(t *testing.T) {
 func TestPooledBufferClose(t *testing.T) {
 	buffer := NewPooledBuffer(10, test_pool)
 	testData := []byte("hello")
+	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
 
 	// Close the buffer
@@ -306,6 +312,7 @@ func TestPooledBufferData(t *testing.T) {
 
 	// With data
 	testData := []byte("hello world")
+	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
 
 	data = buffer.Data()
