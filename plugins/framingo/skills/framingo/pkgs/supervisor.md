@@ -23,6 +23,26 @@ type Readiness interface { Ready() error }                             // readin
 type Debuggable interface { Info(w io.Writer, debug bool) }            // debug output
 ```
 
+### Identity interfaces
+
+`pkg/types/common` also defines three small identity interfaces that
+services and their satellites lean on:
+
+```go
+type Named interface { Name() string }                    // embedded in Service
+type Unique interface { Key() string }                    // stable dedup/ordering key
+type Weighted interface { GetPriority() int; SetPriority(priority int) }
+```
+
+- `Named` is the currency of identity everywhere: `log.Logger.By(caller
+  common.Named)` is why every constructor ends with `m.log = m.log.By(m)`,
+  `messagebus.Register(module common.Named)` takes it, and the supervisor's
+  dependency graph (`pkg/structs/graph`) is generic over it.
+- `Unique` + `Weighted` together form `staque.PriorityItem` — the contract
+  of the priority stack/queue ([utils.md](utils.md)). `task.Task` implements
+  both, which is how the task manager orders its queue: by priority, then by
+  `Key()` as the tiebreak.
+
 ## Supervisor
 
 Orchestrates all services. Located in `pkg/services/supervisor`.
