@@ -39,7 +39,7 @@ func (mon *monitor) checkAll(ctx context.Context) {
 			return
 		default:
 		}
-		stat := mon.c.snapshot(service.Name())
+		stat := mon.c.stats.snapshot(service.Name())
 		if stat == nil || stat.Stopped {
 			continue
 		}
@@ -47,7 +47,7 @@ func (mon *monitor) checkAll(ctx context.Context) {
 			mon.log.Warnf("healthcheck failed for %s: %s", service.Name(), err)
 		}
 		// re-snapshot: check just wrote the probe results this decision reads
-		stat = mon.c.snapshot(service.Name())
+		stat = mon.c.stats.snapshot(service.Name())
 		// only restart on liveness or stat-based failures, not readiness-only
 		if stat.LivenessErr == nil && stat.Healthcheck() == nil {
 			continue
@@ -69,7 +69,7 @@ func (mon *monitor) checkAll(ctx context.Context) {
 				mon.log.Warnf("service %s reached max restart attempts (%d)", service.Name(), mon.policy.MaxRetries)
 				continue
 			}
-			if err := mon.c.restart(ctx, service); err != nil {
+			if err := mon.c.RestartIfRunning(ctx, service); err != nil {
 				mon.log.Errorf("failed to restart service %s: %s", service.Name(), err)
 			}
 		}
@@ -117,7 +117,7 @@ func (mon *monitor) check(ctx context.Context, service common.Service, sw *sweep
 	for _, dep := range service.Dependencies() {
 		errs = append(errs, mon.check(ctx, dep, sw))
 	}
-	stat := mon.c.snapshot(name)
+	stat := mon.c.stats.snapshot(name)
 	if stat == nil {
 		err := errors.Combine(errs...)
 		sw.done[name] = err
@@ -141,7 +141,7 @@ func (mon *monitor) check(ctx context.Context, service common.Service, sw *sweep
 		}
 	}
 	healthcheckErr := errors.Combine(errs...)
-	mon.c.update(name, func(stat *entity.SupervisorStats) {
+	mon.c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.LivenessErr = livenessErr
 		stat.ReadinessErr = readinessErr
 		if probesReadiness {

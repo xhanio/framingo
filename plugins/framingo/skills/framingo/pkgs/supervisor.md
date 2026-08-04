@@ -80,7 +80,7 @@ type Manager interface {          // = model.Supervisor + health + Initializable
     Register(services ...common.Service)          // no return value
     TopoSort() error
     Services() []common.Service
-    Stats() ([]*entity.SupervisorStats, error)
+    Stats() ([]*entity.SupervisorStats, error)    // point-in-time copies, topological order: dependencies above dependents
 
     Init(ctx context.Context) error
     Start(ctx context.Context) error

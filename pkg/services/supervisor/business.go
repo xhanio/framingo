@@ -2,7 +2,6 @@ package supervisor
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	"github.com/xhanio/errors"
@@ -38,31 +37,30 @@ func (m *manager) Services() []common.Service {
 }
 
 // Stats returns a point-in-time copy of each service's stats, so callers
-// read them without racing the monitor's ongoing sweeps.
+// read them without racing the monitor's ongoing sweeps. The order is
+// topological - dependencies above dependents, the same order services
+// init - so a red dependency explains the red services below it.
 func (m *manager) Stats() ([]*entity.SupervisorStats, error) {
 	var result []*entity.SupervisorStats
-	sorted := make([]common.Service, len(m.c.services))
-	copy(sorted, m.c.services)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Name() > sorted[j].Name()
-	})
-	for _, svc := range sorted {
-		result = append(result, m.c.snapshot(svc.Name()))
-	}
 	var errs []error
-	for _, stat := range result {
+	for _, svc := range m.c.services {
+		stat := m.c.stats.snapshot(svc.Name())
+		result = append(result, stat)
 		errs = append(errs, stat.Healthcheck())
 	}
 	return result, errors.Combine(errs...)
 }
+
+// The manual per-service operations go through the controller's exported
+// methods, which serialize under its operation lock - they never interleave
+// with a monitor restart's stop-init-start cycle at the service level.
 
 func (m *manager) InitService(ctx context.Context, name string) error {
 	service := m.c.find(name)
 	if service == nil {
 		return errors.NotFound.Newf("service %s not found", name)
 	}
-	_, err := m.c.init(ctx, service)
-	return err
+	return m.c.Init(ctx, service)
 }
 
 func (m *manager) StartService(name string) error {
@@ -70,8 +68,7 @@ func (m *manager) StartService(name string) error {
 	if service == nil {
 		return errors.NotFound.Newf("service %s not found", name)
 	}
-	_, err := m.c.start(service)
-	return err
+	return m.c.Start(service)
 }
 
 func (m *manager) StopService(name string, wait bool) error {
@@ -79,8 +76,7 @@ func (m *manager) StopService(name string, wait bool) error {
 	if service == nil {
 		return errors.NotFound.Newf("service %s not found", name)
 	}
-	_, err := m.c.stop(service, wait)
-	return err
+	return m.c.Stop(service, wait)
 }
 
 func (m *manager) RestartService(ctx context.Context, name string) error {
@@ -88,7 +84,7 @@ func (m *manager) RestartService(ctx context.Context, name string) error {
 	if service == nil {
 		return errors.NotFound.Newf("service %s not found", name)
 	}
-	return m.c.restart(ctx, service)
+	return m.c.Restart(ctx, service)
 }
 
 func (m *manager) Migrate() error {

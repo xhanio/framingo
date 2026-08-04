@@ -28,11 +28,11 @@ func TestSupervisorReady(t *testing.T) {
 	// Nothing has started: nothing is ready.
 	require.Error(t, m.Ready(context.Background()))
 
-	m.c.update("alpha", func(stat *entity.SupervisorStats) { stat.Ready = true })
-	m.c.update("beta", func(stat *entity.SupervisorStats) { stat.Ready = true })
+	m.c.stats.update("alpha", func(stat *entity.SupervisorStats) { stat.Ready = true })
+	m.c.stats.update("beta", func(stat *entity.SupervisorStats) { stat.Ready = true })
 	require.NoError(t, m.Ready(context.Background()))
 
-	m.c.update("beta", func(stat *entity.SupervisorStats) {
+	m.c.stats.update("beta", func(stat *entity.SupervisorStats) {
 		stat.Ready = false
 		stat.ReadinessErr = errors.Newf("database ping failed")
 	})
@@ -54,13 +54,13 @@ func TestSupervisorAlive(t *testing.T) {
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Alive(context.Background()))
 
-		m.c.update("omega", func(stat *entity.SupervisorStats) {
+		m.c.stats.update("omega", func(stat *entity.SupervisorStats) {
 			stat.LivenessErr = errors.Newf("dead")
 			stat.Restarts = 2
 		})
 		assert.NoError(t, m.Alive(context.Background()), "recovery still in progress must not escalate")
 
-		m.c.update("omega", func(stat *entity.SupervisorStats) { stat.Restarts = 3 })
+		m.c.stats.update("omega", func(stat *entity.SupervisorStats) { stat.Restarts = 3 })
 		err := m.Alive(context.Background())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "omega")
@@ -71,7 +71,7 @@ func TestSupervisorAlive(t *testing.T) {
 		m := newTestManager(WithMonitorPolicy(0, -1, 0))
 		m.Register(svc)
 		require.NoError(t, m.TopoSort())
-		m.c.update("omega", func(stat *entity.SupervisorStats) {
+		m.c.stats.update("omega", func(stat *entity.SupervisorStats) {
 			stat.LivenessErr = errors.Newf("dead")
 			stat.Restarts = 100
 		})
@@ -83,7 +83,7 @@ func TestSupervisorAlive(t *testing.T) {
 		m := newTestManager() // no restart policy: maxRetries 0
 		m.Register(svc)
 		require.NoError(t, m.TopoSort())
-		m.c.update("omega", func(stat *entity.SupervisorStats) { stat.LivenessErr = errors.Newf("dead") })
+		m.c.stats.update("omega", func(stat *entity.SupervisorStats) { stat.LivenessErr = errors.Newf("dead") })
 		require.Error(t, m.Alive(context.Background()),
 			"with no in-process recovery configured, the platform is the recovery path")
 	})

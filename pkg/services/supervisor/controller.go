@@ -19,39 +19,38 @@ import (
 type controller struct {
 	log        log.Logger
 	config     *viper.Viper
-	mu         sync.Mutex
 	initPolicy entity.SupervisorInitPolicy
 	stopPolicy entity.SupervisorStopPolicy
-	graph      graph.Graph[common.Service]
-	services   []common.Service
-	// statMu guards the stats map and every field of the records it holds:
-	// the monitor goroutine writes probe results while health endpoints
-	// read them. All access goes through snapshot and update.
-	statMu sync.RWMutex
-	stats  map[string]*entity.SupervisorStats
+
+	graph    graph.Graph[common.Service]
+	services []common.Service
+	stats    *statsStore
+
+	// op serializes service operations - restarts, manual init/start/stop,
+	// and the whole shutdown - so stop-init-start cycles never interleave.
+	// Exported controller methods take it; unexported ones don't lock and
+	// run either under an exported caller's lock or in the pre-monitor
+	// init phase.
+	op sync.Mutex
 }
 
 func newController(config *viper.Viper) *controller {
 	return &controller{
 		config: config,
 		graph:  graph.New[common.Service](),
-		stats:  make(map[string]*entity.SupervisorStats),
+		stats:  newStatsStore(),
 	}
 }
 
+// register is wiring-time only: readers iterate c.services unlocked, so
+// registering after Start races the monitor.
 func (c *controller) register(service common.Service) {
-	c.statMu.Lock()
-	if _, ok := c.stats[service.Name()]; !ok {
-		c.stats[service.Name()] = &entity.SupervisorStats{
-			Name:   service.Name(),
-			Source: service,
-		}
+	if c.stats.track(service) {
 		// append late-registered services to the end of the sorted list
 		if len(c.services) > 0 {
 			c.services = append(c.services, service)
 		}
 	}
-	c.statMu.Unlock()
 	c.graph.Add(service)
 }
 
@@ -78,35 +77,11 @@ func (c *controller) find(name string) common.Service {
 	return nil
 }
 
-// snapshot returns a copy of the named service's stats, or nil if the
-// service is unknown. Copies are what leave the lock: callers read them
-// freely while the monitor keeps writing the live record.
-func (c *controller) snapshot(name string) *entity.SupervisorStats {
-	c.statMu.RLock()
-	defer c.statMu.RUnlock()
-	stat, ok := c.stats[name]
-	if !ok {
-		return nil
-	}
-	cp := *stat
-	return &cp
-}
-
-// update mutates the named service's stats under the write lock. Blocking
-// work (probes, Init/Start/Stop) stays outside fn.
-func (c *controller) update(name string, fn func(stat *entity.SupervisorStats)) {
-	c.statMu.Lock()
-	defer c.statMu.Unlock()
-	if stat, ok := c.stats[name]; ok {
-		fn(stat)
-	}
-}
-
 func (c *controller) init(ctx context.Context, service common.Service) (bool, error) {
 	name := service.Name()
 	svc, ok := service.(common.Initializable)
 	if !ok {
-		c.update(name, func(stat *entity.SupervisorStats) {
+		c.stats.update(name, func(stat *entity.SupervisorStats) {
 			stat.Initialized = true
 			stat.Ready = true
 		})
@@ -117,11 +92,11 @@ func (c *controller) init(ctx context.Context, service common.Service) (bool, er
 		ctx = confutil.WrapContext(ctx, c.config)
 	}
 	initializedAt := time.Now()
-	c.update(name, func(stat *entity.SupervisorStats) {
+	c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.InitializedAt = initializedAt
 	})
 	err := svc.Init(ctx)
-	c.update(name, func(stat *entity.SupervisorStats) {
+	c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.InitDuration = time.Since(initializedAt)
 		stat.Initialized = err == nil
 		stat.InitializationErr = err
@@ -138,13 +113,13 @@ func (c *controller) start(service common.Service) (bool, error) {
 	name := service.Name()
 	c.log.Debugf("starting %s", name)
 	startedAt := time.Now()
-	c.update(name, func(stat *entity.SupervisorStats) {
+	c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.Started = true
 		stat.Stopped = false
 		stat.StartedAt = startedAt
 	})
 	err := svc.Start(context.Background())
-	c.update(name, func(stat *entity.SupervisorStats) {
+	c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.StartErr = err
 		stat.StartDuration = time.Since(startedAt)
 		stat.Ready = err == nil
@@ -160,52 +135,101 @@ func (c *controller) stop(service common.Service, wait bool) (bool, error) {
 	name := service.Name()
 	c.log.Debugf("stopping %s", name)
 	stoppedAt := time.Now()
-	c.update(name, func(stat *entity.SupervisorStats) {
+	c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.Stopped = true
 		stat.Ready = false
 		stat.StoppedAt = stoppedAt
 	})
 	err := svc.Stop(wait)
-	c.update(name, func(stat *entity.SupervisorStats) {
+	c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.StopErr = err
 		stat.StopDuration = time.Since(stoppedAt)
 	})
 	return true, err
 }
 
+// Init initializes one service under the operation lock - the manual
+// InitService contract.
+func (c *controller) Init(ctx context.Context, service common.Service) error {
+	c.op.Lock()
+	defer c.op.Unlock()
+	_, err := c.init(ctx, service)
+	return err
+}
+
+// Start starts one service under the operation lock - the manual
+// StartService contract.
+func (c *controller) Start(service common.Service) error {
+	c.op.Lock()
+	defer c.op.Unlock()
+	_, err := c.start(service)
+	return err
+}
+
+// Stop stops one service under the operation lock - the manual
+// StopService contract.
+func (c *controller) Stop(service common.Service, wait bool) error {
+	c.op.Lock()
+	defer c.op.Unlock()
+	_, err := c.stop(service, wait)
+	return err
+}
+
+// Restart forces a stop-init-start cycle under the operation lock
+// regardless of state - the manual RestartService contract, which
+// resurrects even a stopped service.
+func (c *controller) Restart(ctx context.Context, service common.Service) error {
+	c.op.Lock()
+	defer c.op.Unlock()
+	return c.restart(ctx, service)
+}
+
+// RestartIfRunning is the monitor's restart: under the operation lock it
+// re-checks Stopped, so a deliberate stop that landed after the sweep's
+// snapshot stays stopped instead of being resurrected.
+func (c *controller) RestartIfRunning(ctx context.Context, service common.Service) error {
+	c.op.Lock()
+	defer c.op.Unlock()
+	if stat := c.stats.snapshot(service.Name()); stat != nil && stat.Stopped {
+		c.log.Infof("skipping restart of %s: stopped", service.Name())
+		return nil
+	}
+	return c.restart(ctx, service)
+}
+
 func (c *controller) restart(ctx context.Context, service common.Service) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	name := service.Name()
-	if stat := c.snapshot(name); stat != nil {
+	if stat := c.stats.snapshot(name); stat != nil {
 		c.log.Infof("restarting service %s (attempt %d)", name, stat.Restarts+1)
 	}
 	if svc, ok := service.(common.Daemon); ok {
 		if err := svc.Stop(true); err != nil {
 			c.log.Errorf("failed to stop service %s for restart: %s", name, err)
 		}
-		c.update(name, func(stat *entity.SupervisorStats) {
+		c.stats.update(name, func(stat *entity.SupervisorStats) {
 			stat.Stopped = false
 		})
 	}
-	restarted := func(healthy bool) {
-		c.update(name, func(stat *entity.SupervisorStats) {
+	// restarted stamps the attempt and carries the outcome into the
+	// healthcheck verdict, so stats are coherent before the next sweep:
+	// success clears it, failure records the phase error that broke the
+	// cycle.
+	restarted := func(err error) {
+		c.stats.update(name, func(stat *entity.SupervisorStats) {
 			stat.Restarts++
 			stat.RestartedAt = time.Now()
-			if healthy {
-				stat.HealthcheckErr = nil
-			}
+			stat.HealthcheckErr = err
 		})
 	}
 	if _, err := c.init(ctx, service); err != nil {
-		restarted(false)
+		restarted(err)
 		return err
 	}
 	if _, err := c.start(service); err != nil {
-		restarted(false)
+		restarted(err)
 		return err
 	}
-	restarted(true)
+	restarted(nil)
 	c.log.Infof("service %s restarted successfully", name)
 	return nil
 }
@@ -283,7 +307,7 @@ func (c *controller) initTurn(ctx context.Context, service common.Service) (bool
 		if blocked == nil {
 			blocked = err // canceled before the first attempt
 		}
-		c.update(name, func(stat *entity.SupervisorStats) {
+		c.stats.update(name, func(stat *entity.SupervisorStats) {
 			stat.InitializationErr = blocked
 		})
 		return false, blocked
@@ -301,7 +325,7 @@ func (c *controller) depsInitReady(ctx context.Context, service common.Service) 
 		if dep == nil {
 			panic(errors.Newf("%s dependency should not be nil, pls remove optional service from Dependencies()", service.Name()))
 		}
-		if stat := c.snapshot(dep.Name()); stat != nil && !stat.Initialized {
+		if stat := c.stats.snapshot(dep.Name()); stat != nil && !stat.Initialized {
 			c.log.Debugf("%s dependency %s is not initialized", service.Name(), dep.Name())
 			return errors.Newf("dependencies not ready"), false
 		}
@@ -335,10 +359,19 @@ func (c *controller) startAll() error {
 	return errors.Combine(errs...)
 }
 
+// StopAll stops every service under the operation lock, honoring the stop
+// policy's timeout.
+func (c *controller) StopAll(wait bool) error {
+	c.op.Lock()
+	defer c.op.Unlock()
+	return c.stopAll(wait)
+}
+
 func (c *controller) stopAll(wait bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.stopPolicy.Timeout > 0 {
+		// on timeout the worker keeps stopping in the background and a hung
+		// Stop leaks it - acceptable because the process is expected to
+		// exit right after a timed-out shutdown
 		done := make(chan error, 1)
 		go func() {
 			done <- c.stopAllServices(wait)

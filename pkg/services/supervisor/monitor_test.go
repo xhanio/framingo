@@ -55,7 +55,7 @@ func TestSweepRollsUpMemoizedDependencyFailure(t *testing.T) {
 
 	assert.Equal(t, 1, db.readyCalled)
 	for _, name := range []string{"a", "b"} {
-		stat := m.c.snapshot(name)
+		stat := m.c.stats.snapshot(name)
 		require.NotNil(t, stat)
 		require.Error(t, stat.HealthcheckErr, "%s must inherit db's failure", name)
 		assert.Contains(t, stat.HealthcheckErr.Error(), "db down")
@@ -82,6 +82,56 @@ func TestHealthcheckSurvivesDependencyCycle(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("healthcheck did not terminate on a dependency cycle")
 	}
+}
+
+// The monitor's restart re-checks Stopped under the operation lock: a
+// deliberate stop that lands after the sweep's snapshot must stay stopped,
+// not be resurrected by an in-flight recovery decision.
+func TestMonitorRestartSkipsStoppedService(t *testing.T) {
+	svc := newMockService("svc")
+	m := newTestManager()
+	m.Register(svc)
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()))
+	require.NoError(t, m.StartService("svc"))
+	require.NoError(t, m.StopService("svc", true))
+
+	require.NoError(t, m.c.RestartIfRunning(context.Background(), svc))
+
+	assert.Equal(t, 1, svc.stopCalled, "no second stop from a skipped restart")
+	assert.Equal(t, 1, svc.initCalled)
+	assert.Equal(t, 1, svc.startCalled)
+	stat := m.c.stats.snapshot("svc")
+	require.NotNil(t, stat)
+	assert.True(t, stat.Stopped, "the deliberate stop survives")
+}
+
+// Manual per-service operations serialize behind the same operation lock as
+// restarts, so a StopService can never interleave with an in-flight
+// stop-init-start cycle at the service level.
+func TestManualOpsSerializeWithRestart(t *testing.T) {
+	svc := newMockService("svc")
+	m := newTestManager()
+	m.Register(svc)
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()))
+	require.NoError(t, m.StartService("svc"))
+
+	m.c.op.Lock()
+	done := make(chan struct{})
+	go func() {
+		_ = m.StopService("svc", true)
+		close(done)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	assert.Equal(t, 0, svc.stopCalled, "StopService must wait for the operation lock")
+	m.c.op.Unlock()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("StopService did not proceed after the lock was released")
+	}
+	assert.Equal(t, 1, svc.stopCalled)
 }
 
 // A restart delay must not outlive the monitor's context: cancellation during

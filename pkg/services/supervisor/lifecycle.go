@@ -12,6 +12,9 @@ func (m *manager) Init(ctx context.Context) error {
 	return m.c.initAll(ctx)
 }
 
+// The lifecycle methods - Init, Start, Stop, Restart - are not safe for
+// concurrent use: m.cancel is unsynchronized. Call them from one goroutine,
+// or serialize a signal handler's Stop externally.
 func (m *manager) Start(ctx context.Context) error {
 	if m.cancel != nil {
 		m.log.Warnf("%s already started", m.Name())
@@ -48,7 +51,7 @@ func (m *manager) Stop(wait bool) error {
 		m.wg.Wait()
 	}
 	m.cancel = nil
-	return m.c.stopAll(wait)
+	return m.c.StopAll(wait)
 }
 
 func (m *manager) Restart(ctx context.Context) error {

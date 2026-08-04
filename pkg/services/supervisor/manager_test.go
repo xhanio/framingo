@@ -111,13 +111,13 @@ func TestRegister(t *testing.T) {
 		a := newMockService("a")
 		b := newMockService("b")
 		m.Register(a, b)
-		assert.Len(t, m.c.stats, 2)
+		assert.Len(t, m.c.stats.records, 2)
 	})
 
 	t.Run("skips nil services", func(t *testing.T) {
 		m := newTestManager()
 		m.Register(nil, newMockService("a"), nil)
-		assert.Len(t, m.c.stats, 1)
+		assert.Len(t, m.c.stats.records, 1)
 	})
 
 	t.Run("registers dependencies", func(t *testing.T) {
@@ -126,8 +126,8 @@ func TestRegister(t *testing.T) {
 		svc := newMockService("svc")
 		svc.deps = []common.Service{dep}
 		m.Register(svc)
-		assert.NotNil(t, m.c.stats["dep"])
-		assert.NotNil(t, m.c.stats["svc"])
+		assert.NotNil(t, m.c.stats.records["dep"])
+		assert.NotNil(t, m.c.stats.records["svc"])
 	})
 }
 
@@ -212,7 +212,7 @@ func TestInitAndStart(t *testing.T) {
 		err := m.Init(context.Background())
 		assert.Error(t, err)
 
-		stat := m.c.snapshot("bad")
+		stat := m.c.stats.snapshot("bad")
 		assert.False(t, stat.Initialized)
 		assert.False(t, stat.Ready)
 		assert.EqualError(t, stat.InitializationErr, "init boom")
@@ -229,7 +229,7 @@ func TestInitAndStart(t *testing.T) {
 		err := m.Start(context.Background())
 		assert.Error(t, err)
 
-		stat := m.c.snapshot("bad")
+		stat := m.c.stats.snapshot("bad")
 		assert.True(t, stat.Started)
 		assert.False(t, stat.Ready)
 		assert.EqualError(t, stat.StartErr, "start boom")
@@ -245,12 +245,12 @@ func TestInitAndStart(t *testing.T) {
 		require.NoError(t, m.Init(context.Background()))
 		assert.Equal(t, 1, svc.initCalled)
 
-		stat := m.c.snapshot("config")
+		stat := m.c.stats.snapshot("config")
 		assert.True(t, stat.Initialized)
 		assert.True(t, stat.Ready)
 
 		require.NoError(t, m.Start(context.Background()))
-		assert.False(t, m.c.snapshot("config").Started)
+		assert.False(t, m.c.stats.snapshot("config").Started)
 		require.NoError(t, m.Stop(true))
 	})
 }
@@ -307,7 +307,7 @@ func TestStopOrder(t *testing.T) {
 
 		// Verify stats
 		for _, name := range []string{"db", "api"} {
-			stat := m.c.snapshot(name)
+			stat := m.c.stats.snapshot(name)
 			assert.True(t, stat.Stopped)
 			assert.False(t, stat.Ready)
 		}
@@ -342,7 +342,7 @@ func TestPerServiceLifecycle(t *testing.T) {
 		assert.Equal(t, 2, svc.stopCalled)
 		assert.Equal(t, 2, svc.initCalled)
 		assert.Equal(t, 2, svc.startCalled)
-		stat := m.c.snapshot("svc")
+		stat := m.c.stats.snapshot("svc")
 		assert.Equal(t, 1, stat.Restarts)
 	})
 
@@ -352,6 +352,24 @@ func TestPerServiceLifecycle(t *testing.T) {
 		assert.Error(t, m.StopService("nope", true))
 		assert.Error(t, m.RestartService(context.Background(), "nope"))
 	})
+}
+
+// A failed restart records its error in the healthcheck verdict at once,
+// instead of leaving the previous sweep's stale value until the next one.
+func TestFailedRestartRecordsHealthcheckErr(t *testing.T) {
+	svc := newMockService("svc")
+	m := newTestManager()
+	m.Register(svc)
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()))
+	require.NoError(t, m.StartService("svc"))
+
+	svc.initErr = fmt.Errorf("re-init boom")
+	require.Error(t, m.RestartService(context.Background(), "svc"))
+
+	stat := m.c.stats.snapshot("svc")
+	require.NotNil(t, stat)
+	assert.EqualError(t, stat.HealthcheckErr, "re-init boom")
 }
 
 func TestStats(t *testing.T) {
@@ -370,6 +388,23 @@ func TestStats(t *testing.T) {
 		assert.True(t, stat.Ready)
 		assert.Nil(t, stat.InitializationErr)
 	}
+}
+
+// Stats reports in topological order - dependencies above dependents, the
+// same order services init - so a red dependency explains the red services
+// below it.
+func TestStatsTopologicalOrder(t *testing.T) {
+	m := newTestManager()
+	alpha := newMockService("alpha")
+	zeta := newMockService("zeta")
+	zeta.deps = []common.Service{alpha}
+	m.Register(zeta, alpha)
+	require.NoError(t, m.TopoSort())
+
+	stats, _ := m.Stats()
+	require.Len(t, stats, 2)
+	assert.Equal(t, "alpha", stats[0].Name, "the dependency comes first")
+	assert.Equal(t, "zeta", stats[1].Name)
 }
 
 func TestStatsHealthcheck(t *testing.T) {
@@ -414,7 +449,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 
 		err := m.monitor.healthcheck(context.Background(), svc)
 		assert.Error(t, err)
-		stat := m.c.snapshot("svc")
+		stat := m.c.stats.snapshot("svc")
 		assert.EqualError(t, stat.LivenessErr, "dead")
 		assert.Equal(t, 1, svc.aliveCalled)
 
@@ -431,7 +466,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		require.NoError(t, m.Start(context.Background()))
 
 		_ = m.monitor.healthcheck(context.Background(), svc)
-		stat := m.c.snapshot("svc")
+		stat := m.c.stats.snapshot("svc")
 		assert.Nil(t, stat.LivenessErr)
 		assert.False(t, stat.Ready)
 		assert.EqualError(t, stat.ReadinessErr, "not ready")
@@ -449,7 +484,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		require.NoError(t, m.Start(context.Background()))
 
 		_ = m.monitor.healthcheck(context.Background(), svc)
-		stat := m.c.snapshot("svc")
+		stat := m.c.stats.snapshot("svc")
 		assert.Nil(t, stat.LivenessErr)
 		assert.True(t, stat.Ready)
 		assert.Nil(t, stat.ReadinessErr)
@@ -473,7 +508,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 		time.Sleep(150 * time.Millisecond)
 		require.NoError(t, m.Stop(true))
 
-		stat := m.c.snapshot("svc")
+		stat := m.c.stats.snapshot("svc")
 		assert.GreaterOrEqual(t, stat.Restarts, 1)
 	})
 
@@ -491,7 +526,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 		time.Sleep(150 * time.Millisecond)
 		require.NoError(t, m.Stop(true))
 
-		stat := m.c.snapshot("svc")
+		stat := m.c.stats.snapshot("svc")
 		assert.Equal(t, 0, stat.Restarts)
 		assert.False(t, stat.Ready)
 	})
@@ -511,7 +546,7 @@ func TestMonitorMaxRetries(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	require.NoError(t, m.Stop(true))
 
-	stat := m.c.snapshot("svc")
+	stat := m.c.stats.snapshot("svc")
 	assert.Equal(t, 2, stat.Restarts)
 }
 
@@ -569,19 +604,19 @@ func TestReadyStateTransitions(t *testing.T) {
 	require.NoError(t, m.TopoSort())
 
 	// before init: not ready
-	assert.False(t, m.c.snapshot("svc").Ready)
+	assert.False(t, m.c.stats.snapshot("svc").Ready)
 
 	// after init: ready
 	require.NoError(t, m.Init(context.Background()))
-	assert.True(t, m.c.snapshot("svc").Ready)
+	assert.True(t, m.c.stats.snapshot("svc").Ready)
 
 	// after start: ready
 	require.NoError(t, m.Start(context.Background()))
-	assert.True(t, m.c.snapshot("svc").Ready)
+	assert.True(t, m.c.stats.snapshot("svc").Ready)
 
 	// after stop: not ready
 	require.NoError(t, m.Stop(true))
-	assert.False(t, m.c.snapshot("svc").Ready)
+	assert.False(t, m.c.stats.snapshot("svc").Ready)
 }
 
 func TestOptions(t *testing.T) {
@@ -600,6 +635,13 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, 10*time.Second, m.monitor.policy.Interval)
 		assert.Equal(t, 5, m.monitor.policy.MaxRetries)
 		assert.Equal(t, 2*time.Second, m.monitor.policy.RestartDelay)
+	})
+
+	t.Run("WithInitPolicy", func(t *testing.T) {
+		m := newTestManager(WithInitPolicy(3, time.Second, 30*time.Second))
+		assert.Equal(t, 3, m.c.initPolicy.MaxRetries)
+		assert.Equal(t, time.Second, m.c.initPolicy.Delay)
+		assert.Equal(t, 30*time.Second, m.c.initPolicy.MaxDelay)
 	})
 }
 

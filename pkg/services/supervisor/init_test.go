@@ -86,7 +86,7 @@ func TestInitPolicyExhausted(t *testing.T) {
 	assert.Equal(t, 0, repo.initCalled, "dependent fails fast on a dependency that gave up")
 	assert.Less(t, time.Since(start), time.Second, "repo's turn must not re-wait a lost cause")
 
-	stat := m.c.snapshot("repo")
+	stat := m.c.stats.snapshot("repo")
 	require.NotNil(t, stat)
 	assert.Error(t, stat.InitializationErr)
 }
