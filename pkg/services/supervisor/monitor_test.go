@@ -90,7 +90,7 @@ func TestRestartDelayHonorsCancel(t *testing.T) {
 	svc := newMockService("svc")
 	svc.aliveErr = errors.Newf("dead")
 
-	m := newTestManager(WithRestartPolicy(-1), WithRestartDelay(2*time.Second))
+	m := newTestManager(WithMonitorPolicy(0, -1, 2*time.Second))
 	m.Register(svc)
 	require.NoError(t, m.TopoSort())
 

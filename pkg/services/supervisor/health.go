@@ -34,7 +34,7 @@ func (m *manager) Ready(_ context.Context) error {
 // path and escalation is immediate. Unlimited retries (maxRetries < 0)
 // never escalate: the monitor keeps trying, so the process stays alive.
 func (m *manager) Alive(_ context.Context) error {
-	maxRetries := m.monitor.maxRetries
+	maxRetries := m.monitor.policy.MaxRetries
 	if maxRetries < 0 {
 		return nil
 	}

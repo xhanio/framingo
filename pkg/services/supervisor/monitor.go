@@ -11,17 +11,15 @@ import (
 )
 
 type monitor struct {
-	log          log.Logger
-	interval     time.Duration
-	maxRetries   int
-	restartDelay time.Duration
-	c            *controller
+	log    log.Logger
+	policy entity.SupervisorMonitorPolicy
+	c      *controller
 }
 
 func (mon *monitor) run(ctx context.Context) {
-	ticker := time.NewTicker(mon.interval)
+	ticker := time.NewTicker(mon.policy.Interval)
 	defer ticker.Stop()
-	mon.log.Infof("health monitor started (interval: %s)", mon.interval)
+	mon.log.Infof("health monitor started (interval: %s)", mon.policy.Interval)
 	for {
 		select {
 		case <-ctx.Done():
@@ -54,12 +52,12 @@ func (mon *monitor) checkAll(ctx context.Context) {
 		if stat.LivenessErr == nil && stat.Healthcheck() == nil {
 			continue
 		}
-		if mon.maxRetries != 0 {
-			if mon.restartDelay > 0 {
+		if mon.policy.MaxRetries != 0 {
+			if mon.policy.RestartDelay > 0 {
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(mon.restartDelay):
+				case <-time.After(mon.policy.RestartDelay):
 				}
 			}
 			select {
@@ -67,8 +65,8 @@ func (mon *monitor) checkAll(ctx context.Context) {
 				return
 			default:
 			}
-			if mon.maxRetries >= 0 && stat.Restarts >= mon.maxRetries {
-				mon.log.Warnf("service %s reached max restart attempts (%d)", service.Name(), mon.maxRetries)
+			if mon.policy.MaxRetries >= 0 && stat.Restarts >= mon.policy.MaxRetries {
+				mon.log.Warnf("service %s reached max restart attempts (%d)", service.Name(), mon.policy.MaxRetries)
 				continue
 			}
 			if err := mon.c.restart(ctx, service); err != nil {

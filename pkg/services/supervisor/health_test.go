@@ -49,7 +49,7 @@ func TestSupervisorReady(t *testing.T) {
 func TestSupervisorAlive(t *testing.T) {
 	t.Run("bounded retries escalate when exhausted", func(t *testing.T) {
 		svc := newMockService("omega")
-		m := newTestManager(WithRestartPolicy(3))
+		m := newTestManager(WithMonitorPolicy(0, 3, 0))
 		m.Register(svc)
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Alive(context.Background()))
@@ -68,7 +68,7 @@ func TestSupervisorAlive(t *testing.T) {
 
 	t.Run("unlimited retries never escalate", func(t *testing.T) {
 		svc := newMockService("omega")
-		m := newTestManager(WithRestartPolicy(-1))
+		m := newTestManager(WithMonitorPolicy(0, -1, 0))
 		m.Register(svc)
 		require.NoError(t, m.TopoSort())
 		m.c.update("omega", func(stat *entity.SupervisorStats) {
@@ -124,8 +124,7 @@ func (s *flappingService) Ready(ctx context.Context) error {
 func TestHealthServesConcurrentlyWithMonitor(t *testing.T) {
 	svc := &flappingService{name: "flappy"}
 	m := newTestManager(
-		WithMonitorInterval(time.Millisecond),
-		WithRestartPolicy(-1),
+		WithMonitorPolicy(time.Millisecond, -1, 0),
 	)
 	m.Register(svc)
 	require.NoError(t, m.TopoSort())

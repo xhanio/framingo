@@ -28,7 +28,7 @@ func (m *manager) Start(ctx context.Context) error {
 		<-ctx.Done()
 		m.log.Infof("service %s stopped", m.Name())
 	}()
-	if m.monitor.interval > 0 {
+	if m.monitor.policy.Interval > 0 {
 		m.wg.Add(1)
 		go func() {
 			defer m.wg.Done()

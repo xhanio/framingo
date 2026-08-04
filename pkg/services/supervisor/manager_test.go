@@ -26,6 +26,8 @@ type mockService struct {
 	stopErr     error
 	aliveErr    error
 	readyErr    error
+	initFn      func() error // takes precedence over initErr when set
+	readyFn     func() error // takes precedence over readyErr when set
 	initCalled  int
 	startCalled int
 	stopCalled  int
@@ -42,6 +44,9 @@ func (s *mockService) Dependencies() []common.Service { return s.deps }
 
 func (s *mockService) Init(ctx context.Context) error {
 	s.initCalled++
+	if s.initFn != nil {
+		return s.initFn()
+	}
 	return s.initErr
 }
 
@@ -62,6 +67,9 @@ func (s *mockService) Alive(ctx context.Context) error {
 
 func (s *mockService) Ready(ctx context.Context) error {
 	s.readyCalled++
+	if s.readyFn != nil {
+		return s.readyFn()
+	}
 	return s.readyErr
 }
 
@@ -453,8 +461,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 	t.Run("restarts on liveness failure", func(t *testing.T) {
 		m := newTestManager(
-			WithMonitorInterval(50*time.Millisecond),
-			WithRestartPolicy(1),
+			WithMonitorPolicy(50*time.Millisecond, 1, 0),
 		)
 		svc := newMockService("svc")
 		svc.aliveErr = fmt.Errorf("dead")
@@ -472,8 +479,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 
 	t.Run("does not restart on readiness-only failure", func(t *testing.T) {
 		m := newTestManager(
-			WithMonitorInterval(50*time.Millisecond),
-			WithRestartPolicy(3),
+			WithMonitorPolicy(50*time.Millisecond, 3, 0),
 		)
 		svc := newMockService("svc")
 		svc.readyErr = fmt.Errorf("not ready")
@@ -493,8 +499,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 
 func TestMonitorMaxRetries(t *testing.T) {
 	m := newTestManager(
-		WithMonitorInterval(50*time.Millisecond),
-		WithRestartPolicy(2),
+		WithMonitorPolicy(50*time.Millisecond, 2, 0),
 	)
 	svc := newMockService("svc")
 	svc.aliveErr = fmt.Errorf("dead")
@@ -511,7 +516,7 @@ func TestMonitorMaxRetries(t *testing.T) {
 }
 
 func TestShutdownTimeout(t *testing.T) {
-	m := newTestManager(WithShutdownTimeout(50 * time.Millisecond))
+	m := newTestManager(WithStopPolicy(50 * time.Millisecond))
 	svc := newMockService("slow")
 	svc.stopErr = nil
 	m.Register(svc)
@@ -585,24 +590,16 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, "custom", m.Name())
 	})
 
-	t.Run("WithShutdownTimeout", func(t *testing.T) {
-		m := newTestManager(WithShutdownTimeout(5 * time.Second))
-		assert.Equal(t, 5*time.Second, m.c.shutdownTimeout)
+	t.Run("WithStopPolicy", func(t *testing.T) {
+		m := newTestManager(WithStopPolicy(5 * time.Second))
+		assert.Equal(t, 5*time.Second, m.c.stopPolicy.Timeout)
 	})
 
-	t.Run("WithMonitorInterval", func(t *testing.T) {
-		m := newTestManager(WithMonitorInterval(10 * time.Second))
-		assert.Equal(t, 10*time.Second, m.monitor.interval)
-	})
-
-	t.Run("WithRestartPolicy", func(t *testing.T) {
-		m := newTestManager(WithRestartPolicy(5))
-		assert.Equal(t, 5, m.monitor.maxRetries)
-	})
-
-	t.Run("WithRestartDelay", func(t *testing.T) {
-		m := newTestManager(WithRestartDelay(2 * time.Second))
-		assert.Equal(t, 2*time.Second, m.monitor.restartDelay)
+	t.Run("WithMonitorPolicy", func(t *testing.T) {
+		m := newTestManager(WithMonitorPolicy(10*time.Second, 5, 2*time.Second))
+		assert.Equal(t, 10*time.Second, m.monitor.policy.Interval)
+		assert.Equal(t, 5, m.monitor.policy.MaxRetries)
+		assert.Equal(t, 2*time.Second, m.monitor.policy.RestartDelay)
 	})
 }
 

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	"github.com/spf13/viper"
 	"github.com/xhanio/errors"
 
@@ -16,12 +17,13 @@ import (
 )
 
 type controller struct {
-	log             log.Logger
-	config          *viper.Viper
-	mu              sync.Mutex
-	shutdownTimeout time.Duration
-	graph           graph.Graph[common.Service]
-	services        []common.Service
+	log        log.Logger
+	config     *viper.Viper
+	mu         sync.Mutex
+	initPolicy entity.SupervisorInitPolicy
+	stopPolicy entity.SupervisorStopPolicy
+	graph      graph.Graph[common.Service]
+	services   []common.Service
 	// statMu guards the stats map and every field of the records it holds:
 	// the monitor goroutine writes probe results while health endpoints
 	// read them. All access goes through snapshot and update.
@@ -213,37 +215,106 @@ func (c *controller) initAll(ctx context.Context) error {
 	var errs []error
 	var total, failed int
 	for _, service := range c.services {
-		ready := true
-		for _, dep := range service.Dependencies() {
-			if dep == nil {
-				panic(errors.Newf("%s dependency should not be nil, pls remove optional service from Dependencies()", service.Name()))
-			}
-			if stat := c.snapshot(dep.Name()); stat != nil && !stat.Initialized {
-				c.log.Debugf("%s dependency %s is not initialized", service.Name(), dep.Name())
-				ready = false
-				break
-			}
-		}
-		if !ready {
-			initErr := errors.Newf("dependencies not ready")
-			c.update(service.Name(), func(stat *entity.SupervisorStats) {
-				stat.InitializationErr = initErr
-			})
-			errs = append(errs, errors.Wrapf(initErr, "service %s", service.Name()))
+		ok, err := c.initTurn(ctx, service)
+		if err != nil {
 			failed++
-			continue
+			errs = append(errs, errors.Wrapf(err, "service %s", service.Name()))
 		}
-		ok, err := c.init(ctx, service)
 		if ok {
-			if err != nil {
-				failed++
-				errs = append(errs, errors.Wrapf(err, "service %s", service.Name()))
-			}
 			total++
 		}
 	}
 	c.log.Infof("%d services initialized, %d failed", total, failed)
 	return errors.Combine(errs...)
+}
+
+// initTurn runs one service's init turn. With an init policy set, the turn
+// waits for dependencies to be init-ready, then runs the service's own
+// Init, retrying transient blockages with exponential backoff until the
+// policy or the context ends the turn. A dependency that already gave up
+// its own turn is permanent: waiting cannot fix it, so the turn fails
+// fast. ok reports whether the service's own Init ran.
+func (c *controller) initTurn(ctx context.Context, service common.Service) (bool, error) {
+	name := service.Name()
+	// map the policy onto retry-go: 0 -> a single attempt, n -> n retries
+	// after the first, -1 -> unlimited, bounded by ctx
+	attempts := uint(1)
+	switch {
+	case c.initPolicy.MaxRetries > 0:
+		attempts = uint(c.initPolicy.MaxRetries) + 1
+	case c.initPolicy.MaxRetries < 0:
+		attempts = 0
+	}
+	delay := c.initPolicy.Delay
+	if delay <= 0 {
+		delay = time.Second
+	}
+	opts := []retry.Option{
+		retry.Context(ctx),
+		retry.Attempts(attempts),
+		retry.Delay(delay),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			c.log.Warnf("init of %s blocked, retrying: %s", name, err)
+		}),
+	}
+	if c.initPolicy.MaxDelay > delay {
+		opts = append(opts, retry.DelayType(retry.BackOffDelay), retry.MaxDelay(c.initPolicy.MaxDelay))
+	} else {
+		opts = append(opts, retry.DelayType(retry.FixedDelay))
+	}
+	attempted := false
+	var blocked error
+	err := retry.Do(func() error {
+		var transient bool
+		if blocked, transient = c.depsInitReady(ctx, service); blocked != nil {
+			if !transient {
+				return retry.Unrecoverable(blocked)
+			}
+			return blocked
+		}
+		ok, initErr := c.init(ctx, service)
+		attempted = attempted || ok
+		blocked = initErr
+		return initErr
+	}, opts...)
+	if err != nil && !attempted {
+		// the turn never reached its own Init - record why
+		if blocked == nil {
+			blocked = err // canceled before the first attempt
+		}
+		c.update(name, func(stat *entity.SupervisorStats) {
+			stat.InitializationErr = blocked
+		})
+		return false, blocked
+	}
+	return attempted, err
+}
+
+// depsInitReady reports what blocks a service's init: nil when every
+// dependency is initialized and - with an init policy set - answering its
+// Ready probe, if it has one. transient tells whether waiting could clear
+// the blockage: a failing probe is transient, a dependency that failed its
+// own init turn is not. A one-pass init (no policy) never probes.
+func (c *controller) depsInitReady(ctx context.Context, service common.Service) (blocked error, transient bool) {
+	for _, dep := range service.Dependencies() {
+		if dep == nil {
+			panic(errors.Newf("%s dependency should not be nil, pls remove optional service from Dependencies()", service.Name()))
+		}
+		if stat := c.snapshot(dep.Name()); stat != nil && !stat.Initialized {
+			c.log.Debugf("%s dependency %s is not initialized", service.Name(), dep.Name())
+			return errors.Newf("dependencies not ready"), false
+		}
+		if c.initPolicy.MaxRetries == 0 {
+			continue
+		}
+		if readiness, ok := dep.(common.Readiness); ok {
+			if err := readiness.Ready(ctx); err != nil {
+				return errors.Wrapf(err, "dependency %s not ready", dep.Name()), true
+			}
+		}
+	}
+	return nil, false
 }
 
 func (c *controller) startAll() error {
@@ -267,7 +338,7 @@ func (c *controller) startAll() error {
 func (c *controller) stopAll(wait bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.shutdownTimeout > 0 {
+	if c.stopPolicy.Timeout > 0 {
 		done := make(chan error, 1)
 		go func() {
 			done <- c.stopAllServices(wait)
@@ -275,9 +346,9 @@ func (c *controller) stopAll(wait bool) error {
 		select {
 		case err := <-done:
 			return err
-		case <-time.After(c.shutdownTimeout):
-			c.log.Warnf("shutdown timed out after %s", c.shutdownTimeout)
-			return errors.DeadlineExceeded.Newf("shutdown timed out after %s", c.shutdownTimeout)
+		case <-time.After(c.stopPolicy.Timeout):
+			c.log.Warnf("shutdown timed out after %s", c.stopPolicy.Timeout)
+			return errors.DeadlineExceeded.Newf("shutdown timed out after %s", c.stopPolicy.Timeout)
 		}
 	}
 	return c.stopAllServices(wait)
