@@ -8,6 +8,9 @@ import (
 )
 
 var (
+	ApplicationName    string
+	ApplicationVersion string
+
 	ProductName    string
 	ProductModel   string
 	ProductVersion string
@@ -26,6 +29,9 @@ var (
 	BuildTime    string
 
 	INJECTION = map[string]*string{
+		"ApplicationName":    &ApplicationName,
+		"ApplicationVersion": &ApplicationVersion,
+
 		"ProductName":    &ProductName,
 		"ProductModel":   &ProductModel,
 		"ProductVersion": &ProductVersion,
@@ -48,6 +54,9 @@ var (
 )
 
 type Build struct {
+	ApplicationName    string `json:"application_name"`
+	ApplicationVersion string `json:"application_version"`
+
 	ProductName    string `json:"product_name"`
 	ProductModel   string `json:"product_model"`
 	ProductVersion string `json:"product_version"`
@@ -69,19 +78,21 @@ type Build struct {
 func GetBuildInfo() Build {
 	if build == nil {
 		build = &Build{
-			ProductName:    ProductName,
-			ProductModel:   ProductModel,
-			ProductVersion: ProductVersion,
-			ProjectRoot:    ProjectRoot,
-			ProjectName:    ProjectName,
-			ProjectPath:    ProjectPath,
-			GitBranch:      GitBranch,
-			GitTag:         GitTag,
-			GitCommit:      GitCommit,
-			BuildVersion:   BuildVersion,
-			BuildType:      BuildType,
-			BuildDate:      BuildDate,
-			BuildTime:      BuildTime,
+			ApplicationName:    ApplicationName,
+			ApplicationVersion: ApplicationVersion,
+			ProductName:        ProductName,
+			ProductModel:       ProductModel,
+			ProductVersion:     ProductVersion,
+			ProjectRoot:        ProjectRoot,
+			ProjectName:        ProjectName,
+			ProjectPath:        ProjectPath,
+			GitBranch:          GitBranch,
+			GitTag:             GitTag,
+			GitCommit:          GitCommit,
+			BuildVersion:       BuildVersion,
+			BuildType:          BuildType,
+			BuildDate:          BuildDate,
+			BuildTime:          BuildTime,
 		}
 	}
 	return *build
