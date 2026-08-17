@@ -1,7 +1,7 @@
 # Framingo
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8.svg)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg)](https://go.dev/)
 
 **Framingo** is a modular, service-oriented Go framework for building production-ready HTTP API applications. It provides service lifecycle management, dependency resolution, a declarative HTTP router, database integration, pub/sub messaging, and health monitoring — all wired together by a supervisor that handles graceful startup, shutdown, and automatic restart.
 
@@ -861,7 +861,7 @@ export MYAPP_API_HTTP_PORT=9090
 ### Docker
 
 ```dockerfile
-FROM golang:1.24 AS builder
+FROM golang:1.25 AS builder
 WORKDIR /app
 COPY . .
 RUN CGO_ENABLED=0 go build -o app cmd/app/main.go

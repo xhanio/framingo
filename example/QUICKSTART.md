@@ -115,7 +115,7 @@ Two things GoPro does for you that you then have to handle yourself:
 
 ## Prerequisites
 
-1. **Go 1.25.8+** — this module's own `go` directive (the framework itself only needs 1.24). On an older toolchain the default `GOTOOLCHAIN=auto` fetches it; `GOTOOLCHAIN=local` will fail.
+1. **Go 1.25.8+** — this module's own `go` directive (the framework itself needs 1.25). On an older toolchain the default `GOTOOLCHAIN=auto` fetches it; `GOTOOLCHAIN=local` will fail.
 2. **A C toolchain** — the SQLite driver is blank-imported, so builds run with `CGO_ENABLED=1`.
 3. Install GoPro: `go install github.com/xhanio/gopro@latest`
 4. (For the default config) a local PostgreSQL with database `framingo_example`, user `framingo`, password `framingo_dev`
