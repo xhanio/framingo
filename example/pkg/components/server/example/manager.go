@@ -5,11 +5,13 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/spf13/viper"
+
 	"github.com/xhanio/framingo/pkg/services/api/server"
 	"github.com/xhanio/framingo/pkg/services/db"
 	"github.com/xhanio/framingo/pkg/services/messagebus"
 	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
+	"github.com/xhanio/framingo/pkg/services/tracing"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
 
@@ -29,6 +31,7 @@ type manager struct {
 	log log.Logger
 
 	// infra services
+	tracing    tracing.Manager
 	db         db.Manager
 	pubsub     pubsub.Manager
 	messagebus messagebus.Manager

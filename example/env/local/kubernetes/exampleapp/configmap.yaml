@@ -25,12 +25,21 @@ data:
         max_lifetime: 1h
         exec_timeout: 30s
 
+    tracing:
+      enabled: false  # flip on with a collector in reach
+      exporter: otlpgrpc
+      sample_ratio: 0.1
+      # config:
+      #   endpoint: otel-collector:4317
+      #   insecure: true
+
     api:
       http:
         host: 0.0.0.0
         port: 8080
         prefix: /api/v1
         middlewares:
+          trace: true  # emits spans only while tracing.enabled is on
           throttle:
             rps: 100.0
             burst_size: 200

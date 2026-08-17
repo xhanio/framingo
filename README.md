@@ -21,6 +21,8 @@
 
 - **Task Planning** — Concurrent task scheduler with priority, retry, and result tracking
 
+- **OpenTelemetry Tracing** — Supervised `TracerProvider` lifecycle with pluggable OTLP/stdout exporters and a built-in server middleware that traces every request, propagates W3C trace context, and never touches the otel globals
+
 - **Instance-Based Configuration** — Viper instance propagated through `context.Context` (no global singletons), with hot-reload
 
 - **Structured Logging** — Zap-based logger with file rotation and per-service scoping
@@ -58,7 +60,7 @@ The template builds with [GoPro](https://github.com/xhanio/gopro), which owns a 
 
 Prerequisites:
 
-- **Go 1.25.8+** — the `example/` module's own `go` directive; the framework module itself only needs 1.24. On an older toolchain the default `GOTOOLCHAIN=auto` fetches it for you, but `GOTOOLCHAIN=local` will hard-fail
+- **Go 1.25.8+** — the `example/` module's own `go` directive; the framework module itself needs 1.25 (the OpenTelemetry SDK's floor). On an older toolchain the default `GOTOOLCHAIN=auto` fetches it for you, but `GOTOOLCHAIN=local` will hard-fail
 - **A C toolchain**, since the example blank-imports the SQLite driver and therefore builds with `CGO_ENABLED=1`
 - **PostgreSQL on `localhost:5432`** with database `framingo_example` (user `framingo`, password `framingo_dev`) — that's what the local config points at. A compose file for it ships at [example/env/local/docker-compose/](example/env/local/docker-compose/)
 
@@ -193,6 +195,11 @@ Production-ready service implementations:
   - Concurrent execution with priority, cancel, and result lookup
   - Emits task lifecycle events through a `MessageSender`
 
+- **[tracing](pkg/services/tracing/)** — OpenTelemetry tracing
+  - Owns the SDK `TracerProvider`: built from `tracing.*` config keys in `Init` (so restarts re-point or re-sample it), flushed in `Stop`; disabled serves a noop provider, so spans are always safe to start
+  - Exporters behind a blank-import registry ([`exporters/`](pkg/services/tracing/exporters/)): `otlpgrpc`, `otlphttp`, `stdout` — binaries link only what they import
+  - Explicit `model.Tracer` handle everywhere — the otel globals are never set; the framework-shipped `trace` middleware ([pkg/middlewares/trace/](pkg/middlewares/trace/)) rides the server-level slot and traces every request (W3C context extraction, route-template span names, the framingo `tid` as a `framingo.trace_id` attribute), activated per server with `trace: true` in the middleware configs
+
 ### Types (`pkg/types/`)
 
 Interface contracts and shared types:
@@ -205,7 +212,7 @@ Interface contracts and shared types:
 
 - **[api](pkg/types/api/)** — HTTP types: the two extension interfaces `Router` and `Middleware`, plus `Endpoint`, `ClientTLS`/`ServerTLS`, `ErrorBody`, `Encoding`, and the `RequestInfo`/`ResponseInfo`/`Stats` records the built-in middlewares stash on the request context. The router.yaml schema itself is private to the server package: routers hand it over as bytes, middlewares receive their config the same way
 
-- **[model](pkg/types/model/)** — Behavioral contracts for framework services: `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Messenger`, `Planner`
+- **[model](pkg/types/model/)** — Behavioral contracts for framework services: `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Messenger`, `Planner`, `Tracer`
 
 - **[entity](pkg/types/entity/)** — Data carriers (POJOs) emitted by framework services: `SupervisorStats`, `Plan`, `PlannerStats`, `PubsubMessage`
 
@@ -571,7 +578,8 @@ curl 'http://localhost:8080/api/v1/hello?name=Framingo'
 - **[example/QUICKSTART.md](example/QUICKSTART.md)** — Fork the template, plus build/run with GoPro
 - **[example/](example/)** — The starter template: fork it to begin a new service (supervisor, db, pubsub, messagebus, RBAC, CLI client)
 - **Framework packages**:
-  - **[pkg/services/](pkg/services/)** — supervisor, api server/client, db, pubsub, messagebus, planner
+  - **[pkg/services/](pkg/services/)** — supervisor, api server/client, db, pubsub, messagebus, planner, tracing
+  - **[pkg/middlewares/](pkg/middlewares/)** — framework-shipped `api.Middleware`s: trace
   - **[pkg/types/](pkg/types/)** — common, api, model, entity, orm, info
   - **[pkg/utils/](pkg/utils/)** — log, infra, and the utility packages listed above
   - **[pkg/structs/](pkg/structs/)** — graph, queue, buffer, trie, lease, staque

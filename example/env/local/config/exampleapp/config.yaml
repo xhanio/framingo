@@ -27,6 +27,21 @@ db:
     max_lifetime: 1h
     exec_timeout: 30s
 
+# Tracing configuration (OpenTelemetry)
+tracing:
+  enabled: true
+  exporter: stdout     # otlpgrpc | otlphttp | stdout; blank-import the matching pkg/services/tracing/exporters/* package
+  sample_ratio: 1.0    # ParentBased(TraceIDRatioBased): remote parents keep their sampling decision
+                       # service.name/version come from the build's ApplicationName and
+                       # ApplicationVersion - never from config
+  # config:                    # exporter-specific kv block, strict-decoded by the chosen exporter
+  #   endpoint: localhost:4317 # otlp: collector host:port, no scheme
+  #   insecure: true
+  #   headers: { authorization: "Bearer ..." }
+  #   compression: gzip
+  #   timeout: 10s
+  #   retry: { initial_interval: 5s }
+
 # API server configuration
 api:
   health: # the probe listener: /healthz + /readyz, kept off the public server
@@ -38,6 +53,7 @@ api:
     port: 8080
     prefix: /api/v1
     middlewares: # per-middleware default configs; router.yaml overrides per group or handler
+      trace: true # the framework's tracing middleware; no entry on the health listener keeps probe polls untraced
       cors: true # the example's server-level cors middleware; permissive for local development
       throttle:
         rps: 100.0

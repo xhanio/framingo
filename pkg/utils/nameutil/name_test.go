@@ -10,6 +10,14 @@ import (
 
 type sampleService struct{}
 
+// Package is the base name of obj's package dir - the identity middlewares
+// default to, where the package name is the middleware name. Unlike Name it
+// needs no ProjectPath: the base segment survives unrelativized paths.
+func TestPackage(t *testing.T) {
+	assert.Equal(t, "nameutil", Package(&sampleService{}))
+	assert.Equal(t, "nameutil", Package(sampleService{}))
+}
+
 // Name is the package dir relative to the project root joined with the type
 // name, judged from the gopro-injected ProjectPath. The layout root (Root,
 // default pkg) is stripped so the category stays visible.

@@ -19,8 +19,11 @@ func (m *manager) Init(ctx context.Context) error {
 		return errors.Wrap(err)
 	}
 
-	// register basic services
+	// register basic services; tracing first, so it initializes before
+	// everything that emits spans and - stop running in reverse - flushes
+	// last, after the draining api server's final requests
 	m.services.Register(
+		m.tracing,
 		m.db,
 	)
 

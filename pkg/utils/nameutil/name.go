@@ -13,6 +13,14 @@ import (
 // different layout may override or clear it.
 var Root = "pkg"
 
+// Package returns the base name of obj's package dir - the identity
+// middlewares default to, where the package name is the middleware name
+// (middlewares/cors -> cors).
+func Package(obj any) string {
+	pkg, _ := reflectutil.Locate(obj)
+	return path.Base(pkg)
+}
+
 // Name returns obj's service name: its package dir relative to the project
 // root, with Root stripped, joined with the type name (pkg/services/db +
 // manager -> services/db/manager). Optional prefixes are stripped after

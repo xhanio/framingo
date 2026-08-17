@@ -4,6 +4,10 @@ import (
 	"fmt"
 
 	"github.com/xhanio/errors"
+	"go.uber.org/zap/zapcore"
+	"gopkg.in/yaml.v3"
+
+	tracemw "github.com/xhanio/framingo/pkg/middlewares/trace"
 	"github.com/xhanio/framingo/pkg/services/api/server"
 	"github.com/xhanio/framingo/pkg/services/db"
 	_ "github.com/xhanio/framingo/pkg/services/db/drivers/clickhouse"
@@ -14,11 +18,13 @@ import (
 	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
+	"github.com/xhanio/framingo/pkg/services/tracing"
+	_ "github.com/xhanio/framingo/pkg/services/tracing/exporters/otlpgrpc"
+	_ "github.com/xhanio/framingo/pkg/services/tracing/exporters/otlphttp"
+	_ "github.com/xhanio/framingo/pkg/services/tracing/exporters/stdout"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
-	"go.uber.org/zap/zapcore"
-	"gopkg.in/yaml.v3"
 
 	corsmw "github.com/xhanio/framingo/example/pkg/middlewares/cors"
 	"github.com/xhanio/framingo/example/pkg/services/example"
@@ -50,6 +56,18 @@ func (m *manager) initServices() error {
 	)
 
 	/* init infra level services */
+
+	// tracing.* is read here like every other service's config; Init re-reads
+	// the same keys, so a restart picks up changes to any of them
+	m.tracing = tracing.New(
+		tracing.WithEnabled(m.config.GetBool("tracing.enabled")),
+		tracing.WithExporter(
+			m.config.GetString("tracing.exporter"),
+			m.config.GetStringMap("tracing.config"),
+		),
+		tracing.WithSampleRatio(m.config.GetFloat64("tracing.sample_ratio")),
+		tracing.WithLogger(m.log),
+	)
 
 	m.db = db.New(
 		db.WithType(m.config.GetString("db.type")),
@@ -159,12 +177,16 @@ func (m *manager) initServices() error {
 				m.config.GetUint(fmt.Sprintf("api.%s.port", name)),
 				m.config.GetString(fmt.Sprintf("api.%s.prefix", name)),
 			),
-			// cors must see every request - a preflight OPTIONS matches no
-			// route - so it rides the server-level slot. The
-			// api.<name>.middlewares mapping activates it under "cors" and
-			// carries its policy; with no entry it stays dormant, so the
-			// health listener serves without it.
-			server.WithMiddlewares(corsmw.New()),
+			// trace and cors must see every request - spans should cover the
+			// whole chain, and a preflight OPTIONS matches no route - so both
+			// ride the server-level slot, trace first so cors runs inside the
+			// span. The api.<name>.middlewares mapping activates each by name
+			// ("trace: true", "cors: true"); with no entry an attachment
+			// stays dormant, so the health listener serves with neither.
+			server.WithMiddlewares(
+				tracemw.New(m.tracing),
+				corsmw.New(),
+			),
 		}
 		// Per-server middleware configs: a plain mapping of middleware name to
 		// its default config, unordered - order only matters in router.yaml,
