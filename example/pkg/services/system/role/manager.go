@@ -3,7 +3,6 @@ package role
 import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 )
@@ -24,13 +23,9 @@ func newManager(repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
-	m.name = nameutil.Name(m)
-	if m.log == nil {
-		m.log = log.Default
-	}
+	m.applyOptions(opts...)
+	m.setDefaults()
+	m.log = m.log.By(m)
 
 	return m
 }

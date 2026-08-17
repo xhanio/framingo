@@ -8,7 +8,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 // DefaultTopic is the topic messagebus uses when WithTopic is not provided.
@@ -40,17 +39,13 @@ func New(bus model.Pubsub, opts ...Option) Manager {
 
 func newManager(bus model.Pubsub, opts ...Option) *manager {
 	m := &manager{
-		log:          log.Default,
 		bus:          bus,
-		topic:        DefaultTopic,
 		pingInterval: DefaultPingInterval,
 		pingTimeout:  DefaultPingTimeout,
 		modules:      make(map[string]common.Named),
 	}
-	m.apply(opts...)
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
+	m.applyOptions(opts...)
+	m.setDefaults()
 	m.log = m.log.By(m)
 	return m
 }

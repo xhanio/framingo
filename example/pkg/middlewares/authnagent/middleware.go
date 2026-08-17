@@ -2,17 +2,16 @@ package authnagent
 
 import (
 	"net/url"
-	"path"
 	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/xhanio/errors"
+
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/system/certificate"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
@@ -22,6 +21,7 @@ import (
 var _ fapi.Middleware = (*middleware)(nil)
 
 type middleware struct {
+	name string
 	log  log.Logger
 	cert certificate.Manager
 }
@@ -30,18 +30,14 @@ func New(cert certificate.Manager, opts ...Option) fapi.Middleware {
 	m := &middleware{
 		cert: cert,
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
-	if m.log == nil {
-		m.log = log.Default
-	}
+	m.applyOptions(opts...)
+	m.setDefaults()
+	m.log = m.log.By(m)
 	return m
 }
 
 func (m *middleware) Name() string {
-	pkg, _ := reflectutil.Locate(m)
-	return path.Base(pkg)
+	return m.name
 }
 
 func (m *middleware) Dependencies() []common.Service {

@@ -17,7 +17,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 // manager implements the Manager interface
@@ -39,13 +38,12 @@ func New(opts ...Option) Manager {
 
 func newManager(opts ...Option) *manager {
 	m := &manager{
-		log:          log.Default,
 		servers:      make(map[string]*server),
 		handlerFuncs: make(map[handlerKey]echo.HandlerFunc),
 		middlewares:  make(map[string]api.Middleware),
 	}
-	m.apply(opts...)
-	m.name = nameutil.Name(m)
+	m.applyOptions(opts...)
+	m.setDefaults()
 	return m
 }
 
@@ -166,7 +164,7 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 		groups:   make(map[handlerKey]*handlerGroupConfig),
 		handlers: make(map[handlerKey]*handlerConfig),
 	}
-	s.apply(opts...)
+	s.applyOptions(opts...)
 	if s.endpoint == nil {
 		return errors.Newf("server must have a valid endpoint")
 	}

@@ -29,7 +29,7 @@ func newExecuter(j job.Job, opts ...Option) *executor {
 	e := &executor{
 		j: j,
 	}
-	e.apply(opts...)
+	e.applyOptions(opts...)
 	return e
 }
 

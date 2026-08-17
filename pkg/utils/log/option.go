@@ -5,11 +5,20 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+// defaultTimeFormat is the log line timestamp layout.
+const defaultTimeFormat = "01/02/2006 15:04:05.00"
+
 type Option func(*logger)
 
-func (l *logger) apply(opts ...Option) {
+func (l *logger) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(l)
+	}
+}
+
+func (l *logger) setDefaults() {
+	if l.timeFormat == "" {
+		l.timeFormat = defaultTimeFormat
 	}
 }
 
@@ -21,9 +30,7 @@ func WithLevel(level int) Option {
 
 func WithTimeFormat(format string) Option {
 	return func(l *logger) {
-		if format != "" {
-			l.timeFormat = format
-		}
+		l.timeFormat = format
 	}
 }
 

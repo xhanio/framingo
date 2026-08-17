@@ -5,9 +5,10 @@ import (
 	"time"
 
 	"github.com/xhanio/errors"
+	"k8s.io/apimachinery/pkg/labels"
+
 	"github.com/xhanio/framingo/pkg/utils/cmdutil"
 	"github.com/xhanio/framingo/pkg/utils/job"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 func NewBashJob(caller string, metadata labels.Set, bin string, params []string) job.Job {

@@ -9,9 +9,15 @@ import (
 
 type Option func(*cmd)
 
-func (c *cmd) apply(opts ...Option) {
+func (c *cmd) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(c)
+	}
+}
+
+func (c *cmd) setDefaults() {
+	if c.ctx == nil {
+		c.ctx = context.Background()
 	}
 }
 
@@ -33,6 +39,11 @@ func Async() Option {
 	}
 }
 
+// WithInput feeds the command, and calling it with no readers hands over the
+// parent's stdin. That substitution stays here rather than in setDefaults -
+// the exception to the rule - because it turns on the *call* having happened,
+// which a zero field cannot express: never calling WithInput leaves in nil,
+// and exec reads such a command from the null device.
 func WithInput(inputs ...io.Reader) Option {
 	return func(c *cmd) {
 		if len(inputs) == 0 {

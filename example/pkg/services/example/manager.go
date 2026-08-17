@@ -6,7 +6,6 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 )
@@ -32,17 +31,13 @@ func New(repo repository.Repository, mb common.RawMessageSender, opts ...Option)
 // newManager returns the concrete manager, the form package tests construct.
 func newManager(repo repository.Repository, mb common.RawMessageSender, opts ...Option) *manager {
 	m := &manager{
-		log:        log.Default,
 		repository: repo,
 		mb:         mb,
 		wg:         &sync.WaitGroup{},
 	}
-	m.apply(opts...)
-	m.name = nameutil.Name(m)
+	m.applyOptions(opts...)
+	m.setDefaults()
 	m.log = m.log.By(m)
-	if m.ctx == nil {
-		m.ctx = context.Background()
-	}
 	return m
 }
 

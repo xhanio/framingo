@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 
 	"github.com/xhanio/errors"
+	"go.step.sm/crypto/x509util"
+
 	"github.com/xhanio/framingo/pkg/types/info"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
-	"go.step.sm/crypto/x509util"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/preset"

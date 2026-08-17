@@ -6,7 +6,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
@@ -32,14 +31,11 @@ func New(es common.MessageSender, opts ...Option) Manager {
 
 func newManager(es common.MessageSender, opts ...Option) *manager {
 	m := &manager{
-		log:   log.Default,
 		es:    es,
 		todos: make(map[string]*entity.Plan),
 	}
-	m.apply(opts...)
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
+	m.applyOptions(opts...)
+	m.setDefaults()
 	m.log = m.log.By(m)
 	m.tm = task.New(
 		task.MaxConcurrency(10),

@@ -15,30 +15,33 @@ package cors
 
 import (
 	"bytes"
-	"path"
 
 	"github.com/labstack/echo/v4"
 	em "github.com/labstack/echo/v4/middleware"
 	"github.com/xhanio/errors"
+	"gopkg.in/yaml.v3"
+
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
-	"gopkg.in/yaml.v3"
 
 	"github.com/xhanio/framingo/example/pkg/types/api"
 )
 
 var _ fapi.Middleware = (*middleware)(nil)
 
-type middleware struct{}
+type middleware struct {
+	name string
+}
 
-func New() fapi.Middleware {
-	return &middleware{}
+func New(opts ...Option) fapi.Middleware {
+	m := &middleware{}
+	m.applyOptions(opts...)
+	m.setDefaults()
+	return m
 }
 
 func (m *middleware) Name() string {
-	pkg, _ := reflectutil.Locate(m)
-	return path.Base(pkg) // package name == middleware name
+	return m.name
 }
 
 func (m *middleware) Dependencies() []common.Service {

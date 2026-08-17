@@ -52,10 +52,14 @@ func NewParams(equal, sep string, opts ...ParamsOption) Params {
 		sep:     sep,
 		badKeys: badKeyChars,
 	}
+	p.applyOptions(opts...)
+	return p
+}
+
+func (p *params) applyOptions(opts ...ParamsOption) {
 	for _, opt := range opts {
 		opt(p)
 	}
-	return p
 }
 
 // opener returns the text that starts the section. A notation with no opener of

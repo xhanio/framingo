@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 // Default ping settings used by AttachWebSocket when WithPing is not provided.
@@ -15,9 +16,21 @@ const (
 
 type Option func(*manager)
 
-func (m *manager) apply(opts ...Option) {
+func (m *manager) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(m)
+	}
+}
+
+func (m *manager) setDefaults() {
+	if m.log == nil {
+		m.log = log.Default
+	}
+	if m.name == "" {
+		m.name = nameutil.Name(m)
+	}
+	if m.topic == "" {
+		m.topic = DefaultTopic
 	}
 }
 

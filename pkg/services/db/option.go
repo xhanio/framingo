@@ -4,13 +4,46 @@ import (
 	"time"
 
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
+)
+
+// Connection pool defaults, applied by setDefaults to whatever the options
+// and the db.connection.* keys left zero.
+const (
+	defaultMaxOpen     = 10
+	defaultMaxIdle     = 5
+	defaultMaxLifetime = 5 * time.Minute
+	defaultExecTimeout = 30 * time.Second
 )
 
 type Option func(*manager)
 
-func (m *manager) apply(opts ...Option) {
+func (m *manager) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(m)
+	}
+}
+
+func (m *manager) setDefaults() {
+	if m.log == nil {
+		m.log = log.Default
+	}
+	if m.name == "" {
+		m.name = nameutil.Name(m)
+	}
+	// MaxIdleTime has no default: zero means "never idle out", which is
+	// database/sql's own behaviour and a real choice.
+	if m.connection.MaxOpen == 0 {
+		m.connection.MaxOpen = defaultMaxOpen
+	}
+	if m.connection.MaxIdle == 0 {
+		m.connection.MaxIdle = defaultMaxIdle
+	}
+	if m.connection.MaxLifetime == 0 {
+		m.connection.MaxLifetime = defaultMaxLifetime
+	}
+	if m.connection.ExecTimeout == 0 {
+		m.connection.ExecTimeout = defaultExecTimeout
 	}
 }
 
@@ -47,20 +80,11 @@ func WithMigration(sqlDir string, version uint) Option {
 	}
 }
 
+// WithConnection sets the pool knobs. A zero reads as unset - setDefaults
+// fills it - so a wiring layer can pass an absent config key straight
+// through.
 func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, maxIdleTime time.Duration, execTimeout time.Duration) Option {
 	return func(m *manager) {
-		if maxOpen == 0 {
-			maxOpen = 10
-		}
-		if maxIdle == 0 {
-			maxIdle = 5
-		}
-		if maxLifetime == 0 {
-			maxLifetime = time.Minute * 5
-		}
-		if execTimeout == 0 {
-			execTimeout = 30 * time.Second
-		}
 		m.connection = connectionConfig{
 			MaxOpen:     maxOpen,
 			MaxIdle:     maxIdle,

@@ -37,14 +37,14 @@ func New(endpoint string, opts ...Option) Client {
 
 func newClient(endpoint string, opts ...Option) *client {
 	c := &client{
-		log: log.Default,
 		endpoint: &api.Endpoint{
 			Host: endpoint,
 		},
 		headers: make(map[string]string),
 		cookies: make(map[string]*http.Cookie),
 	}
-	c.apply(opts...)
+	c.applyOptions(opts...)
+	c.setDefaults()
 	return c
 }
 
@@ -96,7 +96,7 @@ func (c *client) SetCookies(cookies ...*http.Cookie) {
 }
 
 func (c *client) NewRequest(ctx context.Context, request *Request, opts ...RequestOption) (*http.Request, error) {
-	request.apply(opts...)
+	request.applyOptions(opts...)
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(c.endpoint.String(), "/"), strings.TrimPrefix(request.Path, "/"))
 	body, err := request.ParseBody()
 	if err != nil {

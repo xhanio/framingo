@@ -13,7 +13,7 @@ import (
 func (m *manager) Init(ctx context.Context) error {
 	// dynamic configs
 	config := confutil.FromContext(ctx)
-	m.apply(
+	m.applyOptions(
 		WithConnection(
 			config.GetInt("db.connection.max_open"),
 			config.GetInt("db.connection.max_idle"),
@@ -22,6 +22,7 @@ func (m *manager) Init(ctx context.Context) error {
 			config.GetDuration("db.connection.exec_timeout"),
 		),
 	)
+	m.setDefaults()
 	// connect to database
 	err := m.connect(m.dbtype, m.source)
 	if err != nil {

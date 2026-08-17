@@ -45,10 +45,8 @@ func newCMD(bin string, args []string, opts ...Option) *cmd {
 		bin:  bin,
 		args: args,
 	}
-	c.apply(opts...)
-	if c.ctx == nil {
-		c.ctx = context.Background()
-	}
+	c.applyOptions(opts...)
+	c.setDefaults()
 	p := exec.CommandContext(c.ctx, c.bin, c.args...)
 	p.Env = os.Environ()
 	p.Env = append(p.Env, c.envs...)

@@ -4,13 +4,23 @@ import (
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 type Option func(*manager)
 
-func (m *manager) apply(opts ...Option) {
+func (m *manager) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(m)
+	}
+}
+
+func (m *manager) setDefaults() {
+	if m.log == nil {
+		m.log = log.Default
+	}
+	if m.name == "" {
+		m.name = nameutil.Name(m)
 	}
 }
 
@@ -29,7 +39,7 @@ func WithDebug(enabled bool) Option {
 // ServerOption configures a server (echo server instance)
 type ServerOption func(*server)
 
-func (s *server) apply(opts ...ServerOption) {
+func (s *server) applyOptions(opts ...ServerOption) {
 	for _, opt := range opts {
 		opt(s)
 	}

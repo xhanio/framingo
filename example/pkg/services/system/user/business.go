@@ -6,8 +6,9 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/xhanio/errors"
-	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/message"

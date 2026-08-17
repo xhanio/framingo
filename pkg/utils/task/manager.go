@@ -7,12 +7,11 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/structs/staque"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/infra"
 	"github.com/xhanio/framingo/pkg/utils/job/executor"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 var exiting = &Task{}
@@ -48,7 +47,6 @@ func New(opts ...Option) Manager {
 
 func newScheduler(opts ...Option) *manager {
 	m := &manager{
-		log:       log.Default,
 		cl:        &sync.RWMutex{},
 		crons:     make(map[string]cron.EntryID),
 		el:        &sync.RWMutex{},
@@ -56,14 +54,8 @@ func newScheduler(opts ...Option) *manager {
 		executing: make(map[string]executor.Executor),
 		wg:        &sync.WaitGroup{},
 	}
-	m.apply(opts...)
-	m.name = nameutil.Name(m)
-	if m.cm == nil {
-		m.cm = cron.New(
-			cron.WithLocation(infra.Timezone),
-			cron.WithParser(cron.NewParser(cron.SecondOptional|cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow)),
-		)
-	}
+	m.applyOptions(opts...)
+	m.setDefaults()
 	m.pq = staque.NewPriority(
 		staque.WithLessFunc(priorityFunc),
 		staque.WithLogger[*Task](m.log),

@@ -2,7 +2,7 @@ package printutil
 
 type Option func(*table)
 
-func (t *table) apply(opts ...Option) {
+func (t *table) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(t)
 	}

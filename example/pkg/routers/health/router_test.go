@@ -6,9 +6,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/xhanio/errors"
+	"gopkg.in/yaml.v3"
+
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"gopkg.in/yaml.v3"
 )
 
 // newRouter hands tests the concrete *router, without the fapi.Router

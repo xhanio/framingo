@@ -1,13 +1,11 @@
 package authz
 
 import (
-	"path"
-
 	"github.com/labstack/echo/v4"
 	"github.com/xhanio/errors"
+
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/system/role"
@@ -18,18 +16,21 @@ import (
 var _ fapi.Middleware = (*middleware)(nil)
 
 type middleware struct {
+	name string
 	role role.Manager
 }
 
-func New(role role.Manager) fapi.Middleware {
-	return &middleware{
+func New(role role.Manager, opts ...Option) fapi.Middleware {
+	m := &middleware{
 		role: role,
 	}
+	m.applyOptions(opts...)
+	m.setDefaults()
+	return m
 }
 
 func (m *middleware) Name() string {
-	pkg, _ := reflectutil.Locate(m)
-	return path.Base(pkg)
+	return m.name
 }
 
 func (m *middleware) Dependencies() []common.Service {

@@ -32,7 +32,7 @@ func newTable(w io.Writer, opts ...Option) *table {
 	t := &table{
 		tw: tabwriter.NewWriter(w, 0, 0, 3, ' ', tabwriter.TabIndent),
 	}
-	t.apply(opts...)
+	t.applyOptions(opts...)
 	return t
 }
 

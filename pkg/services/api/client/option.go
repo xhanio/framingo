@@ -13,9 +13,15 @@ import (
 
 type Option func(*client)
 
-func (c *client) apply(opts ...Option) {
+func (c *client) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(c)
+	}
+}
+
+func (c *client) setDefaults() {
+	if c.log == nil {
+		c.log = log.Default
 	}
 }
 
@@ -70,7 +76,7 @@ func WithTimeout(timeout time.Duration) Option {
 
 type RequestOption func(*Request)
 
-func (r *Request) apply(opts ...RequestOption) {
+func (r *Request) applyOptions(opts ...RequestOption) {
 	for _, opt := range opts {
 		opt(r)
 	}

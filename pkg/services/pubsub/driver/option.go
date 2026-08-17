@@ -36,15 +36,27 @@ type options struct {
 }
 
 func newOptions(opts ...Option) *options {
-	o := &options{
-		onFull:   DropMessage,
-		queueCap: defaultQueueCap,
-		chanBuf:  channelBufferSize,
-	}
+	o := &options{}
+	o.applyOptions(opts...)
+	o.setDefaults()
+	return o
+}
+
+func (o *options) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(o)
 	}
-	return o
+}
+
+// setDefaults fills what the options left zero. onFull needs no entry:
+// its zero value is DropMessage, which is the default.
+func (o *options) setDefaults() {
+	if o.queueCap == 0 {
+		o.queueCap = defaultQueueCap
+	}
+	if o.chanBuf == 0 {
+		o.chanBuf = channelBufferSize
+	}
 }
 
 // Option configures a driver.
@@ -59,17 +71,13 @@ func WithOnFull(v OnFull) Option {
 // WithQueueCap bounds each subscriber's pending queue.
 func WithQueueCap(n int) Option {
 	return func(o *options) {
-		if n > 0 {
-			o.queueCap = n
-		}
+		o.queueCap = n
 	}
 }
 
 // WithChannelBuffer sets the buffer size of the channel handed to subscribers.
 func WithChannelBuffer(n int) Option {
 	return func(o *options) {
-		if n > 0 {
-			o.chanBuf = n
-		}
+		o.chanBuf = n
 	}
 }

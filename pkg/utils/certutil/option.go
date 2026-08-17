@@ -2,7 +2,7 @@ package certutil
 
 type Option func(m *manager)
 
-func (m *manager) apply(opts ...Option) {
+func (m *manager) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(m)
 	}

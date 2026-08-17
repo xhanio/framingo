@@ -10,9 +10,10 @@ import (
 func (m *manager) Init(ctx context.Context) error {
 	// dynamic config change
 	config := confutil.FromContext(ctx)
-	m.apply(
+	m.applyOptions(
 		WithDynamicConfig(config.GetString("example.greeting")),
 	)
+	m.setDefaults()
 	return nil
 }
 

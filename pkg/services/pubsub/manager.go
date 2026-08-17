@@ -6,7 +6,6 @@ import (
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 var _ Manager = (*manager)(nil)
@@ -26,13 +25,10 @@ func New(b driver.Driver, opts ...Option) Manager {
 
 func newManager(b driver.Driver, opts ...Option) *manager {
 	m := &manager{
-		log: log.Default,
 		bus: b,
 	}
-	m.apply(opts...)
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
+	m.applyOptions(opts...)
+	m.setDefaults()
 	m.log = m.log.By(m)
 	return m
 }

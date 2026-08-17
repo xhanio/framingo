@@ -8,7 +8,6 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 type manager struct {
@@ -29,17 +28,14 @@ func New(config *viper.Viper, opts ...Option) Manager {
 func newManager(config *viper.Viper, opts ...Option) *manager {
 	c := newController(config)
 	m := &manager{
-		log: log.Default,
-		wg:  &sync.WaitGroup{},
-		c:   c,
+		wg: &sync.WaitGroup{},
+		c:  c,
 		monitor: &monitor{
 			c: c,
 		},
 	}
-	m.apply(opts...)
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
+	m.applyOptions(opts...)
+	m.setDefaults()
 	m.log = m.log.By(m)
 	m.c.log = m.log
 	m.monitor.log = m.log

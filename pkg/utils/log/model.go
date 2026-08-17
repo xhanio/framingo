@@ -1,9 +1,10 @@
 package log
 
 import (
-	"github.com/xhanio/framingo/pkg/types/common"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/xhanio/framingo/pkg/types/common"
 )
 
 type Logger interface {

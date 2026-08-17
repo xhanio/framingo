@@ -9,7 +9,7 @@ import (
 
 type Option func(*executor)
 
-func (e *executor) apply(opts ...Option) {
+func (e *executor) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(e)
 	}

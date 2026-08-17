@@ -7,7 +7,6 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 type manager struct {
@@ -30,13 +29,9 @@ func New(opts ...Option) Manager {
 
 // newManager returns the concrete manager, the form package tests construct.
 func newManager(opts ...Option) *manager {
-	m := &manager{
-		log: log.Default,
-	}
-	m.apply(opts...)
-	if m.name == "" {
-		m.name = nameutil.Name(m)
-	}
+	m := &manager{}
+	m.applyOptions(opts...)
+	m.setDefaults()
 	m.log = m.log.By(m)
 	return m
 }

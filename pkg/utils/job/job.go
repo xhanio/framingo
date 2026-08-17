@@ -49,14 +49,14 @@ func newJob(id string, fn Func, opts ...Option) *job {
 	j := &job{
 		id:        id,
 		fn:        fn,
-		log:       log.Default,
 		labels:    make(labels.Set),
 		state:     StateCreated,
 		createdAt: time.Now(),
 		wg:        &sync.WaitGroup{},
 		progress:  -1,
 	}
-	j.apply(opts...)
+	j.applyOptions(opts...)
+	j.setDefaults()
 	j.log = j.log.With(zap.String("job", id))
 	return j
 }

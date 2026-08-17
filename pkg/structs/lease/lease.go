@@ -51,7 +51,6 @@ func New(id string, duration time.Duration, opts ...LeaseOption) Lease {
 		_id = uuid.NewString()
 	}
 	l := &lease{
-		log:      log.Default,
 		id:       _id,
 		duration: duration,
 
@@ -61,7 +60,8 @@ func New(id string, duration time.Duration, opts ...LeaseOption) Lease {
 		onExtend:  make([]func(), 0),
 		onRenew:   make([]func(), 0),
 	}
-	l.apply(opts...)
+	l.applyOptions(opts...)
+	l.setDefaults()
 	return l
 }
 

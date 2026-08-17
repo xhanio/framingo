@@ -8,9 +8,18 @@ import (
 
 type Option[T PriorityItem] func(*priority[T])
 
-func (p *priority[T]) apply(opts ...Option[T]) {
+func (p *priority[T]) applyOptions(opts ...Option[T]) {
 	for _, opt := range opts {
 		opt(p)
+	}
+}
+
+func (p *priority[T]) setDefaults() {
+	if p.log == nil {
+		p.log = log.Default
+	}
+	if p.lf == nil {
+		p.lf = DefaultLessFunc[T]
 	}
 }
 

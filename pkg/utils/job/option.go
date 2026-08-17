@@ -6,9 +6,15 @@ import (
 
 type Option func(*job)
 
-func (j *job) apply(opts ...Option) {
+func (j *job) applyOptions(opts ...Option) {
 	for _, opt := range opts {
 		opt(j)
+	}
+}
+
+func (j *job) setDefaults() {
+	if j.log == nil {
+		j.log = log.Default
 	}
 }
 

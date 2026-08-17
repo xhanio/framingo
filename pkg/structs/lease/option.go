@@ -4,9 +4,15 @@ import "github.com/xhanio/framingo/pkg/utils/log"
 
 type LeaseOption func(*lease)
 
-func (l *lease) apply(opts ...LeaseOption) {
+func (l *lease) applyOptions(opts ...LeaseOption) {
 	for _, opt := range opts {
 		opt(l)
+	}
+}
+
+func (l *lease) setDefaults() {
+	if l.log == nil {
+		l.log = log.Default
 	}
 }
 

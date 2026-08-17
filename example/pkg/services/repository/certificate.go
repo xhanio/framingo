@@ -4,8 +4,9 @@ import (
 	"context"
 
 	"github.com/xhanio/errors"
-	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"gorm.io/gorm"
+
+	"github.com/xhanio/framingo/pkg/utils/certutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"

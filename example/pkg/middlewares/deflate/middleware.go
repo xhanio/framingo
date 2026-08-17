@@ -2,14 +2,13 @@ package deflate
 
 import (
 	"compress/zlib"
-	"path"
 
 	"github.com/labstack/echo/v4"
 	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/ioutil"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
 var _ api.Middleware = (*middleware)(nil)
@@ -21,20 +20,19 @@ var _ api.Middleware = (*middleware)(nil)
 const DefaultMaxDecompressed = 32 << 20 // 32 MiB
 
 type middleware struct {
+	name            string
 	maxDecompressed int
 }
 
 func New(opts ...Option) api.Middleware {
-	m := &middleware{maxDecompressed: DefaultMaxDecompressed}
-	for _, opt := range opts {
-		opt(m)
-	}
+	m := &middleware{}
+	m.applyOptions(opts...)
+	m.setDefaults()
 	return m
 }
 
 func (m *middleware) Name() string {
-	pkg, _ := reflectutil.Locate(m)
-	return path.Base(pkg) // use reflctutil to get package name as name
+	return m.name
 }
 
 func (m *middleware) Dependencies() []common.Service {

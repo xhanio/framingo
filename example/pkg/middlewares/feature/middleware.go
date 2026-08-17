@@ -1,13 +1,11 @@
 package feature
 
 import (
-	"path"
-
 	"github.com/labstack/echo/v4"
 	"github.com/xhanio/errors"
+
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
@@ -16,15 +14,18 @@ import (
 var _ fapi.Middleware = (*middleware)(nil)
 
 type middleware struct {
+	name string
 }
 
-func New() fapi.Middleware {
-	return &middleware{}
+func New(opts ...Option) fapi.Middleware {
+	m := &middleware{}
+	m.applyOptions(opts...)
+	m.setDefaults()
+	return m
 }
 
 func (m *middleware) Name() string {
-	pkg, _ := reflectutil.Locate(m)
-	return path.Base(pkg)
+	return m.name
 }
 
 func (m *middleware) Dependencies() []common.Service {
