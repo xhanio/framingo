@@ -6,6 +6,8 @@ import (
 	"github.com/xhanio/errors"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
+	// framingo's own tracing package already owns the name here
+	gormtracing "gorm.io/plugin/opentelemetry/tracing"
 
 	tracemw "github.com/xhanio/framingo/pkg/middlewares/trace"
 	"github.com/xhanio/framingo/pkg/services/api/server"
@@ -14,6 +16,7 @@ import (
 	_ "github.com/xhanio/framingo/pkg/services/db/drivers/mysql"
 	_ "github.com/xhanio/framingo/pkg/services/db/drivers/postgres"
 	_ "github.com/xhanio/framingo/pkg/services/db/drivers/sqlite"
+	"github.com/xhanio/framingo/pkg/services/db/plugins/otelgorm"
 	"github.com/xhanio/framingo/pkg/services/messagebus"
 	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
@@ -69,6 +72,16 @@ func (m *manager) initServices() error {
 		tracing.WithLogger(m.log),
 	)
 
+	// per-statement spans, nested under whatever span the caller's context
+	// carries. Off in practice until tracing.enabled is true: the plugin
+	// resolves a noop provider then. Bound values are left out of
+	// db.query.text - upstream includes them by default, and they are where
+	// the credentials and the PII are.
+	dbTracing, err := otelgorm.New(m.tracing, gormtracing.WithoutQueryVariables())
+	if err != nil {
+		return errors.Wrap(err)
+	}
+
 	m.db = db.New(
 		db.WithType(m.config.GetString("db.type")),
 		db.WithDataSource(db.Source{
@@ -106,6 +119,7 @@ func (m *manager) initServices() error {
 			m.config.GetDuration("db.connection.max_idle_time"),
 			m.config.GetDuration("db.connection.exec_timeout"),
 		),
+		db.WithPlugins(dbTracing),
 		db.WithLogger(m.log),
 	)
 

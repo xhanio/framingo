@@ -3,6 +3,8 @@ package db
 import (
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
@@ -92,5 +94,18 @@ func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, maxIdle
 			MaxIdleTime: maxIdleTime,
 			ExecTimeout: execTimeout,
 		}
+	}
+}
+
+// WithPlugins adds GORM plugins to install on the connection. They are
+// installed in order every time the manager connects, so a restart re-applies
+// them to the rebuilt *gorm.DB. Repeated calls append rather than replace.
+//
+// The core package stays free of concrete plugin imports the same way it
+// stays free of concrete drivers: framingo's own plugins live in
+// pkg/services/db/plugins/*, and an app pulls in only the ones it wires.
+func WithPlugins(plugins ...gorm.Plugin) Option {
+	return func(m *manager) {
+		m.plugins = append(m.plugins, plugins...)
 	}
 }

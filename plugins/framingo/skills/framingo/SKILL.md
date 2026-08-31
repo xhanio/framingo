@@ -120,7 +120,7 @@ Either route, the reference map above is the per-concept guide for the work insi
 | Concern | Package | Interface / Key Type | Docs |
 |---|---|---|---|
 | Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` | [pkgs/supervisor.md](pkgs/supervisor.md) |
-| Database | `pkg/services/db` (+ `db/drivers/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1` | [pkgs/db.md](pkgs/db.md) |
+| Database | `pkg/services/db` (+ `db/drivers/`, `db/plugins/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1`; per-statement spans via `otelgorm.New(tracer, tracing.WithoutQueryVariables())` (returns an error) → `db.WithPlugins(p)`; pass that option or bound values land in `db.query.text` | [pkgs/db.md](pkgs/db.md) |
 | HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware` | [pkgs/api.md](pkgs/api.md) |
 | Handler request context | **project's own** `<project>/pkg/types/api` (unaliased `api`) | `api.Context` — use as the handler ctx instead of `echo.Context`; not a framingo type, you own it | [app/routers.md](app/routers.md) |
 | Middlewares | project `pkg/middlewares/<name>/` | `fapi.Middleware` — `Func(enabled bool, config []byte)` | [app/middlewares.md](app/middlewares.md) |
@@ -129,7 +129,7 @@ Either route, the reference map above is the per-concept guide for the work insi
 | Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers | [pkgs/pubsub.md](pkgs/pubsub.md) |
 | Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` | [pkgs/pubsub.md](pkgs/pubsub.md) |
 | Task planner | `pkg/services/planner` | `planner.Manager`, `model.Planner` | [pkgs/planner.md](pkgs/planner.md) |
-| Tracing (OpenTelemetry) | `pkg/services/tracing` (+ `tracing/exporters/`) and the `trace` middleware in `pkg/middlewares/trace` | `tracing.Manager`, `model.Tracer`; blank-import an exporter subpackage (otlpgrpc/otlphttp/stdout); attach the middleware via `WithMiddlewares`, activate with `trace: true` per server | [pkgs/tracing.md](pkgs/tracing.md) |
+| Tracing (OpenTelemetry) | `pkg/services/tracing` (+ `tracing/exporters/`) and the `trace` middleware in `pkg/middlewares/trace` | `tracing.Manager`, `model.Tracer`; blank-import an exporter subpackage (otlpgrpc/otlphttp/stdout); attach the middleware via `WithMiddlewares`, activate with `trace: true` per server; db spans via `pkg/services/db/plugins/otelgorm` | [pkgs/tracing.md](pkgs/tracing.md) |
 | Message interfaces | `pkg/types/common` | `Message`, `MessageSender`, `MessageHandler`, `RawMessageHandler` | [pkgs/pubsub.md](pkgs/pubsub.md) |
 | Service interfaces | `pkg/types/model` | `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Planner`, `Tracer` | [pkgs/types.md](pkgs/types.md) |
 | Logging | `pkg/utils/log` | `log.Logger` | [pkgs/utils.md](pkgs/utils.md) |
@@ -198,6 +198,7 @@ For the full category rules, type-separation example, server component file stru
 - Every `func:` in `router.yaml` needs a matching method, or registration fails at startup with `handler function <Name> not found in router.Handlers()`. Middleware names must be registered first, or `middleware <name> not found`.
 - Don't use the global Viper singleton — use the instance passed via `context.Context` (`confutil.FromContext(ctx)`).
 - Don't fail `Alive` on a dependency outage — restarting the service raises no database; that fails `Ready` only. And probes take the caller's ctx: derive (`context.WithTimeout(ctx, cap)`), never fabricate from `Background()`.
+- Don't expect a query made through bare `db.ORM()` to appear inside the request's trace — it carries `context.Background()`, so with tracing wired its spans export as detached roots. Anything that gets a context to the statement parents correctly: `FromContext(ctx)`, `FromContextTimeout(ctx, d)`, or `ORM().WithContext(ctx)`. Prefer `FromContext(ctx)` — `ORM().WithContext(ctx)` traces the same but bypasses a transaction carried in the context, running on the base connection instead.
 - After `echo.Shutdown` is called, the same echo instance can't be reused — the framework's api server rebuilds it on `Init`, but custom services must do the same if they wrap net/http servers.
 
 ## Key Patterns

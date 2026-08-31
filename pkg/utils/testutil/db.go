@@ -1,3 +1,6 @@
+// Package testutil holds test helpers shared across framingo's own packages
+// and usable by apps built on it: a SQLite-backed db.Manager, and doubles for
+// the model interfaces a component receives.
 package testutil
 
 import (
@@ -9,6 +12,9 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
+// SetupDB returns an initialized db.Manager backed by an in-memory SQLite
+// database, so a test exercises real SQL rather than a repository double.
+// Requires CGO_ENABLED=1, which the sqlite driver needs.
 func SetupDB() (db.Manager, error) {
 	m := db.New(
 		db.WithType(db.SQLite),

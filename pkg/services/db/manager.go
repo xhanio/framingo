@@ -18,6 +18,8 @@ type manager struct {
 	migration  migrationConfig
 	connection connectionConfig
 
+	plugins []gorm.Plugin
+
 	dialector gorm.Dialector
 	ormDB     *gorm.DB
 	sqlDB     *sql.DB

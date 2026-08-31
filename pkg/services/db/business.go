@@ -45,6 +45,11 @@ func (m *manager) connect(dbtype string, s Source) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
+	for _, p := range m.plugins {
+		if err := ormDB.Use(p); err != nil {
+			return errors.Wrapf(err, "failed to install gorm plugin %s", p.Name())
+		}
+	}
 	sqlDB, err := ormDB.DB()
 	if err != nil {
 		return errors.Wrap(err)
