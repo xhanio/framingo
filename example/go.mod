@@ -6,7 +6,7 @@ require (
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
-	github.com/xhanio/errors v1.0.3
+	github.com/xhanio/errors v1.1.0
 	github.com/xhanio/framingo v0.6.11
 )
 
@@ -25,6 +25,7 @@ require (
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gorm v1.31.1
+	gorm.io/plugin/opentelemetry v0.1.16
 	k8s.io/apimachinery v0.34.1
 )
 
