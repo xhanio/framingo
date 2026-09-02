@@ -5,6 +5,7 @@ package traceutil
 import (
 	"context"
 
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
 
@@ -55,4 +56,29 @@ type liveTracer struct {
 
 func (t liveTracer) Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return t.tracer.Provider().Tracer(t.name, t.opts...).Start(ctx, name, opts...)
+}
+
+// Start begins a child span from the provider already bound to ctx's span -
+// the handle-free path for business code. The middleware's request span
+// carries the live provider, so no service holds a tracer; a context without
+// a recording span (tracing off, unit tests) yields a noop span.
+func Start(ctx context.Context, scope, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return trace.SpanFromContext(ctx).TracerProvider().Tracer(scope).Start(ctx, name, opts...)
+}
+
+// Fail records err on the span, marks it failed, ends it, and hands err
+// back - so an error return stays one line:
+//
+//	return nil, traceutil.Fail(span, errors.Wrap(err))
+//
+// The success path ends the span itself with a plain span.End(). Every
+// return must do one or the other: a path that does neither leaks an
+// unended span that never exports.
+func Fail(span trace.Span, err error) error {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+	return err
 }

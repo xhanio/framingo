@@ -4,15 +4,20 @@ import (
 	"context"
 
 	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/types/api"
+	"github.com/xhanio/framingo/pkg/utils/traceutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 )
 
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error) {
+	// child of the middleware's request span; every return Fails or Ends it
+	ctx, span := traceutil.Start(ctx, m.name, "HelloWorld")
+
 	credential, ok := ctx.Value(api.ContextKeyCredential).(*entity.Credential)
 	if !ok {
-		return nil, errors.Unauthorized.Newf("credential not found in context")
+		return nil, traceutil.Fail(span, errors.Unauthorized.Newf("credential not found in context"))
 	}
 	greeting := m.greeting
 	if greeting == "" {
@@ -22,7 +27,7 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 
 	ormModel, err := m.repository.CreateHelloWorld(ctx, message)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, traceutil.Fail(span, errors.Wrap(err))
 	}
 	m.log.Infof("saved helloworld message %s to database with ID: %d", message, ormModel.ID)
 
@@ -34,5 +39,6 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 	}
 	m.mb.SendRawMessage(ctx, m, "helloworld", result)
 	m.metrics.hello.Add(ctx, 1)
+	span.End()
 	return result, nil
 }
