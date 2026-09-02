@@ -98,22 +98,25 @@ type manager struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     *sync.WaitGroup
+
+	metrics *metric // cached instruments, built once at construction
 }
 
-func New(repo repository.Repository, mb common.RawMessageSender, opts ...Option) Manager {
-	return newManager(repo, mb, opts...)
+func New(infra Infra, repo repository.Repository, opts ...Option) Manager {
+	return newManager(infra, repo, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(repo repository.Repository, mb common.RawMessageSender, opts ...Option) *manager {
+func newManager(infra Infra, repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
-		mb:         mb,
+		mb:         infra.MessageBus(),
 		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
 	m.log = m.log.By(m)
+	m.metrics = m.newMetric(infra.Meter())
 	return m
 }
 
@@ -160,6 +163,36 @@ Note the dependency shapes: the service asks for the **narrowest interface
 that serves it** — `common.RawMessageSender`, not `messagebus.Manager` — and
 `Dependencies()` type-asserts, because a narrow interface may or may not be
 backed by a supervised service.
+
+**The narrow Infra view.** The app bundles its framework plumbing in
+`services/system/infra`, but a service never imports that package: it
+declares its own `Infra` interface in `model.go`, listing only the getters
+it consumes, and the app's bundle satisfies it structurally:
+
+```go
+// model.go
+// Infra is this service's narrow view of the app's infra bundle.
+type Infra interface {
+	Meter() fmodel.Meter
+	MessageBus() fmodel.MessageBus
+}
+```
+
+The bundle rides first in every constructor (`New(infra, repo, ...)`);
+business dependencies like the repository stay explicit arguments — the
+bundle carries plumbing, not peers. This keeps the signature honest about
+what the service actually uses, lets a test fake two methods instead of
+assembling managers, and leaves `Dependencies()` as precise as ever, since
+the constructor plucks the handles into ordinary fields. Getters return
+`model.*` handles (`fmodel.Meter`, `fmodel.MessageBus`), never concrete
+managers.
+
+**Service metrics** (`metric.go`): instruments live in a `metric` struct
+built once at construction from `infra.Meter()` — the provider behind
+`model.Meter` keeps one identity for the life of the process, so cached
+instruments survive service restarts. The service name is the
+instrumentation scope, and a failed instrument registration degrades to a
+noop instrument with a warning instead of failing construction.
 
 ## `option.go`
 
