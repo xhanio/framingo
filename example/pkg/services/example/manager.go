@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
@@ -27,21 +26,21 @@ type manager struct {
 	metrics *metric
 }
 
-func New(repo repository.Repository, mb common.RawMessageSender, mtr model.Meter, opts ...Option) Manager {
-	return newManager(repo, mb, mtr, opts...)
+func New(infra Infra, repo repository.Repository, opts ...Option) Manager {
+	return newManager(infra, repo, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(repo repository.Repository, mb common.RawMessageSender, mtr model.Meter, opts ...Option) *manager {
+func newManager(infra Infra, repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
-		mb:         mb,
+		mb:         infra.MessageBus(),
 		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
 	m.log = m.log.By(m)
-	m.metrics = m.newMetric(mtr)
+	m.metrics = m.newMetric(infra.Meter())
 	return m
 }
 

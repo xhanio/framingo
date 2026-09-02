@@ -19,15 +19,8 @@ func (m *manager) Init(ctx context.Context) error {
 		return errors.Wrap(err)
 	}
 
-	// register basic services
-	m.services.Register(
-		m.db,
-	)
-
 	// register system services
 	m.services.Register(
-		m.pubsub,
-		m.messagebus,
 		m.repository,
 		m.user,
 		m.role,
@@ -41,13 +34,13 @@ func (m *manager) Init(ctx context.Context) error {
 		m.example,
 	)
 
-	// register telemetry last: the topo sort pops dependency-less services
-	// in reverse registration order, so tracing and metrics land first in
-	// the sorted list - initializing before everything that emits telemetry
-	// and, with stop running in reverse, flushing last, after the draining
-	// api server's final requests and every other service's Stop. metrics
-	// before tracing keeps tracing the very last to flush.
+	// register infra last, telemetry at the end: the topo sort pops
+	// dependency-less services in reverse registration order, so telemetry
+	// inits first and, with stop reversed, flushes last
 	m.services.Register(
+		m.db,
+		m.pubsub,
+		m.messagebus,
 		m.metrics,
 		m.tracing,
 	)

@@ -38,10 +38,11 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/auth"
 	"github.com/xhanio/framingo/example/pkg/services/system/certificate"
+	"github.com/xhanio/framingo/example/pkg/services/system/infra"
 	"github.com/xhanio/framingo/example/pkg/services/system/organization"
 	"github.com/xhanio/framingo/example/pkg/services/system/role"
 	"github.com/xhanio/framingo/example/pkg/services/system/user"
-	"github.com/xhanio/framingo/example/pkg/utils/infra"
+	infrautil "github.com/xhanio/framingo/example/pkg/utils/infra"
 )
 
 func (m *manager) initServices() error {
@@ -55,7 +56,7 @@ func (m *manager) initServices() error {
 			m.config.GetInt("log.rotation.max_age"),
 		),
 	)
-	infra.Debug = (m.log.Level() == zapcore.DebugLevel)
+	infrautil.Debug = (m.log.Level() == zapcore.DebugLevel)
 
 	// init service manager
 	m.services = supervisor.New(m.config,
@@ -76,10 +77,8 @@ func (m *manager) initServices() error {
 		tracing.WithLogger(m.log),
 	)
 
-	// metrics.* is read here like every other service's config; Init re-reads
-	// the same keys, so a restart picks up changes to any of them. The
-	// handle's provider is stable for the life of the process, which is what
-	// lets services below create their instruments once at construction.
+	// metrics.* follows the same rule; the meter's provider is stable, so
+	// services create their instruments once at construction
 	m.metrics = metrics.New(
 		metrics.WithEnabled(m.config.GetBool("metrics.enabled")),
 		metrics.WithExporter(
@@ -151,6 +150,9 @@ func (m *manager) initServices() error {
 		messagebus.WithLogger(m.log),
 	)
 
+	// combine the services business constructors consume
+	m.infra = infra.New(m.db, m.metrics, m.pubsub, m.messagebus)
+
 	m.repository = repository.New(
 		m.db,
 		repository.WithLogger(m.log),
@@ -188,9 +190,8 @@ func (m *manager) initServices() error {
 	/* init business level components */
 
 	m.example = example.New(
+		m.infra,
 		m.repository,
-		m.messagebus,
-		m.metrics,
 		example.WithLogger(m.log),
 	)
 
