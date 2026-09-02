@@ -1,86 +1,31 @@
-// Package model holds the config vocabulary the exporter factories share -
-// for otlp, the transport-agnostic fields, a Duration that decodes
-// "5s"-style strings, and the strict decoder that fails Init on unknown
-// keys. Each factory embeds Config into its own struct (the http transport
-// adds url_path), so the per-exporter shapes stay per-exporter without
-// duplicating the common core.
+// Package model is the tracing factories' config vocabulary: the shared
+// exporter core from pkg/utils/otelutil plus the span-exporter-only
+// max_request_size knob. The shared package owns Duration, Retry and the
+// strict Decode; only the Config wrapper is tracing's own.
 package model
 
 import (
-	"bytes"
-	"errors"
-	"io"
-	"time"
-
-	xerrors "github.com/xhanio/errors"
-	"gopkg.in/yaml.v3"
+	"github.com/xhanio/framingo/pkg/utils/otelutil"
 )
 
-// Duration decodes a Go duration string ("5s", "1m30s") from yaml, which
-// yaml.v3 does not do for time.Duration itself.
-type Duration time.Duration
+// Duration and Retry are the shared vocabulary, re-exported so factory
+// configs and tests keep a single import.
+type (
+	Duration = otelutil.Duration
+	Retry    = otelutil.Retry
+)
 
-func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
-	var s string
-	if err := node.Decode(&s); err != nil {
-		return xerrors.Wrap(err)
-	}
-	v, err := time.ParseDuration(s)
-	if err != nil {
-		return xerrors.Wrap(err)
-	}
-	*d = Duration(v)
-	return nil
-}
-
-func (d Duration) Std() time.Duration {
-	return time.Duration(d)
-}
-
-// Retry mirrors the otlp exporters' retry settings (their RetryConfig types
-// are per-package aliases of the same shape).
-type Retry struct {
-	// Enabled defaults to true when the retry block is present - writing
-	// intervals is opting in, matching otlp's own retry-on default.
-	Enabled         *bool    `yaml:"enabled"`
-	InitialInterval Duration `yaml:"initial_interval"`
-	MaxInterval     Duration `yaml:"max_interval"`
-	MaxElapsedTime  Duration `yaml:"max_elapsed_time"`
-}
-
-// On resolves the tri-state Enabled: a present block without the key is on.
-// Nil-safe, so an unguarded cfg.Retry.On() reads as the default (on) rather
-// than panicking.
-func (r *Retry) On() bool {
-	return r == nil || r.Enabled == nil || *r.Enabled
-}
-
-// Config is the transport-agnostic half of the otlp exporter surface. A zero
-// field leaves the exporter's own default in place. Knobs that carry grpc or
-// http types (dial options, connections, proxies) are deliberately absent -
-// an exporter needing those is an app-registered Factory instead, whose
-// closure captures whatever construction requires.
+// Config is the transport-agnostic half of the otlp span exporter surface:
+// the shared core plus max_request_size, which only the span exporters
+// carry.
 type Config struct {
-	Endpoint       string            `yaml:"endpoint"` // host:port, no scheme
-	Insecure       bool              `yaml:"insecure"`
-	Headers        map[string]string `yaml:"headers"`
-	Compression    string            `yaml:"compression"` // "gzip", or ""/"none"
-	Timeout        Duration          `yaml:"timeout"`
-	MaxRequestSize int               `yaml:"max_request_size"`
-	Retry          *Retry            `yaml:"retry"`
+	otelutil.Config `yaml:",inline"`
+	MaxRequestSize  int `yaml:"max_request_size"`
 }
 
 // Decode strict-decodes raw into the factory's config struct: unknown keys
 // fail, so a typo'd tracing.config entry surfaces at Init instead of being
 // silently ignored. nil or empty raw leaves the struct zero.
 func Decode(raw []byte, into any) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	dec := yaml.NewDecoder(bytes.NewReader(raw))
-	dec.KnownFields(true)
-	if err := dec.Decode(into); err != nil && !errors.Is(err, io.EOF) {
-		return xerrors.Wrap(err)
-	}
-	return nil
+	return otelutil.Decode(raw, into)
 }

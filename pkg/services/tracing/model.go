@@ -51,5 +51,5 @@ type Factory func(ctx context.Context, config []byte) (sdktrace.SpanExporter, er
 // meant to be called from the init() of an exporter subpackage;
 // double-registration panics so misconfiguration surfaces at startup.
 func Register(name string, f Factory) {
-	reg.register(name, f)
+	reg.Register(name, f)
 }
