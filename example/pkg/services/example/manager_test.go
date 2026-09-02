@@ -1,11 +1,23 @@
 package example
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+
+	"github.com/xhanio/framingo/pkg/services/metrics"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
+	"github.com/xhanio/framingo/pkg/types/api"
+	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/info"
+	"github.com/xhanio/framingo/pkg/utils/testutil"
+
+	"github.com/xhanio/framingo/example/pkg/services/repository"
+	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/orm"
 )
 
 // With the gopro-injected ProjectPath in place, service names are
@@ -17,9 +29,45 @@ func TestServiceNamesAreProjectRelative(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo/example"
 	t.Cleanup(func() { info.ProjectPath = "" })
 
-	svc := newManager(nil, nil)
+	svc := newManager(nil, nil, metrics.New())
 	assert.Equal(t, "services/example/manager", svc.Name())
 
 	sv := supervisor.New(nil)
 	assert.Equal(t, "services/supervisor/manager", sv.Name())
+}
+
+// fakeRepo embeds the nil interface so only the one method HelloWorld
+// touches needs a body - any other call is a test bug and panics.
+type fakeRepo struct {
+	repository.Repository
+}
+
+func (fakeRepo) CreateHelloWorld(_ context.Context, message string) (*orm.HelloWorld, error) {
+	return &orm.HelloWorld{ID: 1, Message: message}, nil
+}
+
+// fakeSender is a no-op common.RawMessageSender (the interface embeds
+// common.Service, hence the name and dependency stubs).
+type fakeSender struct{}
+
+func (fakeSender) Name() string                                              { return "fake-sender" }
+func (fakeSender) Dependencies() []common.Service                            { return nil }
+func (fakeSender) SendRawMessage(context.Context, common.Named, string, any) {}
+
+func TestHelloWorldIncrementsCounter(t *testing.T) {
+	reader, provider := testutil.NewMeterRecorder()
+	m := newManager(fakeRepo{}, fakeSender{}, testutil.NewMeter(provider))
+
+	//nolint:staticcheck // SA1029: intentional, the api context keys are shared with echo's string-keyed store
+	ctx := context.WithValue(context.Background(), api.ContextKeyCredential, &entity.Credential{UserName: "tester"})
+	_, err := m.HelloWorld(ctx, "hi")
+	require.NoError(t, err)
+	_, err = m.HelloWorld(ctx, "again")
+	require.NoError(t, err)
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &rm))
+	total, found := testutil.SumInt64(rm, "example.hello.total")
+	require.True(t, found, "example.hello.total must appear in the export")
+	assert.Equal(t, int64(2), total)
 }

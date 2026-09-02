@@ -18,6 +18,10 @@ import (
 	_ "github.com/xhanio/framingo/pkg/services/db/drivers/sqlite"
 	"github.com/xhanio/framingo/pkg/services/db/plugins/otelgorm"
 	"github.com/xhanio/framingo/pkg/services/messagebus"
+	"github.com/xhanio/framingo/pkg/services/metrics"
+	_ "github.com/xhanio/framingo/pkg/services/metrics/exporters/otlpgrpc"
+	_ "github.com/xhanio/framingo/pkg/services/metrics/exporters/otlphttp"
+	_ "github.com/xhanio/framingo/pkg/services/metrics/exporters/stdout"
 	"github.com/xhanio/framingo/pkg/services/pubsub"
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
@@ -70,6 +74,20 @@ func (m *manager) initServices() error {
 		),
 		tracing.WithSampleRatio(m.config.GetFloat64("tracing.sample_ratio")),
 		tracing.WithLogger(m.log),
+	)
+
+	// metrics.* is read here like every other service's config; Init re-reads
+	// the same keys, so a restart picks up changes to any of them. The
+	// handle's provider is stable for the life of the process, which is what
+	// lets services below create their instruments once at construction.
+	m.metrics = metrics.New(
+		metrics.WithEnabled(m.config.GetBool("metrics.enabled")),
+		metrics.WithExporter(
+			m.config.GetString("metrics.exporter"),
+			m.config.GetStringMap("metrics.config"),
+		),
+		metrics.WithInterval(m.config.GetDuration("metrics.interval")),
+		metrics.WithLogger(m.log),
 	)
 
 	// per-statement spans, nested under whatever span the caller's context
@@ -172,6 +190,7 @@ func (m *manager) initServices() error {
 	m.example = example.New(
 		m.repository,
 		m.messagebus,
+		m.metrics,
 		example.WithLogger(m.log),
 	)
 

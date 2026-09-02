@@ -42,6 +42,21 @@ tracing:
   #   timeout: 10s
   #   retry: { initial_interval: 5s }
 
+# Metrics configuration (OpenTelemetry)
+metrics:
+  enabled: true
+  exporter: stdout     # otlpgrpc | otlphttp | stdout; blank-import the matching pkg/services/metrics/exporters/* package
+  interval: 60s        # export loop period; default matches the SDK's 60s
+                       # service.name/version come from the build's ApplicationName and
+                       # ApplicationVersion - never from config
+  # config:                    # exporter-specific kv block, strict-decoded by the chosen exporter
+  #   endpoint: localhost:4317 # otlp: collector host:port, no scheme
+  #   insecure: true
+  #   headers: { authorization: "Bearer ..." }
+  #   compression: gzip
+  #   timeout: 10s
+  #   retry: { initial_interval: 5s }
+
 # API server configuration
 api:
   health: # the probe listener: /healthz + /readyz, kept off the public server
