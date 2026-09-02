@@ -280,17 +280,40 @@ dead collector must never make the database unready.
 
 Handlers already sit inside the server span: the project `api.Context` is a
 valid `context.Context` carrying it, so `svc.Do(c, ...)` propagates for free.
-A service that wants its own child spans takes the `model.Tracer` handle as a
-constructor arg and:
+A business method adds its own child span **without holding any tracer** —
+`traceutil.Start` derives the tracer from the span already in the context,
+so the live provider rides each request and a context without a recording
+span (tracing disabled, unit tests) yields a noop:
 
 ```go
-ctx, span := s.tracer.Provider().Tracer("services/order").Start(ctx, "order.settle")
-defer span.End()
+func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error) {
+	ctx, span := traceutil.Start(ctx, m.name, "HelloWorld")
+
+	thing, err := m.repository.Create(ctx, ...)
+	if err != nil {
+		return nil, traceutil.Fail(span, errors.Wrap(err))
+	}
+	// ...
+	span.End()
+	return result, nil
+}
 ```
 
-Resolve `Provider()` per use — never cache the `trace.TracerProvider` in a
-field: a tracing restart swaps providers, and a retired provider silently
-drops spans.
+The manual pair keeps the signature plain — no defer, no named returns, no
+closure. `traceutil.Fail` records the error, marks the span failed, ends
+it, and hands the error back, so an error return stays one line. The
+discipline it asks for: **every return path must either `Fail` or
+`span.End()`** — a path that does neither leaks an unended span that never
+exports.
+
+The scope is `m.name`, matching the service's metric scope. This is why
+tracing stays out of the app's infra bundle: no business service takes the
+handle — the trace middleware owns extraction and the server span, and
+business spans nest under it through the context. A service that genuinely
+needs the handle (custom propagation, span links across requests) still
+takes `model.Tracer` as a constructor arg and resolves `Provider()` per use
+— never cache the `trace.TracerProvider` in a field: a tracing restart swaps
+providers, and a retired provider silently drops spans.
 
 ## Gotchas
 

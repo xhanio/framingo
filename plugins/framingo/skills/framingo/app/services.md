@@ -329,14 +329,19 @@ split table, monitor semantics, and the escalation ladder:
 
 ## `business.go`
 
-The business method reads auth state from the context, delegates
-persistence to the repository, maps ORM → entity, and fires an event:
+The business method opens its own child span (handle-free — see
+[tracing.md](../pkgs/tracing.md) "Spans in App Code"; every return path
+must either `traceutil.Fail` or `span.End()`), reads auth state from the
+context, delegates persistence to the repository, maps ORM → entity, fires
+an event, and counts the call:
 
 ```go
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error) {
+	ctx, span := traceutil.Start(ctx, m.name, "HelloWorld")
+
 	credential, ok := ctx.Value(api.ContextKeyCredential).(*entity.Credential)
 	if !ok {
-		return nil, errors.Unauthorized.Newf("credential not found in context")
+		return nil, traceutil.Fail(span, errors.Unauthorized.Newf("credential not found in context"))
 	}
 	greeting := m.greeting
 	if greeting == "" {
@@ -346,7 +351,7 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 
 	ormModel, err := m.repository.CreateHelloWorld(ctx, message)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, traceutil.Fail(span, errors.Wrap(err))
 	}
 	result := &entity.HelloWorld{
 		ID:        ormModel.ID,
@@ -355,6 +360,8 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 		UpdatedAt: ormModel.UpdatedAt,
 	}
 	m.mb.SendRawMessage(ctx, m, "helloworld", result) // no return value — fire and forget
+	m.metrics.hello.Add(ctx, 1)
+	span.End()
 	return result, nil
 }
 ```
