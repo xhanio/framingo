@@ -100,7 +100,7 @@ type manager struct {
 	cancel context.CancelFunc
 	wg     *sync.WaitGroup
 
-	metrics *metric // cached instruments, built once at Init
+	metrics *metrics // cached instruments, built once at Init
 }
 
 func New(infra Infra, repo repository.Repository, opts ...Option) Manager {
@@ -191,7 +191,7 @@ services the wiring layer actually constructed, so a handle the app lacks
 is removed from the bundle and the narrow views, never carried as nil
 ([components-server.md](components-server.md)).
 
-**Service metrics** (`metric.go`): instruments live in a `metric` struct;
+**Service metrics** (`metric.go`): instruments live in a `metrics` struct;
 the constructor stores the `model.Meter` handle and `Init` builds the
 instruments, guarded by `if m.metrics == nil` — the provider behind
 `model.Meter` keeps one identity for the life of the process, so cached
@@ -262,7 +262,7 @@ func (m *manager) Init(ctx context.Context) error {
 	)
 	m.setDefaults()
 	if m.metrics == nil {
-		metrics, err := m.newMetric()
+		metrics, err := m.newMetrics()
 		if err != nil {
 			return err
 		}

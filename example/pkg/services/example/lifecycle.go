@@ -15,7 +15,7 @@ func (m *manager) Init(ctx context.Context) error {
 	)
 	m.setDefaults()
 	if m.metrics == nil {
-		metrics, err := m.newMetric()
+		metrics, err := m.newMetrics()
 		if err != nil {
 			return err
 		}

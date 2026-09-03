@@ -25,7 +25,7 @@ type manager struct {
 	cancel context.CancelFunc
 	wg     *sync.WaitGroup
 
-	metrics *metric
+	metrics *metrics
 }
 
 func New(infra Infra, repo repository.Repository, opts ...Option) Manager {
