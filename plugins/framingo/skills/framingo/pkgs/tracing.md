@@ -46,9 +46,11 @@ Lifecycle facts that matter:
   and spans cost nothing. Callers never nil-check.
 - **`Stop` is the flush.** The batch processor exports on its own clock;
   `Stop(wait)` shuts the provider down synchronously (5s bound) so buffered
-  spans reach the exporter. Register tracing **first** in the basic tier:
-  stop runs in reverse, so it flushes last — after the draining api server's
-  final requests.
+  spans reach the exporter. Register telemetry at the **end** of the infra
+  tier's `Register` call: the topo sort pops dependency-less services in
+  reverse registration order, so the services listed last init first and,
+  with stop reversed, flush last — after the draining api server's final
+  requests.
 - **`Alive` guards wiring only** (enabled but no provider built — a restart
   rebuilds it, and a deliberate stop does not fail it). There is deliberately
   **no `Ready`**: tracing is auxiliary, and the monitor rolls a dependency's
@@ -329,8 +331,8 @@ providers, and a retired provider silently drops spans.
 - A WebSocket route on a traced server produces one span covering the whole
   connection, ended (and exported) only at close — session-length spans, not
   per-message ones.
-- Registering tracing anywhere but first in the basic tier still works, but
-  spans emitted during shutdown may be dropped instead of flushed.
+- Registering tracing anywhere but the tail of the infra tier still works,
+  but spans emitted during shutdown may be dropped instead of flushed.
 - A db query issued through `ORM()` traces as its own root span, never under
   the request that caused it — `ORM()` has no context to parent from. Use
   `FromContext(ctx)`.

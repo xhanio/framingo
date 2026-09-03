@@ -43,6 +43,7 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [pkgs/pubsub.md](pkgs/pubsub.md) | Pub/sub primitive, message bus, message interfaces, slow subscribers |
 | [pkgs/planner.md](pkgs/planner.md) | Scheduled/ad-hoc task execution: plans, jobs, stats selectors |
 | [pkgs/tracing.md](pkgs/tracing.md) | OpenTelemetry tracing: the `model.Tracer` handle, exporter registry, the server's Trace middleware |
+| [pkgs/metrics.md](pkgs/metrics.md) | OpenTelemetry metrics: the stable `model.Meter` provider, exporter registry, the export loop, instruments in services |
 | [pkgs/types.md](pkgs/types.md) | Framework types: `common` interfaces, the `fapi` surface, ORM base types, context keys |
 | [pkgs/config.md](pkgs/config.md) | The annotated config.yaml template, env layering, dynamic keys |
 | [pkgs/errors.md](pkgs/errors.md) | `xhanio/errors`: categories, wrapping, checking |
@@ -131,8 +132,9 @@ Either route, the reference map above is the per-concept guide for the work insi
 | Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` | [pkgs/pubsub.md](pkgs/pubsub.md) |
 | Task planner | `pkg/services/planner` | `planner.Manager`, `model.Planner` | [pkgs/planner.md](pkgs/planner.md) |
 | Tracing (OpenTelemetry) | `pkg/services/tracing` (+ `tracing/exporters/`) and the `trace` middleware in `pkg/middlewares/trace` | `tracing.Manager`, `model.Tracer`; blank-import an exporter subpackage (otlpgrpc/otlphttp/stdout); attach the middleware via `WithMiddlewares`, activate with `trace: true` per server; db spans via `pkg/services/db/plugins/otelgorm` | [pkgs/tracing.md](pkgs/tracing.md) |
+| Metrics (OpenTelemetry) | `pkg/services/metrics` (+ `metrics/exporters/`) | `metrics.Manager`, `model.Meter`; blank-import an exporter subpackage (otlpgrpc/otlphttp/stdout); the provider's identity never changes — build instruments once at `Init` and cache them | [pkgs/metrics.md](pkgs/metrics.md) |
 | Message interfaces | `pkg/types/common` | `Message`, `MessageSender`, `MessageHandler`, `RawMessageHandler` | [pkgs/pubsub.md](pkgs/pubsub.md) |
-| Service interfaces | `pkg/types/model` | `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Planner`, `Tracer` | [pkgs/types.md](pkgs/types.md) |
+| Service interfaces | `pkg/types/model` | `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Planner`, `Tracer`, `Meter` | [pkgs/types.md](pkgs/types.md) |
 | Logging | `pkg/utils/log` | `log.Logger` | [pkgs/utils.md](pkgs/utils.md) |
 | Errors | `github.com/xhanio/errors` | `errors.Newf`, `errors.Wrap`, category sentinels | [pkgs/errors.md](pkgs/errors.md) |
 | Config | `pkg/utils/confutil` | `confutil.FromContext(ctx)` | [pkgs/supervisor.md](pkgs/supervisor.md), [pkgs/config.md](pkgs/config.md) |
@@ -145,7 +147,7 @@ CLI / Config (cobra + viper)
     |
 Supervisor (lifecycle orchestration, dependency resolution, health monitoring)
     |
-Services (DB, API Server, PubSub, MessageBus, Planner, Tracing, custom services)
+Services (DB, API Server, PubSub, MessageBus, Planner, Tracing, Metrics, custom services)
     |
 Types (common interfaces, api types, model interfaces, entity data, orm base)
 ```
