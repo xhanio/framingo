@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/xhanio/framingo/pkg/types/common"
+	fmodel "github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
@@ -16,6 +17,7 @@ type manager struct {
 
 	repository repository.Repository
 	mb         common.RawMessageSender
+	meter      fmodel.Meter
 
 	greeting string
 
@@ -35,12 +37,12 @@ func newManager(infra Infra, repo repository.Repository, opts ...Option) *manage
 	m := &manager{
 		repository: repo,
 		mb:         infra.MessageBus(),
+		meter:      infra.Meter(),
 		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
 	m.log = m.log.By(m)
-	m.metrics = m.newMetric(infra.Meter())
 	return m
 }
 

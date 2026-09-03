@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
-	"github.com/xhanio/framingo/pkg/services/metrics"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -40,7 +39,7 @@ func TestServiceNamesAreProjectRelative(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo/example"
 	t.Cleanup(func() { info.ProjectPath = "" })
 
-	svc := newManager(testInfra{meter: metrics.New()}, nil)
+	svc := newManager(testInfra{}, nil)
 	assert.Equal(t, "services/example/manager", svc.Name())
 
 	sv := supervisor.New(nil)
@@ -68,6 +67,7 @@ func (fakeMB) SendRawMessage(context.Context, common.Named, string, any) {}
 func TestHelloWorldIncrementsCounter(t *testing.T) {
 	reader, provider := testutil.NewMeterRecorder()
 	m := newManager(testInfra{meter: testutil.NewMeter(provider), mb: fakeMB{}}, fakeRepo{})
+	require.NoError(t, m.Init(context.Background()))
 
 	//nolint:staticcheck // SA1029: intentional, the api context keys are shared with echo's string-keyed store
 	ctx := context.WithValue(context.Background(), api.ContextKeyCredential, &entity.Credential{UserName: "tester"})
