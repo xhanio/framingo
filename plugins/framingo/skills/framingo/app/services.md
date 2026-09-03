@@ -92,6 +92,7 @@ type manager struct {
 
 	repository repository.Repository
 	mb         common.RawMessageSender
+	meter      fmodel.Meter
 
 	greeting string // dynamic config
 
@@ -99,7 +100,7 @@ type manager struct {
 	cancel context.CancelFunc
 	wg     *sync.WaitGroup
 
-	metrics *metric // cached instruments, built once at construction
+	metrics *metric // cached instruments, built once at Init
 }
 
 func New(infra Infra, repo repository.Repository, opts ...Option) Manager {
@@ -111,12 +112,12 @@ func newManager(infra Infra, repo repository.Repository, opts ...Option) *manage
 	m := &manager{
 		repository: repo,
 		mb:         infra.MessageBus(),
+		meter:      infra.Meter(),
 		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
 	m.log = m.log.By(m)
-	m.metrics = m.newMetric(infra.Meter())
 	return m
 }
 
@@ -185,14 +186,25 @@ what the service actually uses, lets a test fake two methods instead of
 assembling managers, and leaves `Dependencies()` as precise as ever, since
 the constructor plucks the handles into ordinary fields. Getters return
 `model.*` handles (`fmodel.Meter`, `fmodel.MessageBus`), never concrete
-managers.
+managers — and only ever *live* ones: the bundle is combined per app from
+services the wiring layer actually constructed, so a handle the app lacks
+is removed from the bundle and the narrow views, never carried as nil
+([components-server.md](components-server.md)).
 
-**Service metrics** (`metric.go`): instruments live in a `metric` struct
-built once at construction from `infra.Meter()` — the provider behind
+**Service metrics** (`metric.go`): instruments live in a `metric` struct;
+the constructor stores the `model.Meter` handle and `Init` builds the
+instruments, guarded by `if m.metrics == nil` — the provider behind
 `model.Meter` keeps one identity for the life of the process, so cached
-instruments survive service restarts. The service name is the
-instrumentation scope, and a failed instrument registration degrades to a
-noop instrument with a warning instead of failing construction.
+instruments survive service restarts and never need a rebuild. The service
+name is the instrumentation scope. Creation goes in `Init`, not the
+constructor, because it can fail — and its failures (an invalid instrument
+name, a conflicting registration) are deterministic programmer errors, so
+failing `Init` surfaces them at first boot in dev/CI. That is different
+from *runtime* telemetry trouble (collector down, export errors), which
+stays inside the metrics service and never touches business services. Do
+not swallow the error into a noop instrument: the API's error-path return
+value has no documented contract, and silent degradation hides a typo
+until someone misses the metric in production.
 
 ## `option.go`
 
@@ -249,6 +261,13 @@ func (m *manager) Init(ctx context.Context) error {
 		WithDynamicConfig(config.GetString("example.greeting")),
 	)
 	m.setDefaults()
+	if m.metrics == nil {
+		metrics, err := m.newMetric()
+		if err != nil {
+			return err
+		}
+		m.metrics = metrics
+	}
 	return nil
 }
 

@@ -139,7 +139,7 @@ func (m *manager) initServices() error {
 	// all further tracing config arrives via the tracing.* keys in Init
 	m.tracing = tracing.New(tracing.WithLogger(m.log))
 	// likewise metrics.*; the meter's provider is stable for the life of the
-	// process, so services create their instruments once at construction
+	// process, so services create their instruments once at Init
 	m.metrics = metrics.New(metrics.WithLogger(m.log))
 
 	m.db = db.New(
@@ -248,6 +248,18 @@ Three details that matter:
   a business dependency, passed explicitly. Each consuming service declares
   its own narrow view of the bundle rather than importing it — see
   [services.md](services.md).
+- **Combine the bundle to fit the app — never wire a nil into it.** The
+  bundle lives in the app tree precisely so its shape tracks what *this*
+  app constructs: an app without pubsub drops the `PubSub()` getter (and
+  the field from consumers' narrow views); it does not pass nil to
+  `infra.New`. A nil handle costs nothing at wiring time and detonates
+  later, inside whichever service first calls through it, as an interface
+  panic far from the cause — and nothing downstream can guard it: a
+  nil-receiver check on a getter never sees a nil *interface*, and
+  substituting a noop would silently swallow a wiring bug the way the
+  fail-fast Init doctrine forbids. Every argument to `infra.New` is a
+  service constructed a few lines above in `initServices`, so the
+  invariant stays checkable by eye.
 
 ## `lifecycle.go` — Registration Order in `Init()`
 
