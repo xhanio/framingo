@@ -12,16 +12,9 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/types/model"
+
+	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 )
-
-// testPlatform fakes the repository's narrow Platform view: the database
-// handle alone, instead of the app's whole bundle.
-type testPlatform struct {
-	db model.Database
-}
-
-func (p testPlatform) DB() model.Database { return p.db }
 
 // fakeDB implements model.Database over a hand-built *sql.DB whose
 // connector either hands out connections or refuses them, which is all
@@ -68,32 +61,32 @@ func newFakeDB(connectErr error) *fakeDB {
 }
 
 func TestReadyPingsDatabase(t *testing.T) {
-	m := newManager(testPlatform{newFakeDB(nil)})
+	m := newManager(platform.New(newFakeDB(nil), nil, nil, nil))
 	require.NoError(t, m.Ready(context.Background()))
 
-	m = newManager(testPlatform{newFakeDB(sql.ErrConnDone)})
+	m = newManager(platform.New(newFakeDB(sql.ErrConnDone), nil, nil, nil))
 	err := m.Ready(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ping")
 }
 
 func TestReadyWithoutHandle(t *testing.T) {
-	m := newManager(testPlatform{&fakeDB{db: nil}})
+	m := newManager(platform.New(&fakeDB{db: nil}, nil, nil, nil))
 	require.Error(t, m.Ready(context.Background()))
 }
 
 func TestAliveChecksOwnWiringOnly(t *testing.T) {
 	// Wired: alive, trivially.
-	m := newManager(testPlatform{newFakeDB(nil)})
+	m := newManager(platform.New(newFakeDB(nil), nil, nil, nil))
 	require.NoError(t, m.Alive(context.Background()))
 
 	// An unreachable database must NOT fail liveness: the supervisor restarts
 	// a service whose Alive fails, and no repository restart fixes a database
 	// outage. That is Ready's story.
-	m = newManager(testPlatform{newFakeDB(sql.ErrConnDone)})
+	m = newManager(platform.New(newFakeDB(sql.ErrConnDone), nil, nil, nil))
 	assert.NoError(t, m.Alive(context.Background()))
 
 	// A missing handle is the repository's own wiring being broken.
-	m = newManager(testPlatform{&fakeDB{db: nil}})
+	m = newManager(platform.New(&fakeDB{db: nil}, nil, nil, nil))
 	require.Error(t, m.Alive(context.Background()))
 }

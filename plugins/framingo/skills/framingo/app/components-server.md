@@ -247,13 +247,12 @@ Three details that matter:
   and registers them individually. Tracing stays out of the bundle: no
   business service touches the tracer — spans arrive through the trace
   middleware and propagate via context. The repository stays out too: it is
-  a business dependency, passed explicitly. Each consuming service declares
-  its own narrow view of the bundle rather than importing it — see
-  [services.md](services.md).
+  a business dependency, passed explicitly. Consumers import the bundle and
+  take `platform.Platform` as is — see [services.md](services.md).
 - **Combine the bundle to fit the app — never wire a nil into it.** The
   bundle lives in the app tree precisely so its shape tracks what *this*
-  app constructs: an app without pubsub drops the `PubSub()` getter (and
-  the field from consumers' narrow views); it does not pass nil to
+  app constructs: an app without pubsub drops the `PubSub()` getter; it
+  does not pass nil to
   `platform.New`. A nil handle costs nothing at wiring time and detonates
   later, inside whichever service first calls through it, as an interface
   panic far from the cause — and nothing downstream can guard it: a

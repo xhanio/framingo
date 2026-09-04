@@ -9,6 +9,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
+	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
@@ -25,14 +26,6 @@ var (
 )
 
 // The following tests using actual test database
-// testPlatform fakes the repository's narrow Platform view: the database
-// handle alone, instead of the app's whole bundle.
-type testPlatform struct {
-	db model.Database
-}
-
-func (p testPlatform) DB() model.Database { return p.db }
-
 func setup() (*manager, model.Database, error) {
 	db, err := testutil.SetupDB()
 	if err != nil {
@@ -48,7 +41,7 @@ func setup() (*manager, model.Database, error) {
 	); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}
-	m := newManager(repository.New(testPlatform{db}))
+	m := newManager(repository.New(platform.New(db, nil, nil, nil)))
 	if err := m.Init(context.Background()); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}

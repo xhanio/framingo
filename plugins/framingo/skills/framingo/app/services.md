@@ -103,12 +103,12 @@ type manager struct {
 	metrics *metrics // cached instruments, built once at Init
 }
 
-func New(platform Platform, repo repository.Repository, opts ...Option) Manager {
+func New(platform platform.Platform, repo repository.Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(platform Platform, repo repository.Repository, opts ...Option) *manager {
+func newManager(platform platform.Platform, repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 		mb:         platform.MessageBus(),
@@ -170,31 +170,19 @@ that serves it** — `common.RawMessageSender`, not `messagebus.Manager` — and
 `Dependencies()` type-asserts, because a narrow interface may or may not be
 backed by a supervised service.
 
-**The narrow Platform view.** The app bundles its framework plumbing in
-`services/system/platform`, but a service never imports that package: it
-declares its own `Platform` interface in `model.go`, listing only the getters
-it consumes, and the app's bundle satisfies it structurally:
-
-```go
-// model.go
-// Platform is this service's narrow view of the app's platform bundle.
-type Platform interface {
-	Meter() fmodel.Meter
-	MessageBus() fmodel.MessageBus
-}
-```
-
-The bundle rides first in every constructor (`New(platform, repo, ...)`);
-business dependencies like the repository stay explicit arguments — the
-bundle carries plumbing, not peers. This keeps the signature honest about
-what the service actually uses, lets a test fake two methods instead of
-assembling managers, and leaves `Dependencies()` as precise as ever, since
-the constructor plucks the handles into ordinary fields. Getters return
-`model.*` handles (`fmodel.Meter`, `fmodel.MessageBus`), never concrete
-managers — and only ever *live* ones: the bundle is combined per app from
-services the wiring layer actually constructed, so a handle the app lacks
-is removed from the bundle and the narrow views, never carried as nil
-([components-server.md](components-server.md)).
+**The platform bundle.** The app bundles its framework plumbing in
+`services/system/platform`; a service imports it and takes
+`platform.Platform` as is — no per-consumer slice of it. The bundle rides
+first in every constructor (`New(platform, repo, ...)`); business
+dependencies like the repository stay explicit arguments — the bundle
+carries plumbing, not peers. The constructor plucks the handles it uses
+into ordinary fields, so `Dependencies()` stays as precise as ever, and a
+test builds a bundle with `platform.New(nil, meter, nil, mb)`, leaving nil
+whatever the service never calls. Getters return `model.*` handles
+(`fmodel.Meter`, `fmodel.MessageBus`), never concrete managers — and only
+ever *live* ones: the bundle is combined per app from services the wiring
+layer actually constructed, so a handle the app lacks is removed from the
+bundle, never carried as nil ([components-server.md](components-server.md)).
 
 **Service metrics** (`metric.go`): instruments live in a `metrics` struct;
 the constructor stores the `model.Meter` handle and `Init` builds the

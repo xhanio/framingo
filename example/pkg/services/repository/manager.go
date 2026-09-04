@@ -7,6 +7,8 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
+
+	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 )
 
 type manager struct {
@@ -15,12 +17,12 @@ type manager struct {
 	db   model.Database
 }
 
-func New(platform Platform, opts ...Option) Repository {
+func New(platform platform.Platform, opts ...Option) Repository {
 	return newManager(platform, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(platform Platform, opts ...Option) *manager {
+func newManager(platform platform.Platform, opts ...Option) *manager {
 	m := &manager{db: platform.DB()}
 	m.applyOptions(opts...)
 	m.setDefaults()

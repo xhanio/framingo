@@ -18,19 +18,10 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
+	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 )
-
-// testPlatform fakes the service's narrow Platform view - the payoff of
-// consumer side interfaces: two methods instead of the app's whole bundle.
-type testPlatform struct {
-	meter fmodel.Meter
-	mb    fmodel.MessageBus
-}
-
-func (t testPlatform) Meter() fmodel.Meter           { return t.meter }
-func (t testPlatform) MessageBus() fmodel.MessageBus { return t.mb }
 
 // With the gopro-injected ProjectPath in place, service names are
 // project-relative - and identically so whether the package belongs to the
@@ -41,7 +32,7 @@ func TestServiceNamesAreProjectRelative(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo/example"
 	t.Cleanup(func() { info.ProjectPath = "" })
 
-	svc := newManager(testPlatform{}, nil)
+	svc := newManager(platform.New(nil, nil, nil, nil), nil)
 	assert.Equal(t, "services/example/manager", svc.Name())
 
 	sv := supervisor.New(nil)
@@ -68,7 +59,7 @@ func (fakeMB) SendRawMessage(context.Context, common.Named, string, any) {}
 
 func TestHelloWorldIncrementsCounter(t *testing.T) {
 	reader, provider := testutil.NewMeterRecorder()
-	m := newManager(testPlatform{meter: testutil.NewMeter(provider), mb: fakeMB{}}, fakeRepo{})
+	m := newManager(platform.New(nil, testutil.NewMeter(provider), nil, fakeMB{}), fakeRepo{})
 	require.NoError(t, m.Init(context.Background()))
 
 	//nolint:staticcheck // SA1029: intentional, the api context keys are shared with echo's string-keyed store
@@ -89,7 +80,7 @@ func TestHelloWorldIncrementsCounter(t *testing.T) {
 // name, example, since the service carries no WithName.
 func TestInitReadsGreetingUnderRoot(t *testing.T) {
 	_, provider := testutil.NewMeterRecorder()
-	m := newManager(testPlatform{meter: testutil.NewMeter(provider), mb: fakeMB{}}, fakeRepo{})
+	m := newManager(platform.New(nil, testutil.NewMeter(provider), nil, fakeMB{}), fakeRepo{})
 	v := viper.New()
 	v.Set("example.greeting", "hi there")
 	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
