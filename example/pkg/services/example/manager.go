@@ -28,16 +28,16 @@ type manager struct {
 	metrics *metrics
 }
 
-func New(infra Infra, repo repository.Repository, opts ...Option) Manager {
-	return newManager(infra, repo, opts...)
+func New(platform Platform, repo repository.Repository, opts ...Option) Manager {
+	return newManager(platform, repo, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(infra Infra, repo repository.Repository, opts ...Option) *manager {
+func newManager(platform Platform, repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
-		mb:         infra.MessageBus(),
-		meter:      infra.Meter(),
+		mb:         platform.MessageBus(),
+		meter:      platform.Meter(),
 		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)

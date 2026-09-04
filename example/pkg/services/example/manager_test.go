@@ -20,15 +20,15 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 )
 
-// testInfra fakes the service's narrow Infra view - the payoff of consumer
-// side interfaces: two methods instead of the app's whole bundle.
-type testInfra struct {
+// testPlatform fakes the service's narrow Platform view - the payoff of
+// consumer side interfaces: two methods instead of the app's whole bundle.
+type testPlatform struct {
 	meter fmodel.Meter
 	mb    fmodel.MessageBus
 }
 
-func (t testInfra) Meter() fmodel.Meter           { return t.meter }
-func (t testInfra) MessageBus() fmodel.MessageBus { return t.mb }
+func (t testPlatform) Meter() fmodel.Meter           { return t.meter }
+func (t testPlatform) MessageBus() fmodel.MessageBus { return t.mb }
 
 // With the gopro-injected ProjectPath in place, service names are
 // project-relative - and identically so whether the package belongs to the
@@ -39,7 +39,7 @@ func TestServiceNamesAreProjectRelative(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo/example"
 	t.Cleanup(func() { info.ProjectPath = "" })
 
-	svc := newManager(testInfra{}, nil)
+	svc := newManager(testPlatform{}, nil)
 	assert.Equal(t, "services/example/manager", svc.Name())
 
 	sv := supervisor.New(nil)
@@ -66,7 +66,7 @@ func (fakeMB) SendRawMessage(context.Context, common.Named, string, any) {}
 
 func TestHelloWorldIncrementsCounter(t *testing.T) {
 	reader, provider := testutil.NewMeterRecorder()
-	m := newManager(testInfra{meter: testutil.NewMeter(provider), mb: fakeMB{}}, fakeRepo{})
+	m := newManager(testPlatform{meter: testutil.NewMeter(provider), mb: fakeMB{}}, fakeRepo{})
 	require.NoError(t, m.Init(context.Background()))
 
 	//nolint:staticcheck // SA1029: intentional, the api context keys are shared with echo's string-keyed store

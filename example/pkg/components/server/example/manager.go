@@ -20,8 +20,8 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/auth"
 	"github.com/xhanio/framingo/example/pkg/services/system/certificate"
-	"github.com/xhanio/framingo/example/pkg/services/system/infra"
 	"github.com/xhanio/framingo/example/pkg/services/system/organization"
+	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/services/system/role"
 	"github.com/xhanio/framingo/example/pkg/services/system/user"
 )
@@ -38,8 +38,8 @@ type manager struct {
 	metrics    metrics.Manager
 	pubsub     pubsub.Manager
 	messagebus messagebus.Manager
-	// infra bundle for business constructors
-	infra infra.Infra
+	// platform bundle for business constructors
+	platform platform.Platform
 	// data access
 	repository repository.Repository
 

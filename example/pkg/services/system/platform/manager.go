@@ -1,4 +1,4 @@
-package infra
+package platform
 
 import (
 	"github.com/xhanio/framingo/pkg/types/model"
@@ -11,11 +11,11 @@ type manager struct {
 	messagebus model.MessageBus
 }
 
-var _ Infra = (*manager)(nil)
+var _ Platform = (*manager)(nil)
 
 // New combines already-constructed services; building them stays in the
 // wiring layer.
-func New(db model.Database, meter model.Meter, pubsub model.Pubsub, messagebus model.MessageBus) Infra {
+func New(db model.Database, meter model.Meter, pubsub model.Pubsub, messagebus model.MessageBus) Platform {
 	return &manager{
 		db:         db,
 		meter:      meter,

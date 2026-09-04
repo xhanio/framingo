@@ -309,7 +309,7 @@ discipline it asks for: **every return path must either `Fail` or
 exports.
 
 The scope is `m.name`, matching the service's metric scope. This is why
-tracing stays out of the app's infra bundle: no business service takes the
+tracing stays out of the app's platform bundle: no business service takes the
 handle — the trace middleware owns extraction and the server span, and
 business spans nest under it through the context. A service that genuinely
 needs the handle (custom propagation, span links across requests) still

@@ -7,8 +7,8 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
-// Infra is this service's narrow view of the app's infra bundle.
-type Infra interface {
+// Platform is this service's narrow view of the app's platform bundle.
+type Platform interface {
 	Meter() fmodel.Meter
 	MessageBus() fmodel.MessageBus
 }

@@ -38,11 +38,11 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/auth"
 	"github.com/xhanio/framingo/example/pkg/services/system/certificate"
-	"github.com/xhanio/framingo/example/pkg/services/system/infra"
 	"github.com/xhanio/framingo/example/pkg/services/system/organization"
 	"github.com/xhanio/framingo/example/pkg/services/system/role"
+	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/services/system/user"
-	infrautil "github.com/xhanio/framingo/example/pkg/utils/infra"
+	"github.com/xhanio/framingo/example/pkg/utils/infra"
 )
 
 func (m *manager) initServices() error {
@@ -56,7 +56,7 @@ func (m *manager) initServices() error {
 			m.config.GetInt("log.rotation.max_age"),
 		),
 	)
-	infrautil.Debug = (m.log.Level() == zapcore.DebugLevel)
+	infra.Debug = (m.log.Level() == zapcore.DebugLevel)
 
 	// init service manager
 	m.services = supervisor.New(m.config,
@@ -151,7 +151,7 @@ func (m *manager) initServices() error {
 	)
 
 	// combine the services business constructors consume
-	m.infra = infra.New(m.db, m.metrics, m.pubsub, m.messagebus)
+	m.platform = platform.New(m.db, m.metrics, m.pubsub, m.messagebus)
 
 	m.repository = repository.New(
 		m.db,
@@ -190,7 +190,7 @@ func (m *manager) initServices() error {
 	/* init business level components */
 
 	m.example = example.New(
-		m.infra,
+		m.platform,
 		m.repository,
 		example.WithLogger(m.log),
 	)

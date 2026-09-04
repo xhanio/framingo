@@ -103,16 +103,16 @@ type manager struct {
 	metrics *metrics // cached instruments, built once at Init
 }
 
-func New(infra Infra, repo repository.Repository, opts ...Option) Manager {
-	return newManager(infra, repo, opts...)
+func New(platform Platform, repo repository.Repository, opts ...Option) Manager {
+	return newManager(platform, repo, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(infra Infra, repo repository.Repository, opts ...Option) *manager {
+func newManager(platform Platform, repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
-		mb:         infra.MessageBus(),
-		meter:      infra.Meter(),
+		mb:         platform.MessageBus(),
+		meter:      platform.Meter(),
 		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
@@ -165,21 +165,21 @@ that serves it** — `common.RawMessageSender`, not `messagebus.Manager` — and
 `Dependencies()` type-asserts, because a narrow interface may or may not be
 backed by a supervised service.
 
-**The narrow Infra view.** The app bundles its framework plumbing in
-`services/system/infra`, but a service never imports that package: it
-declares its own `Infra` interface in `model.go`, listing only the getters
+**The narrow Platform view.** The app bundles its framework plumbing in
+`services/system/platform`, but a service never imports that package: it
+declares its own `Platform` interface in `model.go`, listing only the getters
 it consumes, and the app's bundle satisfies it structurally:
 
 ```go
 // model.go
-// Infra is this service's narrow view of the app's infra bundle.
-type Infra interface {
+// Platform is this service's narrow view of the app's platform bundle.
+type Platform interface {
 	Meter() fmodel.Meter
 	MessageBus() fmodel.MessageBus
 }
 ```
 
-The bundle rides first in every constructor (`New(infra, repo, ...)`);
+The bundle rides first in every constructor (`New(platform, repo, ...)`);
 business dependencies like the repository stay explicit arguments — the
 bundle carries plumbing, not peers. This keeps the signature honest about
 what the service actually uses, lets a test fake two methods instead of
