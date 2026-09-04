@@ -132,7 +132,7 @@ func (m *manager) initServices() error {
 	infra.Debug = (m.log.Level() == zapcore.DebugLevel)
 
 	// init service manager
-	m.services = supervisor.New(m.config, supervisor.WithLogger(m.log))
+	m.services = supervisor.New(confutil.New(m.config), supervisor.WithLogger(m.log))
 
 	/* init infra level services */
 
@@ -142,6 +142,8 @@ func (m *manager) initServices() error {
 	// process, so services create their instruments once at Init
 	m.metrics = metrics.New(metrics.WithLogger(m.log))
 
+	// a second database is this same block with db.WithName("clickhouse") and
+	// its keys read under clickhouse.* - the name is the config root
 	m.db = db.New(
 		db.WithType(m.config.GetString("db.type")),
 		db.WithDataSource(db.Source{

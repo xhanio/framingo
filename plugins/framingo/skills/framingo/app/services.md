@@ -134,6 +134,11 @@ project prefix is judged from the gopro-injected `info.ProjectPath`;
 binaries built without it (plain `go build`, `go test`) fall back to the
 full import path.
 
+The same name decides the config root: `nameutil.ConfigRoot(m.name)` is
+its package segment (`example`, and still `example` from the unshortened
+import path), or the whole name once `WithName` gives one — see
+`lifecycle.go` below.
+
 The name is fixed at construction, in exactly this position: inside
 `setDefaults()`, which runs after `applyOptions(opts...)` and before
 `log.By(m)`, which reads it. `Name()` is a plain getter — never compute
@@ -248,17 +253,23 @@ func WithDynamicConfig(greeting string) Option {
 
 ## `lifecycle.go`
 
-`Init` re-reads dynamic config from the context viper — through the same
+`Init` re-reads dynamic config from the context `confutil.Config` — through the same
 `applyOptions` + `setDefaults` pair the constructor uses, so a value has one
-way in and one place that says what a zero falls back to. `Start` launches
-the run loop:
+way in and one place that says what a zero falls back to. Keys are read
+under `nameutil.ConfigRoot(m.name)`: the package segment of the auto name
+(`services/example/manager` → `example` — a name with slashes cannot be a
+root, no env override could spell it), or the whole name when `WithName`
+gave one (a second database named `clickhouse` reads
+`clickhouse.connection.*`). The name is the one identity; there is no
+second field. `Start` launches the run loop:
 
 ```go
 func (m *manager) Init(ctx context.Context) error {
-	// dynamic config change
+	// dynamic config change, read under this service's root
 	config := confutil.FromContext(ctx)
+	root := nameutil.ConfigRoot(m.name)
 	m.applyOptions(
-		WithDynamicConfig(config.GetString("example.greeting")),
+		WithDynamicConfig(config.GetString("%s.greeting", root)),
 	)
 	m.setDefaults()
 	if m.metrics == nil {

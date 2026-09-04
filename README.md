@@ -235,7 +235,7 @@ Interface contracts and shared types:
 | --- | --- |
 | **[certutil](pkg/utils/certutil/)** | X.509 CA/server/client cert generation and TLS config |
 | **[cmdutil](pkg/utils/cmdutil/)** | Context-aware external command execution with I/O capture, plus `MergeArgs` for last-wins flag merging |
-| **[confutil](pkg/utils/confutil/)** | Viper instance propagated via `context.Context` |
+| **[confutil](pkg/utils/confutil/)** | `Config` read-side over a Viper instance, propagated via `context.Context`; getters take format-string keys |
 | **[envutil](pkg/utils/envutil/)** | Env-var prefix derivation (`EnvPrefix`) and last-wins env merging (`Merge`) |
 | **[infra](pkg/utils/infra/)** | OS-level helpers (timezone detection and loading) |
 | **[ioutil](pkg/utils/ioutil/)** | File copy/compress/encrypt with progress tracking, plus `LimitWriter`/`LimitReader` for bounding untrusted streams (the reader fails past its limit rather than truncating) |
@@ -243,6 +243,7 @@ Interface contracts and shared types:
 | **[job/executor](pkg/utils/job/executor/)** | Executor with retry, timeout, cooldown, and stop control |
 | **[log](pkg/utils/log/)** | Zap-based logger with file rotation, custom levels, per-service scoping, and `NoStdout` to suppress the console core |
 | **[maputil](pkg/utils/maputil/)** | Map and set helpers (copy, diff, keys, membership) |
+| **[nameutil](pkg/utils/nameutil/)** | Service/router naming (`Name`, `Package`) and the config root a name implies (`ConfigRoot`) |
 | **[netutil](pkg/utils/netutil/)** | MAC/CIDR/IP helpers |
 | **[pageutil](pkg/utils/pageutil/)** | Pagination wrapper (items, total, params) |
 | **[pathutil](pkg/utils/pathutil/)** | Path shortening |
@@ -454,6 +455,7 @@ import (
     "github.com/xhanio/framingo/pkg/services/api/server"
     "github.com/xhanio/framingo/pkg/services/supervisor"
     "github.com/xhanio/framingo/pkg/types/common"
+    "github.com/xhanio/framingo/pkg/utils/confutil"
     "github.com/xhanio/framingo/pkg/utils/log"
 
     helloRouter "github.com/yourorg/myapp/pkg/routers/hello"
@@ -479,7 +481,7 @@ func New(config *viper.Viper) Manager {
 
 func (m *manager) Init(ctx context.Context) error {
     m.log = log.New(log.WithLevel(m.config.GetInt("log.level")))
-    m.services = supervisor.New(m.config, supervisor.WithLogger(m.log))
+    m.services = supervisor.New(confutil.New(m.config), supervisor.WithLogger(m.log))
 
     m.api = server.New(server.WithLogger(m.log))
     if httpConfig := m.config.Sub("api.http"); httpConfig != nil {
@@ -794,7 +796,7 @@ if err := s.db.FromContext(ctx).Create(u).Error; err != nil {
 
 ## Configuration
 
-Framingo uses an **instance-based** Viper (not the global singleton) propagated through `context.Context`. Services read live config in `Init(ctx)` via `confutil.FromContext(ctx)`.
+Framingo uses an **instance-based** Viper (not the global singleton). The wiring layer owns it; services see it as `confutil.Config` through `context.Context` and read live config in `Init(ctx)` via `confutil.FromContext(ctx)`. Getters take format-string keys, so a service reads under its own root (`GetInt("%s.connection.max_open", nameutil.ConfigRoot(m.name))`) — the name given to `WithName`, or the package name by default.
 
 Priority (high → low):
 
@@ -847,7 +849,7 @@ pprof:
   port: 6060              # optional
 ```
 
-Apart from `db.connection.*` — which `db.Manager.Init` reads straight from the context Viper, so a restart picks up pool changes without a rebuild — this layout is a convention, not a schema. Your wiring code maps keys onto constructor options, so rename freely as long as `Init(ctx)` stays the place dynamic values are read.
+Apart from `db.connection.*` — which `db.Manager.Init` reads straight from the context `Config` under the instance's root (`db`, or its `WithName`), so a restart picks up pool changes without a rebuild and a second database gets its own pool settings — this layout is a convention, not a schema. Your wiring code maps keys onto constructor options, so rename freely as long as `Init(ctx)` stays the place dynamic values are read.
 
 Override at runtime:
 
@@ -904,7 +906,7 @@ WantedBy=multi-user.target
    - One `Manager` interface per service in a dedicated package
    - Use an **unexported struct** and **exported interface + factory** — strict convention throughout the framework
    - Declare dependencies explicitly via `Dependencies()`; the supervisor handles ordering
-   - Read dynamic config in `Init(ctx)` via `confutil.FromContext(ctx)` so restarts pick it up
+   - Read dynamic config in `Init(ctx)` via `confutil.FromContext(ctx)` under the service's config root, so restarts pick it up and a second instance reads its own keys
 
 3. **Error Handling**
    - Always use `github.com/xhanio/errors` — never `fmt.Errorf` or stdlib `errors`

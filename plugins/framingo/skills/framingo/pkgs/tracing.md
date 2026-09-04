@@ -34,8 +34,9 @@ m := tracing.New(tracing.WithLogger(logger))   // all further config via tracing
 
 Lifecycle facts that matter:
 
-- **`Init` runs on every restart** and re-reads the `tracing.*` viper keys
-  (`confutil.FromContext`), so enabling, disabling, re-pointing, or
+- **`Init` runs on every restart** and re-reads the `tracing.*` keys
+  (`confutil.FromContext`; under `<name>.*` instead for a `WithName`d
+  instance), so enabling, disabling, re-pointing, or
   re-sampling tracing is a config edit + service restart. Config is the
   authority: the reload runs through the same `applyOptions` + `setDefaults`
   pair the constructor uses, so an absent key reads zero and lands on the
@@ -89,7 +90,8 @@ matching otlp's own retry-on default.
 
 ## Options
 
-`WithLogger`, `WithName`, plus the construction-time values the wiring layer
+`WithLogger`, `WithName` (which also moves the config root — a manager named
+`otel` reads `otel.*`), plus the construction-time values the wiring layer
 reads out of config and the `tracing.*` keys re-apply on every `Init`:
 `WithEnabled`, `WithExporter(name, config)` — the registry name together
 with the kv block its factory strict-decodes, one decision since the block

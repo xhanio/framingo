@@ -9,7 +9,8 @@ log:
     max_backups: 3
     max_age: 7         # days
 
-# Database configuration
+# Database configuration - `db` is the service's config root (nameutil.ConfigRoot
+# of its name); a second instance built with db.WithName("clickhouse") reads clickhouse.*
 db:
   type: postgres
   source:
