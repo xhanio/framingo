@@ -37,6 +37,10 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
+// WithName sets the service name, which also decides the config root Init
+// reads the dynamic keys under (nameutil.ConfigRoot): WithName("telemetry")
+// reads telemetry.enabled, telemetry.exporter, telemetry.config and
+// telemetry.interval, an unnamed instance reads metrics.*.
 func WithName(name string) Option {
 	return func(m *manager) {
 		m.name = name

@@ -12,11 +12,13 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/info"
 	"github.com/xhanio/framingo/pkg/utils/confutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
 func (m *manager) Init(ctx context.Context) error {
 	config := confutil.FromContext(ctx)
+	root := nameutil.ConfigRoot(m.name)
 	// Dynamic config reloads through the very options the wiring layer used,
 	// so a value has one way in and setDefaults has the only say on what a
 	// zero falls back to - the constructor's order, repeated. Config is the
@@ -27,12 +29,12 @@ func (m *manager) Init(ctx context.Context) error {
 	// strict-decodes its own struct.
 	m.mu.Lock()
 	m.applyOptions(
-		WithEnabled(config.GetBool("metrics.enabled")),
+		WithEnabled(config.GetBool("%s.enabled", root)),
 		WithExporter(
-			config.GetString("metrics.exporter"),
-			config.GetStringMap("metrics.config"),
+			config.GetString("%s.exporter", root),
+			config.GetStringMap("%s.config", root),
 		),
-		WithInterval(config.GetDuration("metrics.interval")),
+		WithInterval(config.GetDuration("%s.interval", root)),
 	)
 	m.setDefaults()
 	enabled := m.enabled

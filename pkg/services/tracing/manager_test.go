@@ -48,7 +48,7 @@ func newTestManager(exp sdktrace.SpanExporter) *manager {
 func enabledCtx() context.Context {
 	v := viper.New()
 	v.Set("tracing.enabled", true)
-	return confutil.WrapContext(context.Background(), v)
+	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
 // flushSpans drains the batcher so exported spans become observable - the
@@ -169,7 +169,7 @@ func TestExporterConfigFromViper(t *testing.T) {
 	})
 
 	m := newManager() // disabled: Init records config and stops
-	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), v)))
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
 	assert.Equal(t, "collector:4317", m.exporterConfig["endpoint"])
 	assert.Equal(t, "the manager does not interpret keys", m.exporterConfig["whatever"])
 
@@ -183,12 +183,12 @@ func TestWithEnabledAndConfigOverride(t *testing.T) {
 	on := viper.New()
 	on.Set("tracing.enabled", true)
 	m := newManager(WithEnabled(true))
-	require.Error(t, m.Init(confutil.WrapContext(context.Background(), on)),
+	require.Error(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(on))),
 		"enabled with no exporter must fail")
 
 	off := viper.New()
 	off.Set("tracing.enabled", false)
-	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), off)))
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(off))))
 	_, span := m.Provider().Tracer("test").Start(context.Background(), "op")
 	assert.False(t, span.IsRecording())
 }
@@ -210,7 +210,7 @@ func TestSampleRatioZeroMeansDefault(t *testing.T) {
 	v := viper.New()
 	v.Set("tracing.sample_ratio", 0.25)
 	m = newManager()
-	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), v)))
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
 	assert.Equal(t, 0.25, m.sampleRatio)
 }
 
@@ -230,7 +230,7 @@ func TestInitUnknownExporterFails(t *testing.T) {
 	v.Set("tracing.enabled", true)
 	v.Set("tracing.exporter", "bogus")
 	m := newManager()
-	err := m.Init(confutil.WrapContext(context.Background(), v))
+	err := m.Init(confutil.WrapContext(context.Background(), confutil.New(v)))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not registered")
 }
@@ -239,7 +239,7 @@ func TestInitEnabledWithoutExporterFails(t *testing.T) {
 	v := viper.New()
 	v.Set("tracing.enabled", true)
 	m := newManager()
-	require.Error(t, m.Init(confutil.WrapContext(context.Background(), v)))
+	require.Error(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
 }
 
 func TestViperOverridesOptions(t *testing.T) {
@@ -249,7 +249,7 @@ func TestViperOverridesOptions(t *testing.T) {
 	m := newTestManager(exp)
 	off := viper.New()
 	off.Set("tracing.enabled", false)
-	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), off)))
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(off))))
 	_, span := m.Provider().Tracer("test").Start(context.Background(), "op")
 	assert.False(t, span.IsRecording())
 	span.End()
@@ -258,7 +258,7 @@ func TestViperOverridesOptions(t *testing.T) {
 	// ...and a later restart with enabled=true switches it back on
 	on := viper.New()
 	on.Set("tracing.enabled", true)
-	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), on)))
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(on))))
 	_, span = m.Provider().Tracer("test").Start(context.Background(), "op")
 	span.End()
 	flushSpans(t, m)
@@ -305,7 +305,7 @@ func TestAliveFailsWhenEnabledButNeverBuilt(t *testing.T) {
 	v := viper.New()
 	v.Set("tracing.enabled", true)
 	m := newManager()
-	require.Error(t, m.Init(confutil.WrapContext(context.Background(), v)))
+	require.Error(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
 	require.Error(t, m.Alive(context.Background()))
 }
 
@@ -353,7 +353,7 @@ func TestConcurrentProbesDuringLifecycle(t *testing.T) {
 	v.Set("tracing.enabled", true)
 	v.Set("tracing.sample_ratio", 1.0)
 	v.Set("tracing.exporter", "race-test")
-	ctx := confutil.WrapContext(context.Background(), v)
+	ctx := confutil.WrapContext(context.Background(), confutil.New(v))
 	require.NoError(t, m.Init(ctx))
 
 	done := make(chan struct{})
@@ -398,4 +398,22 @@ func TestReInitDoesNotLeakGoroutines(t *testing.T) {
 	runtime.GC()
 	after := runtime.NumGoroutine()
 	assert.LessOrEqual(t, after-before, 2, "Init cycles must not leave goroutines behind")
+}
+
+// A named manager reads its keys under that name and ignores the package
+// root; an unnamed one reads tracing.*. Both stay disabled, so Init records
+// the config and stops - sample_ratio is the observable.
+func TestConfigRootFollowsName(t *testing.T) {
+	v := viper.New()
+	v.Set("otel.sample_ratio", 0.25)
+	v.Set("tracing.sample_ratio", 0.5)
+	ctx := confutil.WrapContext(context.Background(), confutil.New(v))
+
+	named := newManager(WithName("otel"))
+	require.NoError(t, named.Init(ctx))
+	assert.Equal(t, 0.25, named.sampleRatio)
+
+	unnamed := newManager()
+	require.NoError(t, unnamed.Init(ctx))
+	assert.Equal(t, 0.5, unnamed.sampleRatio)
 }

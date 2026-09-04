@@ -26,7 +26,7 @@ func newTransactionTestMgr(t *testing.T, maxOpen int) db.Manager {
 	v.Set("db.connection.max_open", maxOpen)
 	v.Set("db.connection.max_idle", maxOpen)
 	v.Set("db.connection.exec_timeout", 2*time.Second)
-	ctx := confutil.WrapContext(context.Background(), v)
+	ctx := confutil.WrapContext(context.Background(), confutil.New(v))
 
 	mgr := db.New(
 		db.WithType(db.SQLite),

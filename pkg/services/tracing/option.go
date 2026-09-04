@@ -35,6 +35,10 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
+// WithName sets the service name, which also decides the config root Init
+// reads the dynamic keys under (nameutil.ConfigRoot): WithName("otel") reads
+// otel.enabled, otel.exporter, otel.config and otel.sample_ratio, an unnamed
+// instance reads tracing.*.
 func WithName(name string) Option {
 	return func(m *manager) {
 		m.name = name

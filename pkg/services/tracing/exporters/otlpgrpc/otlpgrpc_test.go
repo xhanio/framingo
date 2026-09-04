@@ -21,7 +21,7 @@ func enabledCtx(config map[string]any) context.Context {
 	if config != nil {
 		v.Set("tracing.config", config)
 	}
-	return confutil.WrapContext(context.Background(), v)
+	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
 // The otlp exporters connect lazily, so building the provider must succeed

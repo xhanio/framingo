@@ -87,7 +87,7 @@ func enabledCtx(kv ...any) context.Context {
 	for i := 0; i+1 < len(kv); i += 2 {
 		v.Set(kv[i].(string), kv[i+1])
 	}
-	return confutil.WrapContext(context.Background(), v)
+	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
 // disabledCtx builds a config context without turning metrics on.
@@ -96,7 +96,7 @@ func disabledCtx(kv ...any) context.Context {
 	for i := 0; i+1 < len(kv); i += 2 {
 		v.Set(kv[i].(string), kv[i+1])
 	}
-	return confutil.WrapContext(context.Background(), v)
+	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
 // sumValue digs the int64 sum of the named instrument out of one export.
@@ -229,7 +229,7 @@ func TestViperOverridesOptions(t *testing.T) {
 	m := newTestManager(exp)
 	off := viper.New()
 	off.Set("metrics.enabled", false)
-	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), off)))
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(off))))
 	live, _ := m.controller.state()
 	assert.False(t, live)
 
@@ -358,4 +358,22 @@ func TestConcurrentProbesDuringLifecycle(t *testing.T) {
 		require.NoError(t, m.Stop(true))
 		require.NoError(t, m.Init(ctx))
 	}
+}
+
+// A named manager reads its keys under that name and ignores the package
+// root; an unnamed one reads metrics.*. Both stay disabled, so Init records
+// the config and stops - interval is the observable.
+func TestConfigRootFollowsName(t *testing.T) {
+	v := viper.New()
+	v.Set("telemetry.interval", "5s")
+	v.Set("metrics.interval", "9s")
+	ctx := confutil.WrapContext(context.Background(), confutil.New(v))
+
+	named := newManager(WithName("telemetry"))
+	require.NoError(t, named.Init(ctx))
+	assert.Equal(t, 5*time.Second, named.currentInterval())
+
+	unnamed := newManager()
+	require.NoError(t, unnamed.Init(ctx))
+	assert.Equal(t, 9*time.Second, unnamed.currentInterval())
 }

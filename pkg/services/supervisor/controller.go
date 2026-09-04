@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/spf13/viper"
 	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/pkg/structs/graph"
@@ -18,7 +17,7 @@ import (
 
 type controller struct {
 	log        log.Logger
-	config     *viper.Viper
+	config     confutil.Config
 	initPolicy entity.SupervisorInitPolicy
 	stopPolicy entity.SupervisorStopPolicy
 
@@ -34,7 +33,7 @@ type controller struct {
 	op sync.Mutex
 }
 
-func newController(config *viper.Viper) *controller {
+func newController(config confutil.Config) *controller {
 	return &controller{
 		config: config,
 		graph:  graph.New[common.Service](),

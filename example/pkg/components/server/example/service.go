@@ -30,6 +30,7 @@ import (
 	_ "github.com/xhanio/framingo/pkg/services/tracing/exporters/otlphttp"
 	_ "github.com/xhanio/framingo/pkg/services/tracing/exporters/stdout"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
+	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
@@ -39,8 +40,8 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/system/auth"
 	"github.com/xhanio/framingo/example/pkg/services/system/certificate"
 	"github.com/xhanio/framingo/example/pkg/services/system/organization"
-	"github.com/xhanio/framingo/example/pkg/services/system/role"
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
+	"github.com/xhanio/framingo/example/pkg/services/system/role"
 	"github.com/xhanio/framingo/example/pkg/services/system/user"
 	"github.com/xhanio/framingo/example/pkg/utils/infra"
 )
@@ -58,8 +59,10 @@ func (m *manager) initServices() error {
 	)
 	infra.Debug = (m.log.Level() == zapcore.DebugLevel)
 
-	// init service manager
-	m.services = supervisor.New(m.config,
+	// init service manager - the wiring layer owns the viper (file, env
+	// prefix, watch); services see it only as the read-side Config the
+	// supervisor carries into Init
+	m.services = supervisor.New(confutil.New(m.config),
 		supervisor.WithLogger(m.log),
 	)
 

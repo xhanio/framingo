@@ -7,19 +7,22 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/confutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	// dynamic configs
+	// dynamic configs, read under this instance's root - db.connection.* for
+	// the default instance, <name>.connection.* for a named one
 	config := confutil.FromContext(ctx)
+	root := nameutil.ConfigRoot(m.name)
 	m.applyOptions(
 		WithConnection(
-			config.GetInt("db.connection.max_open"),
-			config.GetInt("db.connection.max_idle"),
-			config.GetDuration("db.connection.max_lifetime"),
-			config.GetDuration("db.connection.max_idle_time"),
-			config.GetDuration("db.connection.exec_timeout"),
+			config.GetInt("%s.connection.max_open", root),
+			config.GetInt("%s.connection.max_idle", root),
+			config.GetDuration("%s.connection.max_lifetime", root),
+			config.GetDuration("%s.connection.max_idle_time", root),
+			config.GetDuration("%s.connection.exec_timeout", root),
 		),
 	)
 	m.setDefaults()

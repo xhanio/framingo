@@ -5,13 +5,15 @@ import (
 	"io"
 
 	"github.com/xhanio/framingo/pkg/utils/confutil"
+	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	// dynamic config change
+	// dynamic config change, read under this service's root
 	config := confutil.FromContext(ctx)
+	root := nameutil.ConfigRoot(m.name)
 	m.applyOptions(
-		WithDynamicConfig(config.GetString("example.greeting")),
+		WithDynamicConfig(config.GetString("%s.greeting", root)),
 	)
 	m.setDefaults()
 	if m.metrics == nil {

@@ -101,3 +101,15 @@ func TestRelativeOverlapBoundaries(t *testing.T) {
 func TestRelativeWithoutProjectPath(t *testing.T) {
 	assert.Equal(t, "github.com/xhanio/framingo/pkg/services/db", relative("github.com/xhanio/framingo/pkg/services/db"))
 }
+
+// ConfigRoot is the package segment of a category-visible name, or the name
+// itself when it has none - so an unnamed db reads db.* whether or not the
+// ProjectPath injection shortened its name, and a WithName'd clickhouse
+// reads clickhouse.*, with no second field on the service.
+func TestConfigRoot(t *testing.T) {
+	assert.Equal(t, "db", ConfigRoot("services/db/manager"))
+	assert.Equal(t, "db", ConfigRoot("db/manager"))
+	assert.Equal(t, "db", ConfigRoot("github.com/xhanio/framingo/pkg/services/db/manager"))
+	assert.Equal(t, "clickhouse", ConfigRoot("clickhouse"))
+	assert.Equal(t, "", ConfigRoot(""))
+}

@@ -55,6 +55,9 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
+// WithName sets the service name, which also decides the config root Init
+// reads the dynamic keys under (nameutil.ConfigRoot): WithName("clickhouse")
+// reads clickhouse.connection.*, an unnamed instance reads db.connection.*.
 func WithName(name string) Option {
 	return func(m *manager) {
 		m.name = name

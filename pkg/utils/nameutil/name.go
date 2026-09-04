@@ -86,3 +86,18 @@ func relative(pkgPath string) string {
 	}
 	return strings.Join(segs[cut:], "/")
 }
+
+// ConfigRoot returns the config key root a service reads its dynamic keys
+// under, derived from its name alone: the package segment of a
+// category-visible name (services/db/manager -> db, so an unnamed db
+// instance reads db.connection.*), or the whole name when it has no path (a
+// second instance named clickhouse reads clickhouse.connection.*). The auto
+// name itself can never be a root - an env override cannot spell its
+// slashes - which is why the segment, not the name, is the fallback.
+func ConfigRoot(name string) string {
+	dir := path.Dir(name)
+	if dir == "." || dir == "/" {
+		return name
+	}
+	return path.Base(dir)
+}

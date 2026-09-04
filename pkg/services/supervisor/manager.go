@@ -4,9 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/spf13/viper"
-
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -21,11 +20,11 @@ type manager struct {
 	monitor *monitor
 }
 
-func New(config *viper.Viper, opts ...Option) Manager {
+func New(config confutil.Config, opts ...Option) Manager {
 	return newManager(config, opts...)
 }
 
-func newManager(config *viper.Viper, opts ...Option) *manager {
+func newManager(config confutil.Config, opts ...Option) *manager {
 	c := newController(config)
 	m := &manager{
 		wg: &sync.WaitGroup{},

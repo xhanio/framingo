@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -13,6 +14,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/info"
 	fmodel "github.com/xhanio/framingo/pkg/types/model"
+	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
@@ -81,4 +83,15 @@ func TestHelloWorldIncrementsCounter(t *testing.T) {
 	total, found := testutil.SumInt64(rm, "example.hello.total")
 	require.True(t, found, "example.hello.total missing from the collected metrics")
 	assert.Equal(t, int64(2), total)
+}
+
+// Init reads the greeting under the service's config root - its package
+// name, example, since the service carries no WithName.
+func TestInitReadsGreetingUnderRoot(t *testing.T) {
+	_, provider := testutil.NewMeterRecorder()
+	m := newManager(testPlatform{meter: testutil.NewMeter(provider), mb: fakeMB{}}, fakeRepo{})
+	v := viper.New()
+	v.Set("example.greeting", "hi there")
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
+	assert.Equal(t, "hi there", m.greeting)
 }

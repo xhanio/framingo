@@ -44,7 +44,7 @@ func setupDB(t *testing.T, opts ...db.Option) db.Manager {
 	v.Set("db.connection.max_open", 1)
 	v.Set("db.connection.max_idle", 1)
 	v.Set("db.connection.exec_timeout", 2*time.Second)
-	ctx := confutil.WrapContext(context.Background(), v)
+	ctx := confutil.WrapContext(context.Background(), confutil.New(v))
 
 	mgr := db.New(append([]db.Option{
 		db.WithType(db.SQLite),

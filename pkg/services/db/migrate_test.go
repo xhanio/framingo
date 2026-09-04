@@ -35,7 +35,7 @@ func newMigratedMgr(t *testing.T, sqlDir string, version uint) (db.Manager, erro
 	v := viper.New()
 	v.Set("db.connection.max_open", 1)
 	v.Set("db.connection.max_idle", 1)
-	ctx := confutil.WrapContext(context.Background(), v)
+	ctx := confutil.WrapContext(context.Background(), confutil.New(v))
 
 	mgr := db.New(
 		db.WithType(db.SQLite),

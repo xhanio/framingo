@@ -19,7 +19,7 @@ func enabledCtx(config map[string]any) context.Context {
 	if config != nil {
 		v.Set("metrics.config", config)
 	}
-	return confutil.WrapContext(context.Background(), v)
+	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
 func TestRegistersOTLPHTTPExporter(t *testing.T) {
