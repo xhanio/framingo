@@ -157,7 +157,7 @@ func (m *manager) initServices() error {
 	m.platform = platform.New(m.db, m.metrics, m.pubsub, m.messagebus)
 
 	m.repository = repository.New(
-		m.db,
+		m.platform,
 		repository.WithLogger(m.log),
 	)
 

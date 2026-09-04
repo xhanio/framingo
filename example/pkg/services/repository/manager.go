@@ -15,12 +15,13 @@ type manager struct {
 	db   model.Database
 }
 
-func New(db model.Database, opts ...Option) Repository {
-	return newManager(db, opts...)
+func New(platform Platform, opts ...Option) Repository {
+	return newManager(platform, opts...)
 }
 
-func newManager(db model.Database, opts ...Option) *manager {
-	m := &manager{db: db}
+// newManager returns the concrete manager, the form package tests construct.
+func newManager(platform Platform, opts ...Option) *manager {
+	m := &manager{db: platform.DB()}
 	m.applyOptions(opts...)
 	m.setDefaults()
 	m.log = m.log.By(m)

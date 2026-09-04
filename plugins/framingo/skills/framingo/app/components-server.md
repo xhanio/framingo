@@ -167,7 +167,7 @@ func (m *manager) initServices() error {
 	// combine the services business constructors consume
 	m.platform = platform.New(m.db, m.metrics, m.pubsub, m.messagebus)
 
-	m.repository = repository.New(m.db, repository.WithLogger(m.log))
+	m.repository = repository.New(m.platform, repository.WithLogger(m.log))
 
 	/* init system level services */
 

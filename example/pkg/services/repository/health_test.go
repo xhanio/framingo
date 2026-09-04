@@ -12,7 +12,16 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/model"
 )
+
+// testPlatform fakes the repository's narrow Platform view: the database
+// handle alone, instead of the app's whole bundle.
+type testPlatform struct {
+	db model.Database
+}
+
+func (p testPlatform) DB() model.Database { return p.db }
 
 // fakeDB implements model.Database over a hand-built *sql.DB whose
 // connector either hands out connections or refuses them, which is all
@@ -59,32 +68,32 @@ func newFakeDB(connectErr error) *fakeDB {
 }
 
 func TestReadyPingsDatabase(t *testing.T) {
-	m := newManager(newFakeDB(nil))
+	m := newManager(testPlatform{newFakeDB(nil)})
 	require.NoError(t, m.Ready(context.Background()))
 
-	m = newManager(newFakeDB(sql.ErrConnDone))
+	m = newManager(testPlatform{newFakeDB(sql.ErrConnDone)})
 	err := m.Ready(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ping")
 }
 
 func TestReadyWithoutHandle(t *testing.T) {
-	m := newManager(&fakeDB{db: nil})
+	m := newManager(testPlatform{&fakeDB{db: nil}})
 	require.Error(t, m.Ready(context.Background()))
 }
 
 func TestAliveChecksOwnWiringOnly(t *testing.T) {
 	// Wired: alive, trivially.
-	m := newManager(newFakeDB(nil))
+	m := newManager(testPlatform{newFakeDB(nil)})
 	require.NoError(t, m.Alive(context.Background()))
 
 	// An unreachable database must NOT fail liveness: the supervisor restarts
 	// a service whose Alive fails, and no repository restart fixes a database
 	// outage. That is Ready's story.
-	m = newManager(newFakeDB(sql.ErrConnDone))
+	m = newManager(testPlatform{newFakeDB(sql.ErrConnDone)})
 	assert.NoError(t, m.Alive(context.Background()))
 
 	// A missing handle is the repository's own wiring being broken.
-	m = newManager(&fakeDB{db: nil})
+	m = newManager(testPlatform{&fakeDB{db: nil}})
 	require.Error(t, m.Alive(context.Background()))
 }
