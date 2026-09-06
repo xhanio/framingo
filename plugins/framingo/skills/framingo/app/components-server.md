@@ -207,6 +207,12 @@ func (m *manager) initServices() error {
 			// mapping - no entry (the health listener) leaves it dormant
 			server.WithMiddlewares(tracemw.New(m.tracing), corsmw.New()),
 		}
+		// api.<name>.metrics: true measures this listener through the
+		// metrics service; the health listener carries no entry and stays
+		// unmeasured, like it stays untraced
+		if m.config.GetBool(fmt.Sprintf("api.%s.metrics", name)) {
+			opts = append(opts, server.WithMeter(m.metrics))
+		}
 		// Per-server middleware configs: a plain mapping of middleware name
 		// to its default config, re-marshaled to raw YAML for the server.
 		if mws := m.config.GetStringMap(fmt.Sprintf("api.%s.middlewares", name)); len(mws) > 0 {
@@ -260,7 +266,11 @@ Three details that matter:
   substituting a noop would silently swallow a wiring bug the way the
   fail-fast Init doctrine forbids. Every argument to `platform.New` is a
   service constructed a few lines above in `initServices`, so the
-  invariant stays checkable by eye.
+  invariant stays checkable by eye. The one deliberate exception is the
+  meter: metrics are auxiliary, so an app without a metrics service passes
+  nil and every consumer mints noop instruments — a configuration, not a
+  wiring bug. The functional handles (db, pubsub, messagebus) stay
+  never-nil.
 
 ## `lifecycle.go` — Registration Order in `Init()`
 

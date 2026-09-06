@@ -50,7 +50,11 @@ srvMgr := server.New(
 )
 
 // Step 1: Add named server instances (each gets its own echo.Echo)
-srvMgr.Add("http", server.WithEndpoint("0.0.0.0", 8080, "/"))
+srvMgr.Add("http", server.WithEndpoint("0.0.0.0", 8080, "/"),
+    // HTTP request metrics for this listener through the metrics service -
+    // see Metrics below; a listener without one records nothing
+    server.WithMeter(meter),
+)
 srvMgr.Add("admin", server.WithEndpoint("0.0.0.0", 9090, "/admin"),
     // Server-level middlewares run on every request, matched or not, in this
     // order — the position router.yaml cannot express, where an app's cors
@@ -375,6 +379,46 @@ Rules:
 - The example feeds this from `api.<name>.middlewares` in config.yaml (viper map → `yaml.Marshal` → `WithMiddlewareConfigs`); viper lowercases keys, so keep middleware names lowercase.
 
 CORS is app-side: the example ships `example/pkg/middlewares/cors`, attached server-level with `WithMiddlewares(cors.New())` because preflight requests match no route. `cors: true` (or a bare `cors:`) in this mapping activates it with echo's permissive defaults; an `api.CORSConfig` policy block (the example's own type) activates and tightens it — unknown fields fail startup, `allow_credentials` requires explicit `allow_origins` — and no entry leaves it dormant, so a server without one (the example's health listener) serves without it. Rate limiting is the same story at route scope: `example/pkg/middlewares/throttle`, attached through router.yaml with its limit per route via a config block or server-wide via this mapping.
+
+## Metrics
+
+`server.WithMeter(meter)` at `Add` turns on HTTP metrics for that listener
+alone: the server mints four semconv instruments from the handle once,
+scoped by the listener's name the way a service scopes its own (`metric.go`
+in both), and records every request it serves, matched or not, through a
+lifecycle built-in that sits outermost in the chain — outside recover, so a recovered
+panic still counts as the 500 it became, and bracketing the user slot, so
+the duration covers the whole chain.
+
+| Instrument | Kind | Unit |
+|---|---|---|
+| `http.server.request.duration` | histogram | s |
+| `http.server.active_requests` | up-down counter | {request} |
+| `http.server.request.body.size` | histogram | By |
+| `http.server.response.body.size` | histogram | By |
+
+Attributes on every record: `http.request.method` (the convention's set,
+`_OTHER` beyond it), `url.scheme`, `http.response.status_code`, and
+`api.server` (the instance's name, since one meter usually serves
+several listeners). `http.route` is the route template — one series per
+route, never the raw path — and is absent on an unmatched request.
+`error.type` carries the status code string on a 5xx only; a 4xx is the
+caller's mistake.
+
+Status and size come from the `api.ResponseInfo` the Info built-in writes,
+so they are the wrapped `ErrorBody`'s status when one was set and exactly
+what the request log prints. An unmatched route or a request a server-level
+middleware refused left no record; there the status is the returned error's
+(the error handler commits it only after the chain returns), else the
+committed response's.
+
+A listener without `WithMeter` records into noop instruments and nothing
+lands — the example's health listener, whose probe polls would otherwise
+dominate the series. The built-in is always in the chain; the meter is the
+only switch, checked once where the instruments are minted. The meter is deliberately **not** a dependency of the server: the
+metrics service has liveness only, and a collector outage or an
+unconfigured exporter must degrade metrics, never the listener. The example
+maps `api.<name>.metrics: true` onto the option ([config.md](config.md)).
 
 ## Error Response Format
 

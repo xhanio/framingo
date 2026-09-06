@@ -193,7 +193,7 @@ error. Requests matching no route still get a span under the fallback name
 
 The existing framingo tid (`X-TRACE-ID`, the `tid=` log column,
 `api.Context.TraceID()`) is untouched; the span records it as the
-**`framingo.trace_id`** attribute, which is the jump from a log line to its
+**`api.trace_id`** attribute, which is the jump from a log line to its
 trace.
 
 ### Dependency semantics — deliberately weak

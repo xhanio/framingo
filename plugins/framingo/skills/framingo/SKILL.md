@@ -123,7 +123,7 @@ Either route, the reference map above is the per-concept guide for the work insi
 |---|---|---|---|
 | Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` | [pkgs/supervisor.md](pkgs/supervisor.md) |
 | Database | `pkg/services/db` (+ `db/drivers/`, `db/plugins/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1`; per-statement spans via `otelgorm.New(tracer, tracing.WithoutQueryVariables())` (returns an error) → `db.WithPlugins(p)`; pass that option or bound values land in `db.query.text` | [pkgs/db.md](pkgs/db.md) |
-| HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware` | [pkgs/api.md](pkgs/api.md) |
+| HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware`; `server.WithMeter` turns on per-listener HTTP request metrics | [pkgs/api.md](pkgs/api.md) |
 | Handler request context | **project's own** `<project>/pkg/types/api` (unaliased `api`) | `api.Context` — use as the handler ctx instead of `echo.Context`; not a framingo type, you own it | [app/routers.md](app/routers.md) |
 | Middlewares | project `pkg/middlewares/<name>/` | `fapi.Middleware` — `Func(enabled bool, config []byte)` | [app/middlewares.md](app/middlewares.md) |
 | App wiring | project `pkg/components/{cmd,server,client}/` | the server daemon + CLI + SDK components | [app/components.md](app/components.md) and its `components-*.md` files |

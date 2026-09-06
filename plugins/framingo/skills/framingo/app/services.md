@@ -100,7 +100,7 @@ type manager struct {
 	cancel context.CancelFunc
 	wg     *sync.WaitGroup
 
-	instruments *instruments // built once at Init
+	inst *instruments // built once at Init
 }
 
 func New(platform platform.Platform, repo repository.Repository, opts ...Option) Manager {
@@ -186,10 +186,15 @@ bundle, never carried as nil ([components-server.md](components-server.md)).
 
 **Service metrics** (`metric.go`): instruments live in an `instruments` struct;
 the constructor stores the `model.Meter` handle and `Init` builds them,
-guarded by `if m.instruments == nil` — the provider behind
+guarded by `if m.inst == nil` — the provider behind
 `model.Meter` keeps one identity for the life of the process, so cached
 instruments survive service restarts and never need a rebuild. The service
-name is the instrumentation scope. Creation goes in `Init`, not the
+name is the instrumentation scope. The meter is **optional**: an app that
+wires no metrics service hands the bundle a nil one, and `newInstruments`
+then mints noop instruments, so the business path records the same way
+and nothing lands — the presence check happens once, where instruments
+are built, never where the work is. Metrics are auxiliary; their absence
+is a configuration, not a wiring fault. Creation goes in `Init`, not the
 constructor, because it can fail — and its failures (an invalid instrument
 name, a conflicting registration) are deterministic programmer errors, so
 failing `Init` surfaces them at first boot in dev/CI. That is different
@@ -260,12 +265,12 @@ func (m *manager) Init(ctx context.Context) error {
 		WithDynamicConfig(config.GetString("%s.greeting", root)),
 	)
 	m.setDefaults()
-	if m.instruments == nil {
-		instruments, err := m.newInstruments()
+	if m.inst == nil {
+		inst, err := m.newInstruments()
 		if err != nil {
 			return err
 		}
-		m.instruments = instruments
+		m.inst = inst
 	}
 	return nil
 }
@@ -378,7 +383,7 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 		UpdatedAt: ormModel.UpdatedAt,
 	}
 	m.mb.SendRawMessage(ctx, m, "helloworld", result) // no return value — fire and forget
-	m.instruments.hello.Add(ctx, 1)
+	m.inst.hello.Add(ctx, 1)
 	span.End()
 	return result, nil
 }
