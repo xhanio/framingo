@@ -1,8 +1,6 @@
 package server
 
 import (
-	"net/http"
-
 	"github.com/xhanio/errors"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
@@ -49,33 +47,4 @@ func (s *server) newInstruments() (*instruments, error) {
 		return nil, errors.Wrap(err)
 	}
 	return &inst, nil
-}
-
-// requestMethod maps the request method onto the convention's set; anything
-// outside it is _OTHER - the convention's guard against a client minting a
-// new series per made-up method.
-func requestMethod(method string) httpconv.RequestMethodAttr {
-	switch method {
-	case http.MethodConnect:
-		return httpconv.RequestMethodConnect
-	case http.MethodDelete:
-		return httpconv.RequestMethodDelete
-	case http.MethodGet:
-		return httpconv.RequestMethodGet
-	case http.MethodHead:
-		return httpconv.RequestMethodHead
-	case http.MethodOptions:
-		return httpconv.RequestMethodOptions
-	case http.MethodPatch:
-		return httpconv.RequestMethodPatch
-	case http.MethodPost:
-		return httpconv.RequestMethodPost
-	case http.MethodPut:
-		return httpconv.RequestMethodPut
-	case http.MethodTrace:
-		return httpconv.RequestMethodTrace
-	case "QUERY":
-		return httpconv.RequestMethodQuery
-	}
-	return httpconv.RequestMethodOther
 }

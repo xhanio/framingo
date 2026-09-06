@@ -13,6 +13,7 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/otelutil"
 )
 
 // middlewares holds the server's lifecycle middlewares - metrics, recover, logger,
@@ -118,7 +119,7 @@ func (mw *middlewares) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		start := time.Now()
 		r := c.Request()
-		method := requestMethod(r.Method)
+		method := otelutil.RequestMethod(r.Method)
 		scheme := "http"
 		if r.TLS != nil {
 			scheme = "https"

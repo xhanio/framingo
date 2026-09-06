@@ -28,6 +28,7 @@ import (
 	fapi "github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
+	"github.com/xhanio/framingo/pkg/utils/otelutil"
 )
 
 // tracerName is the instrumentation scope of the spans this middleware
@@ -93,7 +94,9 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 			ctx, span := m.tracer.Provider().Tracer(tracerName).Start(ctx, "HTTP "+r.Method,
 				oteltrace.WithSpanKind(oteltrace.SpanKindServer),
 				oteltrace.WithAttributes(
-					semconv.HTTPRequestMethodKey.String(r.Method),
+					// the convention's set or _OTHER, never the raw method - the same
+					// mapping the server's metrics use, so span and series agree
+					semconv.HTTPRequestMethodKey.String(string(otelutil.RequestMethod(r.Method))),
 					semconv.URLPath(r.URL.Path),
 					semconv.ClientAddress(c.RealIP()),
 				),
