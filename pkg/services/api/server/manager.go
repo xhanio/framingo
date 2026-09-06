@@ -71,6 +71,8 @@ func (m *manager) Name() string {
 	return m.name
 }
 
+// Dependencies is nil on purpose: the meter a listener carries is not one
+// - see WithMeter.
 func (m *manager) Dependencies() []common.Service {
 	return nil
 }
@@ -116,10 +118,11 @@ func (m *manager) buildEcho(s *server) error {
 	// outermost of all - it reads the finished record and records (into noop
 	// instruments when the listener has no meter), nothing in it can panic,
 	// and outside recover a recovered panic still counts as the 500 it
-	// became; then recover, because everything inside it - the user's middlewares most of
-	// all - may panic; then the user's server-level middlewares, in
-	// WithMiddlewares order; logger wrapping info, whose records it reads;
-	// error innermost, normalizing failures closest to the work.
+	// became; then recover, because everything inside it - the user's
+	// middlewares most of all - may panic; then the user's server-level
+	// middlewares, in WithMiddlewares order; logger wrapping info, whose
+	// records it reads; error innermost, normalizing failures closest to the
+	// work.
 	//
 	// The user slot sits where it does because the lifecycle trio admits no
 	// insertion: between logger and info a short-circuiting middleware would

@@ -3,6 +3,7 @@ package testutil
 import (
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/exemplar"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -39,7 +40,12 @@ func (m *Meter) Provider() metric.MeterProvider {
 // no flush, no sleep, no polling.
 func NewMeterRecorder() (*sdkmetric.ManualReader, *sdkmetric.MeterProvider) {
 	r := sdkmetric.NewManualReader()
-	return r, sdkmetric.NewMeterProvider(sdkmetric.WithReader(r))
+	// the exemplar filter is pinned to the SDK's default so a shell's
+	// OTEL_METRICS_EXEMPLAR_FILTER cannot change what a test sees
+	return r, sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(r),
+		sdkmetric.WithExemplarFilter(exemplar.TraceBasedFilter),
+	)
 }
 
 // SumInt64 digs the int64 Sum total of the named instrument out of one
@@ -70,7 +76,8 @@ func SumInt64(rm metricdata.ResourceMetrics, name string) (total int64, found bo
 // value type - float64 for a duration, int64 for a body size - and found
 // reports whether the instrument appeared with that name and shape at all:
 // assert on it, so an absent or mistyped metric fails the test instead of
-// reading as empty.
+// reading as empty. It reads the first scope carrying the name - one
+// emitter per reader is the shape these tests take.
 func Histogram[N int64 | float64](rm metricdata.ResourceMetrics, name string) ([]metricdata.HistogramDataPoint[N], bool) {
 	for _, sm := range rm.ScopeMetrics {
 		for _, met := range sm.Metrics {

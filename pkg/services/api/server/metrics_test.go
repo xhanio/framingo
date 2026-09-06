@@ -133,6 +133,7 @@ func TestMetrics_RecordsMatchedRequest(t *testing.T) {
 	pts := pointsWith(histogramPoints[float64](t, reader, "http.server.request.duration"),
 		attribute.String("http.request.method", "GET"),
 		attribute.String("url.scheme", "http"),
+		attribute.String("network.protocol.version", "1.1"),
 		status(200),
 		route("/ok"),
 		attribute.String("api.server", "http"),
@@ -150,6 +151,7 @@ func TestMetrics_RecordsMatchedRequest(t *testing.T) {
 // ErrorBody's, not the response's default - and a 5xx carries error.type.
 func TestMetrics_StatusFromErrorBody(t *testing.T) {
 	base, _, reader := startMeasuredServer(t)
+	httpDo(t, "GET", base+"/ok") // one sized response, so the size histogram exists to assert on
 	code, _ := httpDo(t, "GET", base+"/bad")
 	require.Equal(t, http.StatusBadRequest, code)
 	code, _ = httpDo(t, "GET", base+"/fail")
@@ -160,6 +162,9 @@ func TestMetrics_StatusFromErrorBody(t *testing.T) {
 	require.Len(t, bad, 1)
 	_, hasErrType := bad[0].Attributes.Value("error.type")
 	assert.False(t, hasErrType, "a 4xx is the caller's mistake, not an error.type")
+	// the error body is written after the chain returns, so it has no size
+	// point - rather than a zero that would skew the histogram
+	assert.Empty(t, pointsWith(histogramPoints[int64](t, reader, "http.server.response.body.size"), status(400)))
 
 	fail := pointsWith(pts, status(500), route("/fail"), attribute.String("error.type", "500"))
 	require.Len(t, fail, 1)
@@ -194,8 +199,8 @@ func TestMetrics_ActiveRequestsReturnToZero(t *testing.T) {
 }
 
 // A listener without a meter still gets instruments - noops - so the
-// Metrics built-in runs unchanged and nothing lands: the health listener's
-// case.
+// Metrics built-in has something to record into; that it runs on such a
+// listener is what every meterless server in manager_test.go exercises.
 func TestMetrics_WithoutMeterUsesNoopInstruments(t *testing.T) {
 	m := testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))

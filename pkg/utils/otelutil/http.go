@@ -2,6 +2,7 @@ package otelutil
 
 import (
 	"net/http"
+	"strconv"
 
 	"go.opentelemetry.io/otel/semconv/v1.43.0/httpconv"
 )
@@ -36,4 +37,15 @@ func RequestMethod(method string) httpconv.RequestMethodAttr {
 		return httpconv.RequestMethodQuery
 	}
 	return httpconv.RequestMethodOther
+}
+
+// ProtocolVersion is the network.protocol.version value for a request: "1.0"
+// or "1.1" for HTTP/1, and the bare major - "2", "3" - above it, the
+// convention's spelling rather than Go's "HTTP/2.0". Shared by the api
+// server's metrics and the trace middleware's span, like RequestMethod.
+func ProtocolVersion(r *http.Request) string {
+	if r.ProtoMajor == 1 {
+		return "1." + strconv.Itoa(r.ProtoMinor)
+	}
+	return strconv.Itoa(r.ProtoMajor)
 }

@@ -97,6 +97,7 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 					// the convention's set or _OTHER, never the raw method - the same
 					// mapping the server's metrics use, so span and series agree
 					semconv.HTTPRequestMethodKey.String(string(otelutil.RequestMethod(r.Method))),
+					semconv.NetworkProtocolVersion(otelutil.ProtocolVersion(r)),
 					semconv.URLPath(r.URL.Path),
 					semconv.ClientAddress(c.RealIP()),
 				),

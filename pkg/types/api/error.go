@@ -108,6 +108,14 @@ func StatusCode(err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
+	// the normalisation WrapError applies, so the status a metric or a span
+	// records agrees with the one the error handler commits
+	switch err {
+	case context.Canceled:
+		err = errors.Cancaled.Wrap(err)
+	case context.DeadlineExceeded:
+		err = errors.DeadlineExceeded.Wrap(err)
+	}
 	switch e := err.(type) {
 	case *ErrorBody:
 		return e.Status

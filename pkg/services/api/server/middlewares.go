@@ -114,7 +114,9 @@ func (mw *middlewares) Recover(next echo.HandlerFunc) echo.HandlerFunc {
 // refused left none; there the status is the returned error's, which the
 // error handler commits only after the chain returns, or the committed
 // response's. Duration is measured here, outermost, so it brackets the
-// whole chain.
+// whole chain. The response size is recorded only for a response the chain
+// itself wrote - an error body the error handler writes afterwards has no
+// size yet.
 func (mw *middlewares) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		start := time.Now()
@@ -143,6 +145,7 @@ func (mw *middlewares) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		attrs := []attribute.KeyValue{
 			inst.duration.AttrResponseStatusCode(status),
+			inst.duration.AttrNetworkProtocolVersion(otelutil.ProtocolVersion(r)),
 			attribute.String("api.server", mw.server.name),
 		}
 		if req, ok := c.Get(api.ContextKeyRequestInfo).(*api.RequestInfo); ok && req != nil {
@@ -159,7 +162,12 @@ func (mw *middlewares) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 		if r.ContentLength >= 0 {
 			inst.requestSize.Record(ctx, r.ContentLength, method, scheme, attrs...)
 		}
-		inst.responseSize.Record(ctx, size, method, scheme, attrs...)
+		// only a response the chain itself wrote has a size: an error body the
+		// error handler writes after the chain returns has none yet, and a zero
+		// would only skew the histogram
+		if c.Response().Committed {
+			inst.responseSize.Record(ctx, size, method, scheme, attrs...)
+		}
 		return err
 	}
 }
