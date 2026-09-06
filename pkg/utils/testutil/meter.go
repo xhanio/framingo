@@ -64,3 +64,25 @@ func SumInt64(rm metricdata.ResourceMetrics, name string) (total int64, found bo
 	}
 	return 0, false
 }
+
+// Histogram returns the histogram data points of the named instrument out
+// of one collected export, one per attribute set. N is the instrument's
+// value type - float64 for a duration, int64 for a body size - and found
+// reports whether the instrument appeared with that name and shape at all:
+// assert on it, so an absent or mistyped metric fails the test instead of
+// reading as empty.
+func Histogram[N int64 | float64](rm metricdata.ResourceMetrics, name string) ([]metricdata.HistogramDataPoint[N], bool) {
+	for _, sm := range rm.ScopeMetrics {
+		for _, met := range sm.Metrics {
+			if met.Name != name {
+				continue
+			}
+			h, ok := met.Data.(metricdata.Histogram[N])
+			if !ok {
+				return nil, false
+			}
+			return h.DataPoints, true
+		}
+	}
+	return nil, false
+}

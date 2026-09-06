@@ -112,11 +112,14 @@ func (m *manager) buildEcho(s *server) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse middleware configs for server %s", s.name)
 	}
-	// Each position in the chain is forced by a dependency: recover outermost,
-	// because everything inside it - the user's middlewares most of all - may
-	// panic; then the user's server-level middlewares, in WithMiddlewares
-	// order; logger wrapping info, whose records it reads; error innermost,
-	// normalizing failures closest to the work.
+	// Each position in the chain is forced by a dependency: metrics
+	// outermost of all - it reads the finished record and records (into noop
+	// instruments when the listener has no meter), nothing in it can panic,
+	// and outside recover a recovered panic still counts as the 500 it
+	// became; then recover, because everything inside it - the user's middlewares most of
+	// all - may panic; then the user's server-level middlewares, in
+	// WithMiddlewares order; logger wrapping info, whose records it reads;
+	// error innermost, normalizing failures closest to the work.
 	//
 	// The user slot sits where it does because the lifecycle trio admits no
 	// insertion: between logger and info a short-circuiting middleware would
@@ -128,7 +131,7 @@ func (m *manager) buildEcho(s *server) error {
 	// route. A request rejected in this slot still gets its error normalized
 	// and printed by the errorHandler fallback.
 	mw := newMiddleware(s)
-	funcs := []echo.MiddlewareFunc{mw.Recover}
+	funcs := []echo.MiddlewareFunc{mw.Metrics, mw.Recover}
 	// Server-level middlewares are standard api.Middlewares. WithMiddlewares
 	// declares the roster and its order; the server's middleware configs
 	// activate each entry - a name with no entry stays dormant, `name:` or
@@ -168,6 +171,13 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	if s.endpoint == nil {
 		return errors.Newf("server must have a valid endpoint")
 	}
+	// once per instance: the provider's identity never changes, so the
+	// rebuilt echo a restart performs keeps recording into the same series
+	inst, err := s.newInstruments()
+	if err != nil {
+		return errors.Wrapf(err, "server %s: failed to build metrics instruments", name)
+	}
+	s.inst = inst
 	if err := m.buildEcho(s); err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/xhanio/framingo/pkg/types/api"
+	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
@@ -66,6 +67,20 @@ func WithTLS(cert certutil.CertBundle, auth bool) ServerOption {
 	}
 }
 
+// WithMeter turns on the server's HTTP metrics - request duration, active
+// requests and body sizes, recorded through the given handle for every
+// request this server instance serves, matched or not. A server without
+// one records into noop instruments and nothing lands, which is how a
+// probe listener stays unmeasured next to a measured public server. The meter is deliberately not a dependency
+// of the api server: the metrics service has liveness only, and a
+// collector outage or an unconfigured exporter must degrade metrics, never
+// the listener.
+func WithMeter(meter model.Meter) ServerOption {
+	return func(s *server) {
+		s.meter = meter
+	}
+}
+
 // WithMiddlewares installs middlewares on the server itself, running on every
 // request - matched or not - inside the built-in recover but ahead of the
 // rest of the lifecycle, in the order given. This is the position router.yaml
@@ -98,7 +113,7 @@ func WithMiddlewares(mws ...api.Middleware) ServerOption {
 // For server-level middlewares (WithMiddlewares) this mapping is also the
 // activation: no entry leaves one dormant, a null or true entry enables it,
 // a block enables and configures, false switches it off. The lifecycle
-// built-ins (recover, logger, info, error) take no config and claim no
+// built-ins (metrics, recover, logger, info, error) take no config and claim no
 // names - every name here belongs to the app's middlewares. Invalid YAML
 // fails Add.
 func WithMiddlewareConfigs(defaults []byte) ServerOption {

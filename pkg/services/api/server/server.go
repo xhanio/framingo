@@ -10,6 +10,7 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/api"
+	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -27,6 +28,12 @@ type server struct {
 	middlewares       []api.Middleware
 	middlewareConfigs []byte
 	echo              *echo.Echo
+
+	// meter is the handle WithMeter gave this instance, nil when none was;
+	// inst are the instruments Add minted - noops without a meter, so the
+	// Metrics built-in never checks.
+	meter model.Meter
+	inst  *instruments
 
 	groups   map[handlerKey]*handlerGroupConfig
 	handlers map[handlerKey]*handlerConfig

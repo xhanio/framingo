@@ -225,6 +225,13 @@ func (m *manager) initServices() error {
 				corsmw.New(),
 			),
 		}
+		// api.<name>.metrics: true measures this listener - request
+		// duration, active requests and body sizes through the metrics
+		// service, for every request matched or not. The health listener
+		// carries no entry and stays unmeasured, like it stays untraced.
+		if m.config.GetBool(fmt.Sprintf("api.%s.metrics", name)) {
+			opts = append(opts, server.WithMeter(m.metrics))
+		}
 		// Per-server middleware configs: a plain mapping of middleware name to
 		// its default config, unordered - order only matters in router.yaml,
 		// where attachment lives. Each block reaches its middleware wherever
