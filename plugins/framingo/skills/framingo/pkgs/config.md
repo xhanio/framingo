@@ -63,9 +63,6 @@ api:
     host: 0.0.0.0
     port: 8080
     prefix: /api/v1           # server endpoint path
-    metrics: true             # HTTP request metrics for this listener through
-                              # the metrics service (server.WithMeter); no entry
-                              # (see the health server) leaves it unmeasured
     middlewares:              # optional: per-middleware default configs - a
       trace: true             # plain mapping, unordered; each block reaches
       cors: true              # its middleware wherever nothing more specific
@@ -113,7 +110,6 @@ pprof:
 - `api.*` is iterated as a string map — each top-level key under `api` becomes a named server instance
 - TLS is enabled per-server when `api.<name>.cert` is set
 - `api.<name>.middlewares` is passed to `server.WithMiddlewareConfigs` as each middleware's per-server default config; a router.yaml entry carrying its own block still wins (handler over group over server). Server-level middlewares (`WithMiddlewares`) are activated by the same mapping — an entry enables (`cors: true`, `cors:`, or a policy block), no entry leaves one dormant, and booleans anywhere in the mapping are switches, not config, arriving as `Func`'s `enabled` argument; the lifecycle built-ins take no config and claim no names. Names in this mapping are matched exactly and a typo'd one silently configures nothing (unlike router.yaml refs, which fail registration); viper lowercases keys, so keep middleware names lowercase. YAML 1.1 truthiness applies — `cors: yes`/`on` enable it too
-- `api.<name>.metrics: true` hands the listener the metrics service through `server.WithMeter`, turning on the server's HTTP instruments for that listener alone ([api.md](api.md) "Metrics"); it is a sibling of `host` and `cert`, not a middleware name
 - Custom service config keys are accessed in `Init(ctx)` via `confutil.FromContext(ctx).GetString("%s.key", nameutil.ConfigRoot(m.name))` — a format string, so the root follows the service's name (see [app/services.md](../app/services.md))
 - Pubsub, messagebus, and planner services are configured entirely via functional options, not YAML keys
 - `tracing.*` keys (or `<name>.*` for a `WithName`d instance) are read dynamically in `tracing.Manager.Init(ctx)` — a set key wins over the constructed options and stays sticky across restarts until overridden. Per-server activation is the standard middleware mapping: `trace: true` under `api.<name>.middlewares` enables the framework's tracing middleware on that server ([tracing.md](tracing.md))

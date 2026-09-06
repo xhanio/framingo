@@ -206,12 +206,10 @@ func (m *manager) initServices() error {
 			// each activates per server via the api.<name>.middlewares
 			// mapping - no entry (the health listener) leaves it dormant
 			server.WithMiddlewares(tracemw.New(m.tracing), corsmw.New()),
-		}
-		// api.<name>.metrics: true measures this listener through the
-		// metrics service; the health listener carries no entry and stays
-		// unmeasured, like it stays untraced
-		if m.config.GetBool(fmt.Sprintf("api.%s.metrics", name)) {
-			opts = append(opts, server.WithMeter(m.metrics))
+			// every listener records HTTP metrics through the metrics service;
+			// metrics.enabled is the only switch - probe polls land in the
+			// health listener's own series
+			server.WithMeter(m.metrics),
 		}
 		// Per-server middleware configs: a plain mapping of middleware name
 		// to its default config, re-marshaled to raw YAML for the server.

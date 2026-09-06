@@ -70,8 +70,9 @@ func WithTLS(cert certutil.CertBundle, auth bool) ServerOption {
 // WithMeter turns on the server's HTTP metrics - request duration, active
 // requests and body sizes, recorded through the given handle for every
 // request this server instance serves, matched or not. A server without
-// one records into noop instruments and nothing lands, which is how a
-// probe listener stays unmeasured next to a measured public server. The meter is deliberately not a dependency
+// one records into noop instruments and nothing lands - the case for an app
+// that wires no metrics service; with one, the metrics service's own
+// enabled switch decides what exports. The meter is deliberately not a dependency
 // of the api server: the metrics service has liveness only, and a
 // collector outage or an unconfigured exporter must degrade metrics, never
 // the listener.
