@@ -69,7 +69,7 @@ func (m *middleware) Dependencies() []common.Service {
 // pushes it into the request context - which the app's api.Context bridges to
 // every handler and service call - and once the chain has resolved the route,
 // renames the span to the low-cardinality route template with the framingo
-// tid attached as framingo.trace_id for log<->trace correlation. Provider()
+// tid attached as api.trace_id for log<->trace correlation. Provider()
 // is resolved per request on purpose: a tracing-service restart swaps
 // providers without a server rebuild. On the error path the response status
 // comes from the wrapped ErrorBody, because echo's HTTPErrorHandler only
@@ -108,7 +108,7 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 				span.SetName(req.Method + " " + req.RawPath)
 				span.SetAttributes(
 					semconv.HTTPRoute(req.RawPath),
-					attribute.String("framingo.trace_id", req.TraceID),
+					attribute.String("api.trace_id", req.TraceID),
 				)
 			}
 			ae, _ := c.Get(fapi.ContextKeyError).(*fapi.ErrorBody)

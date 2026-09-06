@@ -217,7 +217,7 @@ func TestMatchedRouteSpan(t *testing.T) {
 	if v, ok := attrValue(span.Attributes, "http.response.status_code"); assert.True(t, ok) {
 		assert.EqualValues(t, http.StatusOK, v.AsInt64())
 	}
-	if v, ok := attrValue(span.Attributes, "framingo.trace_id"); assert.True(t, ok) {
+	if v, ok := attrValue(span.Attributes, "api.trace_id"); assert.True(t, ok) {
 		assert.NotEmpty(t, v.AsString())
 	}
 	assert.NotEqual(t, codes.Error, span.Status.Code)
