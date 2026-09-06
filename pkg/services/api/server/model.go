@@ -24,5 +24,7 @@ type Manager interface {
 	List() []Server
 	RegisterRouters(routers ...api.Router) error
 	RegisterMiddlewares(middlewares ...api.Middleware) error
+	// Add creates the named server instance; a name already added is a
+	// Conflict rather than a silent replacement.
 	Add(name string, opts ...ServerOption) error
 }

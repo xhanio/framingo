@@ -161,6 +161,11 @@ func (m *manager) buildEcho(s *server) error {
 
 // Add adds a new echo server instance with the given configuration
 func (m *manager) Add(name string, opts ...ServerOption) error {
+	// a second Add under one name would silently replace a listener that may
+	// already be serving - the same Conflict RegisterMiddlewares raises
+	if _, exists := m.servers[name]; exists {
+		return errors.Conflict.Newf("server %s already added", name)
+	}
 	s := &server{
 		name:     name,
 		log:      m.log,

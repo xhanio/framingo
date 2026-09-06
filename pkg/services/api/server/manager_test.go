@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xhanio/errors"
 	"gopkg.in/yaml.v3"
 
 	"github.com/xhanio/framingo/pkg/types/api"
@@ -1146,4 +1147,15 @@ handlers:
 		require.NoError(t, yaml.Unmarshal(raw, &cfg), "config %d", i)
 		assert.Equal(t, map[string]string{"scope": "server"}, cfg, "config %d", i)
 	}
+}
+
+// A name already added is a Conflict, never a silent replacement of a
+// listener that may already be serving.
+func TestAdd_RejectsDuplicateName(t *testing.T) {
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
+	err := m.Add("http", WithEndpoint("127.0.0.1", 8081, "/"))
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errors.Conflict), "expected Conflict, got %v", err)
+	assert.EqualValues(t, 8080, m.servers["http"].endpoint.Port, "the first instance must survive")
 }
