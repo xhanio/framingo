@@ -100,7 +100,7 @@ type manager struct {
 	cancel context.CancelFunc
 	wg     *sync.WaitGroup
 
-	metrics *metrics // cached instruments, built once at Init
+	instruments *instruments // built once at Init
 }
 
 func New(platform platform.Platform, repo repository.Repository, opts ...Option) Manager {
@@ -184,9 +184,9 @@ ever *live* ones: the bundle is combined per app from services the wiring
 layer actually constructed, so a handle the app lacks is removed from the
 bundle, never carried as nil ([components-server.md](components-server.md)).
 
-**Service metrics** (`metric.go`): instruments live in a `metrics` struct;
-the constructor stores the `model.Meter` handle and `Init` builds the
-instruments, guarded by `if m.metrics == nil` — the provider behind
+**Service metrics** (`metric.go`): instruments live in an `instruments` struct;
+the constructor stores the `model.Meter` handle and `Init` builds them,
+guarded by `if m.instruments == nil` — the provider behind
 `model.Meter` keeps one identity for the life of the process, so cached
 instruments survive service restarts and never need a rebuild. The service
 name is the instrumentation scope. Creation goes in `Init`, not the
@@ -260,12 +260,12 @@ func (m *manager) Init(ctx context.Context) error {
 		WithDynamicConfig(config.GetString("%s.greeting", root)),
 	)
 	m.setDefaults()
-	if m.metrics == nil {
-		metrics, err := m.newMetrics()
+	if m.instruments == nil {
+		instruments, err := m.newInstruments()
 		if err != nil {
 			return err
 		}
-		m.metrics = metrics
+		m.instruments = instruments
 	}
 	return nil
 }
@@ -378,7 +378,7 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 		UpdatedAt: ormModel.UpdatedAt,
 	}
 	m.mb.SendRawMessage(ctx, m, "helloworld", result) // no return value — fire and forget
-	m.metrics.hello.Add(ctx, 1)
+	m.instruments.hello.Add(ctx, 1)
 	span.End()
 	return result, nil
 }

@@ -147,7 +147,7 @@ Business services never import this package: they consume `model.Meter`
 through the app's `platform.Platform` bundle, build their instruments once in `Init`
 (where failure is a first-boot error — an invalid instrument name is a
 deterministic programmer mistake, not a runtime condition), cache them in
-a `metrics` struct, and record with the service name as the
+an `instruments` struct, and record with the service name as the
 instrumentation scope. The full pattern with code is in
 [../app/services.md](../app/services.md) "Service metrics".
 
