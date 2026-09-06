@@ -182,7 +182,8 @@ whatever the service never calls. Getters return `model.*` handles
 (`fmodel.Meter`, `fmodel.MessageBus`), never concrete managers — and only
 ever *live* ones: the bundle is combined per app from services the wiring
 layer actually constructed, so a handle the app lacks is removed from the
-bundle, never carried as nil ([components-server.md](components-server.md)).
+bundle, never carried as nil — the meter excepted, see Service metrics
+below ([components-server.md](components-server.md)).
 
 **Service metrics** (`metric.go`): instruments live in an `instruments` struct;
 the constructor stores the `model.Meter` handle and `Init` builds them,

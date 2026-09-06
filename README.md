@@ -774,7 +774,7 @@ func (r *router) Handlers() map[string]any {
 ### Middleware Pipeline
 
 ```
-Request → Recover → [CORS] → [server-level] → Logger → Info → Error → custom (auth, throttle, deflate, …) → Handler → Response
+Request → Metrics → Recover → [CORS] → [server-level] → Logger → Info → Error → custom (auth, throttle, deflate, …) → Handler → Response
 ```
 
 The server ships its built-ins in a fixed order — five plain lifecycle functions (metrics, recover, logger, info, error) that take no config, plus cors, a standard `api.Middleware` configured through the server's middleware configs under its own name. Each position is forced by a dependency: metrics outermost of all, recording into noop instruments unless the listener was given `server.WithMeter`, since it only reads the finished record and must count a recovered panic as the 500 it became; recover next, since everything inside it may panic; cors next, answering preflight requests — which match no route, so no route-attached middleware could — before any user code; server-level middlewares from `WithMiddlewares` after cors but ahead of info, so they run on every request, matched or not; logger wrapping info, whose records it reads; error innermost. CORS declines attachment until configured — `cors: true` for echo's permissive development defaults, a policy block (`allow_origins`/`allow_methods`/`allow_headers`/`allow_credentials`/`max_age`) to tighten, `false` or absent to stay off; declining by returning no function is part of the `Func` contract, not a special case. Rate limiting stays an app concern: the example ships it as a user middleware (`example/pkg/middlewares/throttle`).
@@ -839,9 +839,8 @@ api:
     host: 0.0.0.0
     port: 8080
     prefix: /api/v1
-    metrics: true           # HTTP request metrics for this listener (server.WithMeter)
     middlewares:            # per-middleware default configs, by name
-      cors: true            # the server's built-in CORS
+      cors: true            # the example's server-level cors middleware
       throttle:             # the example's throttle middleware
         rps: 100.0
         burst_size: 200

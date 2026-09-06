@@ -49,10 +49,10 @@ srvMgr := server.New(
     server.WithDebug(true),
 )
 
-// Step 1: Add named server instances (each gets its own echo.Echo)
+// Step 1: Add named server instances (each gets its own echo.Echo); a name
+// added twice is a Conflict, never a silent replacement
 srvMgr.Add("http", server.WithEndpoint("0.0.0.0", 8080, "/"),
-    // HTTP request metrics for this listener through the metrics service -
-    // see Metrics below; a listener without one records nothing
+    // HTTP request metrics through the metrics service - see Metrics below
     server.WithMeter(meter),
 )
 srvMgr.Add("admin", server.WithEndpoint("0.0.0.0", 9090, "/admin"),
@@ -341,9 +341,9 @@ Middlewares are registered by name via `RegisterMiddlewares()`. The YAML config 
 3. If any referenced middleware name is not found, registration fails with `NotImplemented` error
 
 Built-in server middlewares (applied to all routes automatically):
-`Request → Recover → [server-level via WithMiddlewares, in order] → Logger → Info → Error → [Route middlewares] → Handler → Response`
+`Request → Metrics → Recover → [server-level via WithMiddlewares, in order] → Logger → Info → Error → [Route middlewares] → Handler → Response`
 
-Recover, Logger, Info and Error are plain lifecycle functions — no config, no names; every name in the middleware configs belongs to the app. The `WithMiddlewares` additions are standard `api.Middleware`s — the roster and its order are code, and the server's middleware configs activate each entry (no entry leaves one dormant); returning no function from `Func` declines attachment. Recover sits outermost so even a panicking server-level middleware yields a structured error, and the server-level slot runs ahead of Info so it sees every request, matched or not — which is why an app's cors middleware belongs there (the example ships one: preflight `OPTIONS` match no route, so no route-attached middleware could answer them; a server whose mapping has no `cors` entry serves without it), and why the framework's `trace` middleware ([tracing.md](tracing.md)) does too — listed first in the roster so its span covers the middlewares behind it.
+Metrics, Recover, Logger, Info and Error are plain lifecycle functions — no config, no names; every name in the middleware configs belongs to the app. The `WithMiddlewares` additions are standard `api.Middleware`s — the roster and its order are code, and the server's middleware configs activate each entry (no entry leaves one dormant); returning no function from `Func` declines attachment. Metrics sits outermost, then Recover, so even a panicking server-level middleware yields a structured error that the metrics still count as the 500 it became, and the server-level slot runs ahead of Info so it sees every request, matched or not — which is why an app's cors middleware belongs there (the example ships one: preflight `OPTIONS` match no route, so no route-attached middleware could answer them; a server whose mapping has no `cors` entry serves without it), and why the framework's `trace` middleware ([tracing.md](tracing.md)) does too — listed first in the roster so its span covers the middlewares behind it.
 
 A router.yaml middleware entry is a bare name or a single-key map carrying that middleware's config for the route:
 
@@ -382,8 +382,8 @@ CORS is app-side: the example ships `example/pkg/middlewares/cors`, attached ser
 
 ## Metrics
 
-`server.WithMeter(meter)` at `Add` turns on HTTP metrics for that listener
-alone: the server mints four semconv instruments from the handle once,
+`server.WithMeter(meter)` at `Add` turns on HTTP metrics for that listener:
+the server mints four semconv instruments from the handle once,
 scoped by the listener's name the way a service scopes its own (`metric.go`
 in both), and records every request it serves, matched or not, through a
 lifecycle built-in that sits outermost in the chain — outside recover, so a recovered
@@ -398,8 +398,8 @@ the duration covers the whole chain.
 | `http.server.response.body.size` | histogram | By |
 
 Attributes on every record: `http.request.method` (the convention's set,
-`_OTHER` beyond it), `url.scheme`, `http.response.status_code`, and
-`api.server` (the instance's name, since one meter usually serves
+`_OTHER` beyond it), `url.scheme`, `network.protocol.version` (`1.1`, `2`),
+`http.response.status_code`, and `api.server` (the instance's name, since one meter usually serves
 several listeners). `http.route` is the route template — one series per
 route, never the raw path — and is absent on an unmatched request.
 `error.type` carries the status code string on a 5xx only; a 4xx is the
@@ -410,15 +410,20 @@ so they are the wrapped `ErrorBody`'s status when one was set and exactly
 what the request log prints. An unmatched route or a request a server-level
 middleware refused left no record; there the status is the returned error's
 (the error handler commits it only after the chain returns), else the
-committed response's.
+committed response's. The response size is recorded only for a response the
+chain itself wrote: an error body the error handler writes after the chain
+returns has no size yet, so those responses carry no size point rather than
+a zero.
 
-A listener without `WithMeter` records into noop instruments and nothing
-lands — the example's health listener, whose probe polls would otherwise
-dominate the series. The built-in is always in the chain; the meter is the
-only switch, checked once where the instruments are minted. The meter is deliberately **not** a dependency of the server: the
-metrics service has liveness only, and a collector outage or an
-unconfigured exporter must degrade metrics, never the listener. The example
-maps `api.<name>.metrics: true` onto the option ([config.md](config.md)).
+The built-in is always in the chain. A listener without `WithMeter` records
+into noop instruments and nothing lands — the case for an app that wires no
+metrics service. The example hands every listener its meter, the health
+listener included: series are keyed by `api.server` and `http.route`, so
+probe polls land in their own and never distort the public listener's, and
+the metrics service's `enabled` is the switch that matters. The meter is
+deliberately **not** a dependency of the server: the metrics service has
+liveness only, and a collector outage or an unconfigured exporter must
+degrade metrics, never the listener.
 
 ## Error Response Format
 

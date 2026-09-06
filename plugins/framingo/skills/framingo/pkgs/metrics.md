@@ -163,9 +163,11 @@ recorded values, `pkg/utils/testutil` supplies `NewMeterRecorder()` (a
 `Collect`, assert; no flush, no sleep), `NewMeter(p)` (a bare
 `model.Meter` serving that provider; deliberately no `Swap` counterpart
 to testutil.Tracer's, since the production service never swaps
-providers), and `SumInt64(rm, name)` (a counter's total out of one
+providers), `SumInt64(rm, name)` (a counter's total out of one
 collected export — assert on its `found` so a mistyped name fails the
-test instead of reading zero).
+test instead of reading zero), and `Histogram[N](rm, name)` (a
+histogram's data points, `float64` for a duration, `int64` for a size,
+with the same `found`).
 
 ## Framework-Emitted Metrics
 
@@ -173,8 +175,9 @@ The api server records HTTP request metrics for every listener given
 `server.WithMeter(meter)` — request duration, active requests and body
 sizes, semconv-named, attributed with method, scheme, status, route
 template and the listener's name — through a lifecycle built-in that reads
-the same record the request log prints. It is per listener on purpose: the
-health listener stays unmeasured. The meter is not a dependency of the
+the same record the request log prints. The example hands it to every
+listener; series are keyed by listener and route, so probe polls stay in
+their own. The meter is not a dependency of the
 server, for the reason above: telemetry must never fail the listener.
 Details in [api.md](api.md) "Metrics".
 
