@@ -86,3 +86,15 @@ func TestInitReadsGreetingUnderRoot(t *testing.T) {
 	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
 	assert.Equal(t, "hi there", m.greeting)
 }
+
+// The meter is optional: a service given none still initialises, and its
+// business path records into noop instruments rather than nil-checking.
+func TestHelloWorldWithoutMeter(t *testing.T) {
+	m := newManager(platform.New(nil, nil, nil, fakeMB{}), fakeRepo{})
+	require.NoError(t, m.Init(context.Background()))
+
+	//nolint:staticcheck // SA1029: intentional, the api context keys are shared with echo's string-keyed store
+	ctx := context.WithValue(context.Background(), api.ContextKeyCredential, &entity.Credential{UserName: "tester"})
+	_, err := m.HelloWorld(ctx, "hi")
+	require.NoError(t, err)
+}

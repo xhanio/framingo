@@ -16,12 +16,12 @@ func (m *manager) Init(ctx context.Context) error {
 		WithDynamicConfig(config.GetString("%s.greeting", root)),
 	)
 	m.setDefaults()
-	if m.instruments == nil {
-		instruments, err := m.newInstruments()
+	if m.inst == nil {
+		inst, err := m.newInstruments()
 		if err != nil {
 			return err
 		}
-		m.instruments = instruments
+		m.inst = inst
 	}
 	return nil
 }

@@ -38,7 +38,7 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 		UpdatedAt: ormModel.UpdatedAt,
 	}
 	m.mb.SendRawMessage(ctx, m, "helloworld", result)
-	m.instruments.hello.Add(ctx, 1)
+	m.inst.hello.Add(ctx, 1)
 	span.End()
 	return result, nil
 }
