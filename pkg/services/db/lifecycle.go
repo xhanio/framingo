@@ -57,8 +57,9 @@ func (m *manager) Info(w io.Writer, debug bool) {
 		t.Object(m.migration)
 		t.NewLine()
 	}
-	stats := m.sqlDB.Stats()
-	t.Object(stats)
+	if m.sqlDB != nil {
+		t.Object(m.sqlDB.Stats())
+	}
 	t.NewLine()
 	t.Flush()
 }
