@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/xhanio/errors"
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func NewBashJob(caller string, metadata labels.Set, bin string, params []string) job.Job {
-	return job.New(fmt.Sprintf("system.bash.%s", time.Now().Format(time.RFC3339)), func(ctx job.Context) error {
+	return job.New(fmt.Sprintf("system.bash.%s.%s", time.Now().Format(time.RFC3339), uuid.NewString()), func(ctx job.Context) error {
 		cmd := cmdutil.New(bin, params,
 			cmdutil.WithContext(ctx.Context()),
 		)
@@ -29,7 +30,7 @@ func NewBashJob(caller string, metadata labels.Set, bin string, params []string)
 
 // TODO
 func NewAsyncBashJob(caller string, metadata labels.Set, bin string, params []string) job.Job {
-	return job.New(fmt.Sprintf("system.bash_async.%s", time.Now().Format(time.RFC3339)), func(ctx job.Context) error {
+	return job.New(fmt.Sprintf("system.bash_async.%s.%s", time.Now().Format(time.RFC3339), uuid.NewString()), func(ctx job.Context) error {
 		cmd := cmdutil.New(bin, params,
 			cmdutil.WithContext(ctx.Context()),
 			cmdutil.Async(),

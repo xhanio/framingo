@@ -32,9 +32,10 @@ type manager struct {
 
 	concurrent int
 	workers    chan struct{}
-	el         *sync.RWMutex   // lock for executing
+	el         *sync.RWMutex   // lock for registered and running
 	ew         *sync.WaitGroup // wait group for executing
-	executing  map[string]executor.Executor
+	registered map[string]*registration
+	running    map[*Task]executor.Executor
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -47,12 +48,13 @@ func New(opts ...Option) Manager {
 
 func newScheduler(opts ...Option) *manager {
 	m := &manager{
-		cl:        &sync.RWMutex{},
-		crons:     make(map[string]cron.EntryID),
-		el:        &sync.RWMutex{},
-		ew:        &sync.WaitGroup{},
-		executing: make(map[string]executor.Executor),
-		wg:        &sync.WaitGroup{},
+		cl:         &sync.RWMutex{},
+		crons:      make(map[string]cron.EntryID),
+		el:         &sync.RWMutex{},
+		ew:         &sync.WaitGroup{},
+		registered: make(map[string]*registration),
+		running:    make(map[*Task]executor.Executor),
+		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
@@ -76,16 +78,25 @@ func (m *manager) Dependencies() []common.Service {
 
 func (m *manager) Add(tasks ...*Task) error {
 	for _, t := range tasks {
-		key := t.Key()
+		key := t.ID()
 		if key == "" {
 			continue
 		}
+		m.el.Lock()
+		if _, ok := m.registered[key]; ok {
+			m.el.Unlock()
+			return errors.Conflict.Newf("task %s already added", key)
+		}
+		reg := &registration{task: t, exec: newExecutor(t)}
+		m.registered[key] = reg
+		m.el.Unlock()
 		if t.Schedule != "" {
 			// scheduled by cron
 			cronID, err := m.cm.AddFunc(t.Schedule, func() {
 				m.pq.Push(t)
 			})
 			if err != nil {
+				m.unregister(reg)
 				return errors.Wrap(err)
 			}
 			m.cl.Lock()
@@ -101,7 +112,7 @@ func (m *manager) Add(tasks ...*Task) error {
 
 func (m *manager) Remove(tasks ...*Task) {
 	for _, t := range tasks {
-		key := t.Key()
+		key := t.ID()
 		if key == "" {
 			continue
 		}
@@ -113,6 +124,11 @@ func (m *manager) Remove(tasks ...*Task) {
 			}
 			m.cl.Unlock()
 		}
+		m.el.Lock()
+		if reg, ok := m.registered[key]; ok && reg.task == t {
+			delete(m.registered, key)
+		}
+		m.el.Unlock()
 		t.Job.Cancel()
 		m.pq.Remove(t) // try removing anyway since task could be executing already
 	}
@@ -140,12 +156,15 @@ func (m *manager) Start(ctx context.Context) error {
 				continue
 			}
 			if task.Exclusive {
-				m.log.Debugf("task %s wait for all other tasks to complete...", task.Key())
+				m.log.Debugf("task %s wait for all other tasks to complete...", task.ID())
 				m.ew.Wait()
-				m.log.Debugf("continue on current exclusive task %s...", task.Key())
+				m.log.Debugf("continue on current exclusive task %s...", task.ID())
 			}
+			// before the handoff: a quick worker may call Done as soon as it receives
+			m.ew.Add(1)
 			select {
 			case <-m.ctx.Done():
+				m.ew.Done()
 				// Close only pipe: this goroutine is its sole sender, so
 				// closing here cannot race a send, and workers reading it get
 				// a nil task that IsValid() rejects.
@@ -161,11 +180,10 @@ func (m *manager) Start(ctx context.Context) error {
 				m.log.Infof("stopped fetching execution tasks")
 				return
 			case m.pipe <- task:
-				m.ew.Add(1)
 			}
 			if task.Exclusive {
 				// block all other tasks from being popped
-				m.log.Debugf("wait for current exclusive task %s to complete...", task.Key())
+				m.log.Debugf("wait for current exclusive task %s to complete...", task.ID())
 				m.ew.Wait()
 				m.log.Debug("continue popping other tasks...")
 			}
@@ -188,45 +206,54 @@ func (m *manager) Start(ctx context.Context) error {
 				// push a task with a nil task to unblock m.pq.Pop() and enter the exiting loop above
 				m.pq.Push(exiting)
 				// cancel all currently executing tasks
-				m.el.RLock()
-				defer m.el.RUnlock()
-				for _, te := range m.executing {
+				m.el.Lock()
+				defer m.el.Unlock()
+				for _, te := range m.running {
 					_ = te.Stop(false)
 				}
+				clear(m.registered)
 				m.log.Infof("stopped executing tasks")
 				return
 			case m.workers <- struct{}{}:
 				go func() {
-					task := <-m.pipe
+					task, ok := <-m.pipe
 					defer func() {
 						<-m.workers
 					}()
-					if !task.IsValid() {
+					if !ok {
 						return
 					}
-					defer func(task *Task) {
+					if !task.IsValid() {
+						m.ew.Done()
+						return
+					}
+					key := task.ID()
+					m.log.Debugf("task %s received", key)
+					m.el.Lock()
+					reg, registered := m.registered[key]
+					_, busy := m.running[task]
+					if !registered || reg.task != task || busy {
+						m.el.Unlock()
+						m.ew.Done()
+						m.log.Debugf("task %s skipped: removed, or previous execution still in progress", key)
+						return
+					}
+					m.running[task] = reg.exec
+					m.el.Unlock()
+					defer func() {
+						if task.Schedule == "" {
+							m.unregister(reg)
+						}
 						m.el.Lock()
-						delete(m.executing, task.Key())
+						delete(m.running, task)
 						m.el.Unlock()
 						m.ew.Done() // unblock task queue before releasing the worker
-					}(task)
-					m.log.Debugf("task %s received", task.Key())
-					var opts []executor.Option
-					if task.Once {
-						opts = append(opts, executor.Once())
-					}
-					opts = append(opts, executor.WithTimeout(task.Timeout))
-					opts = append(opts, executor.WithRetry(task.RetryAttempts, task.RetryDelay))
-					opts = append(opts, executor.WithCooldown(task.Cooldown))
-					te := executor.New(task.Job, opts...)
-					m.el.Lock()
-					m.executing[task.Key()] = te
-					m.el.Unlock()
-					err := te.Start(task.Ctx, task.Params)
+					}()
+					err := reg.exec.Start(task.Ctx, task.Params)
 					if err != nil {
-						m.log.Debugf("task %s ended with err: %s", task.Key(), err)
+						m.log.Debugf("task %s ended with err: %s", task.ID(), err)
 					} else {
-						m.log.Debugf("task %s completed successfully", task.Key())
+						m.log.Debugf("task %s completed successfully", task.ID())
 					}
 				}()
 			}
@@ -250,8 +277,40 @@ func (m *manager) Stop(wait bool) error {
 func (m *manager) Stats(id string) *executor.Stats {
 	m.el.RLock()
 	defer m.el.RUnlock()
-	if te, ok := m.executing[id]; ok {
-		return te.Stats()
+	reg, ok := m.registered[id]
+	if !ok {
+		return nil
 	}
-	return nil
+	st := reg.exec.Stats()
+	if st.Cooldown < 0 {
+		st.Cooldown = 0
+	}
+	return st
+}
+
+// registration is a task added to the manager; its executor outlives a single execution so
+// that cooldown, once and retry state carry over from one push to the next.
+type registration struct {
+	task *Task
+	exec executor.Executor
+}
+
+func (m *manager) unregister(reg *registration) {
+	m.el.Lock()
+	defer m.el.Unlock()
+	if key := reg.task.ID(); m.registered[key] == reg {
+		delete(m.registered, key)
+	}
+}
+
+func newExecutor(t *Task) executor.Executor {
+	opts := []executor.Option{
+		executor.WithTimeout(t.Timeout),
+		executor.WithRetry(t.RetryAttempts, t.RetryDelay),
+		executor.WithCooldown(t.Cooldown),
+	}
+	if t.Once {
+		opts = append(opts, executor.Once())
+	}
+	return executor.New(t.Job, opts...)
 }

@@ -3,6 +3,7 @@ package task
 import (
 	"github.com/robfig/cron/v3"
 
+	"github.com/xhanio/framingo/pkg/utils/cronutil"
 	"github.com/xhanio/framingo/pkg/utils/infra"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
@@ -26,7 +27,7 @@ func (m *manager) setDefaults() {
 	if m.cm == nil {
 		m.cm = cron.New(
 			cron.WithLocation(infra.Timezone),
-			cron.WithParser(cron.NewParser(cron.SecondOptional|cron.Minute|cron.Hour|cron.Dom|cron.Month|cron.Dow)),
+			cron.WithParser(cronutil.Parser),
 		)
 	}
 }

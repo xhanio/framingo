@@ -36,11 +36,17 @@ type Task struct {
 	RetryDelay    time.Duration   `json:"retry_delay,omitempty"`
 }
 
-func (t *Task) Key() string {
+// ID is the task's identity, its job's ID; look tasks up by ID only.
+func (t *Task) ID() string {
 	if t == nil || t.Job == nil {
 		return ""
 	}
 	return t.Job.ID()
+}
+
+// Key only satisfies common.Unique for the priority queue; it is the ID.
+func (t *Task) Key() string {
+	return t.ID()
 }
 
 func (t *Task) GetPriority() int {
@@ -58,7 +64,7 @@ func (t *Task) SetPriority(priority int) {
 }
 
 func (t *Task) String() string {
-	return t.Key()
+	return t.ID()
 }
 
 func (t *Task) IsValid() bool {

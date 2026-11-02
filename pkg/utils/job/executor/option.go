@@ -16,20 +16,19 @@ func (e *executor) applyOptions(opts ...Option) {
 }
 
 type retryOptions struct {
-	Attempts int
-	Delay    time.Duration
+	Retries int
+	Delay   time.Duration
 
 	sync.RWMutex
-	attempted uint
-	errs      []error
+	retried uint
 }
 
 // WithRetry configures the executor to retry failed job executions.
 // The retry mechanism applies to each Start() call independently.
 //
 // Parameters:
-//   - attempts: number of retry attempts (must be > 0)
-//   - interval: delay between retry attempts
+//   - retries: number of retry attempts (must be > 0)
+//   - interval: delay before the first retry, doubled after each
 //
 // Note: WithRetry is compatible with Once(). When both are used:
 //   - Once() restricts the number of successful Start() calls to one
@@ -40,16 +39,14 @@ type retryOptions struct {
 //	je := New(job, Once(), WithRetry(3, 1*time.Second))
 //	je.Start(...) // Will retry up to 3 times on failure
 //	je.Start(...) // Will return error "job can only start once" if first call succeeded
-func WithRetry(attempts int, interval time.Duration) Option {
+func WithRetry(retries int, interval time.Duration) Option {
 	return func(e *executor) {
-		if attempts <= 0 {
+		if retries <= 0 {
 			return
 		}
 		e.retry = &retryOptions{
-			Attempts: attempts,
-			Delay:    interval,
-
-			errs: make([]error, attempts),
+			Retries: retries,
+			Delay:   interval,
 		}
 	}
 }

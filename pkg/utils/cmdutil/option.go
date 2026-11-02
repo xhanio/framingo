@@ -89,3 +89,9 @@ func WithStderr(w io.Writer) Option {
 		c.stderr = w
 	}
 }
+
+func WithProcessGroup() Option {
+	return func(c *cmd) {
+		c.procGroup = true
+	}
+}

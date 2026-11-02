@@ -24,6 +24,7 @@ type cmd struct {
 	envs      []string
 	async     bool
 	dir       string
+	procGroup bool
 	cancel    func(*os.Process) error
 	waitDelay time.Duration
 	maxBuffer int
@@ -53,6 +54,9 @@ func newCMD(bin string, args []string, opts ...Option) *cmd {
 	p.Stdin = c.in
 	if c.dir != "" {
 		p.Dir = c.dir
+	}
+	if c.procGroup {
+		UseProcessGroup(p)
 	}
 	if c.cancel != nil {
 		cancel := c.cancel
