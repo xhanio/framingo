@@ -2,9 +2,7 @@ package task
 
 import (
 	"context"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
@@ -17,40 +15,6 @@ func startedScheduler(t *testing.T, opts ...Option) *manager {
 	}
 	t.Cleanup(func() { _ = s.Stop(true) })
 	return s
-}
-
-func TestCooldownHoldsAcrossCronTicks(t *testing.T) {
-	var runs atomic.Int32
-	started := make(chan struct{}, 10)
-	tk := &Task{
-		Job: job.New("cooled", func(job.Context) error {
-			runs.Add(1)
-			started <- struct{}{}
-			return nil
-		}),
-		Schedule: "* * * * * *",
-		Cooldown: time.Hour,
-	}
-	s := startedScheduler(t)
-	if err := s.Add(tk); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("the task never fired")
-	}
-	time.Sleep(2500 * time.Millisecond) // two more ticks, both inside the cooldown
-	if n := runs.Load(); n != 1 {
-		t.Fatalf("task ran %d times, want 1: ticks inside the cooldown must not run it", n)
-	}
-	st := s.Stats(tk.ID())
-	if st == nil {
-		t.Fatal("a scheduled task between runs must have stats")
-	}
-	if st.Cooldown < 59*time.Minute {
-		t.Fatalf("Cooldown = %s, want about an hour left", st.Cooldown)
-	}
 }
 
 func TestRemoveAndStopForgetTheTask(t *testing.T) {

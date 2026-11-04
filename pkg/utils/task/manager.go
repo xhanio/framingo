@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 
@@ -93,7 +94,7 @@ func (m *manager) Add(tasks ...*Task) error {
 		if t.Schedule != "" {
 			// scheduled by cron
 			cronID, err := m.cm.AddFunc(t.Schedule, func() {
-				m.pq.Push(t)
+				m.tick(reg)
 			})
 			if err != nil {
 				m.unregister(reg)
@@ -125,12 +126,17 @@ func (m *manager) Remove(tasks ...*Task) {
 			m.cl.Unlock()
 		}
 		m.el.Lock()
+		// try removing anyway since task could be executing already; first, since
+		// ending its requeue changes what the queue orders it by
+		m.pq.Remove(t)
 		if reg, ok := m.registered[key]; ok && reg.task == t {
 			delete(m.registered, key)
+			if reg.loop != nil {
+				reg.loop.cancel()
+			}
 		}
 		m.el.Unlock()
 		t.Job.Cancel()
-		m.pq.Remove(t) // try removing anyway since task could be executing already
 	}
 }
 
@@ -143,6 +149,7 @@ func (m *manager) Start(ctx context.Context) error {
 	m.pipe = make(chan *Task)
 	m.workers = make(chan struct{}, m.concurrent)
 	m.ctx, m.cancel = context.WithCancel(ctx)
+	runCtx := m.ctx // a worker can outlive this run, and m.ctx with it
 	m.wg.Add(2)
 	// goroutine to fetch tasks
 	go func() {
@@ -232,24 +239,23 @@ func (m *manager) Start(ctx context.Context) error {
 					m.el.Lock()
 					reg, registered := m.registered[key]
 					_, busy := m.running[task]
-					if !registered || reg.task != task || busy {
+					if !registered || reg.task != task || busy || !reg.admit() {
 						m.el.Unlock()
 						m.ew.Done()
-						m.log.Debugf("task %s skipped: removed, or previous execution still in progress", key)
+						m.log.Debugf("task %s skipped: removed, previous execution still in progress, or waiting to requeue", key)
 						return
 					}
+					m.pq.Remove(task) // a tick that came in behind this one; see tick
+					task.requeueing.Store(false)
 					m.running[task] = reg.exec
+					rerun := reg.loop
 					m.el.Unlock()
+					var err error
 					defer func() {
-						if task.Schedule == "" {
-							m.unregister(reg)
-						}
-						m.el.Lock()
-						delete(m.running, task)
-						m.el.Unlock()
+						m.settle(runCtx, reg, rerun, err)
 						m.ew.Done() // unblock task queue before releasing the worker
 					}()
-					err := reg.exec.Start(task.Ctx, task.Params)
+					err = reg.exec.Start(task.Ctx, task.Params)
 					if err != nil {
 						m.log.Debugf("task %s ended with err: %s", task.ID(), err)
 					} else {
@@ -274,25 +280,45 @@ func (m *manager) Stop(wait bool) error {
 	return nil
 }
 
-func (m *manager) Stats(id string) *executor.Stats {
+func (m *manager) Stats(id string) *Stats {
 	m.el.RLock()
 	defer m.el.RUnlock()
 	reg, ok := m.registered[id]
 	if !ok {
 		return nil
 	}
-	st := reg.exec.Stats()
-	if st.Cooldown < 0 {
-		st.Cooldown = 0
+	st := &Stats{Stats: *reg.exec.Stats(), Requeues: reg.requeues}
+	if left := time.Until(reg.cooling); left > 0 {
+		st.Cooldown = left
 	}
 	return st
 }
 
 // registration is a task added to the manager; its executor outlives a single execution so
-// that cooldown, once and retry state carry over from one push to the next.
+// that retry state carries over from one push to the next.
 type registration struct {
 	task *Task
 	exec executor.Executor
+
+	// guarded by the manager's el
+	loop     *requeueLoop // set while a failed execution is being requeued
+	requeues uint         // times the latest execution went back to the queue
+	cooling  time.Time    // when the current RequeueCooldown ends
+}
+
+// tick queues a scheduled task unless it is running or being requeued. The queue
+// orders by state, so a task must be out of it while its state changes: a queue out
+// of order cannot find the task again, and removing it panics.
+func (m *manager) tick(reg *registration) {
+	key := reg.task.ID()
+	m.el.Lock()
+	defer m.el.Unlock()
+	_, busy := m.running[reg.task]
+	if m.registered[key] != reg || busy || reg.loop != nil {
+		m.log.Debugf("task %s tick skipped: removed, previous execution still in progress, or waiting to requeue", key)
+		return
+	}
+	m.pq.Push(reg.task)
 }
 
 func (m *manager) unregister(reg *registration) {
@@ -304,13 +330,8 @@ func (m *manager) unregister(reg *registration) {
 }
 
 func newExecutor(t *Task) executor.Executor {
-	opts := []executor.Option{
+	return executor.New(t.Job,
 		executor.WithTimeout(t.Timeout),
 		executor.WithRetry(t.RetryAttempts, t.RetryDelay),
-		executor.WithCooldown(t.Cooldown),
-	}
-	if t.Once {
-		opts = append(opts, executor.Once())
-	}
-	return executor.New(t.Job, opts...)
+	)
 }

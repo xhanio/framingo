@@ -2,12 +2,10 @@ package executor
 
 import (
 	"context"
-	"time"
 )
 
 type Stats struct {
-	Retries  uint          `json:"retries"`
-	Cooldown time.Duration `json:"cooldown"`
+	Retries uint `json:"retries"`
 }
 
 type Executor interface {

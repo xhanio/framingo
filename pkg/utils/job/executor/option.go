@@ -29,16 +29,6 @@ type retryOptions struct {
 // Parameters:
 //   - retries: number of retry attempts (must be > 0)
 //   - interval: delay before the first retry, doubled after each
-//
-// Note: WithRetry is compatible with Once(). When both are used:
-//   - Once() restricts the number of successful Start() calls to one
-//   - WithRetry() allows retries within that single Start() call
-//
-// Example:
-//
-//	je := New(job, Once(), WithRetry(3, 1*time.Second))
-//	je.Start(...) // Will retry up to 3 times on failure
-//	je.Start(...) // Will return error "job can only start once" if first call succeeded
 func WithRetry(retries int, interval time.Duration) Option {
 	return func(e *executor) {
 		if retries <= 0 {
@@ -68,46 +58,6 @@ func WithTimeout(timeout time.Duration) Option {
 
 func NoTimeout() Option {
 	return WithTimeout(-1)
-}
-
-type cooldownOptions struct {
-	Duration time.Duration
-
-	sync.RWMutex
-	endedAt time.Time
-}
-
-func WithCooldown(cooldown time.Duration) Option {
-	return func(e *executor) {
-		if cooldown <= 0 {
-			return
-		}
-		e.cooldown = &cooldownOptions{
-			Duration: cooldown,
-		}
-	}
-}
-
-// Once configures the executor to allow only a single successful Start() call.
-// After the first successful execution, subsequent Start() calls will return an error.
-//
-// Note: Once() is compatible with WithRetry(). When both are used:
-//   - The first Start() call can retry on failure (if WithRetry is configured)
-//   - Only one successful Start() execution is allowed
-//   - Once a Start() call succeeds, no further Start() calls are permitted
-//
-// This is useful for idempotent initialization tasks that should only complete once
-// but may need retries due to transient failures.
-//
-// Example:
-//
-//	je := New(job, Once(), WithRetry(3, 1*time.Second))
-//	je.Start(...) // May retry up to 3 times on failure
-//	je.Start(...) // Returns error if previous call succeeded
-func Once() Option {
-	return func(e *executor) {
-		e.once = true
-	}
 }
 
 func OnComplete(fn func(job.Job)) Option {

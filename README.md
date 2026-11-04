@@ -240,7 +240,7 @@ Interface contracts and shared types:
 | **[infra](pkg/utils/infra/)** | OS-level helpers (timezone detection and loading) |
 | **[ioutil](pkg/utils/ioutil/)** | File copy/compress/encrypt with progress tracking, plus `LimitWriter`/`LimitReader` for bounding untrusted streams (the reader fails past its limit rather than truncating) |
 | **[job](pkg/utils/job/)** | Job model with state, labels, results, statistics |
-| **[job/executor](pkg/utils/job/executor/)** | Executor with retry, timeout, cooldown, and stop control |
+| **[job/executor](pkg/utils/job/executor/)** | Executor with retry, timeout, and stop control |
 | **[log](pkg/utils/log/)** | Zap-based logger with file rotation, custom levels, per-service scoping, and `NoStdout` to suppress the console core |
 | **[maputil](pkg/utils/maputil/)** | Map and set helpers (copy, diff, keys, membership) |
 | **[nameutil](pkg/utils/nameutil/)** | Service/router naming (`Name`, `Package`) and the config root a name implies (`ConfigRoot`) |
@@ -251,7 +251,7 @@ Interface contracts and shared types:
 | **[reflectutil](pkg/utils/reflectutil/)** | Type location, byte conversion, field scan/apply |
 | **[sliceutil](pkg/utils/sliceutil/)** | Membership, dedupe, diff, copy, change tracking |
 | **[strutil](pkg/utils/strutil/)** | Validation, join, clean, random, hex format |
-| **[task](pkg/utils/task/)** | Task manager with concurrency control and priority queue |
+| **[task](pkg/utils/task/)** | Task manager with concurrency control, priority queue, and requeue on failure |
 | **[testutil](pkg/utils/testutil/)** | Test database setup helpers |
 | **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
 

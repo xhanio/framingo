@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -19,7 +20,14 @@ type Manager interface {
 	common.Daemon
 	Add(tasks ...*Task) error
 	Remove(tasks ...*Task)
-	Stats(id string) *executor.Stats
+	Stats(id string) *Stats
+}
+
+// Stats is what the task's executor reports, plus what the manager adds on top of it.
+type Stats struct {
+	executor.Stats
+	Requeues uint          `json:"requeues"` // times the latest execution went back to the queue
+	Cooldown time.Duration `json:"cooldown"` // what is left of the current RequeueCooldown
 }
 
 type Task struct {
@@ -30,10 +38,18 @@ type Task struct {
 	Priority      int             `json:"priority"`
 	Exclusive     bool            `json:"exclusive"`
 	Timeout       time.Duration   `json:"timeout,omitempty"`
-	Cooldown      time.Duration   `json:"cooldown,omitempty"`
-	Once          bool            `json:"once"`
 	RetryAttempts int             `json:"retry_attempts,omitempty"`
 	RetryDelay    time.Duration   `json:"retry_delay,omitempty"`
+	// RequeueAttempts is how many times a failed execution, its retries used
+	// up, goes back to the queue. Unlike a retry it gives up its worker while
+	// it waits, and it counts on top: a task runs up to
+	// (RetryAttempts+1) * (RequeueAttempts+1) times.
+	RequeueAttempts int `json:"requeue_attempts,omitempty"`
+	// RequeueCooldown is how long a failed execution waits before going back to
+	// the queue.
+	RequeueCooldown time.Duration `json:"requeue_cooldown,omitempty"`
+
+	requeueing atomic.Bool // see IsRequeueing; the queue orders by it, so it only changes out of the queue
 }
 
 // ID is the task's identity, its job's ID; look tasks up by ID only.
@@ -47,6 +63,12 @@ func (t *Task) ID() string {
 // Key only satisfies common.Unique for the priority queue; it is the ID.
 func (t *Task) Key() string {
 	return t.ID()
+}
+
+// IsRequeueing reports whether the task failed and is waiting to run again, cooling
+// down or back in the queue. Its job stays failed meanwhile: that run did fail.
+func (t *Task) IsRequeueing() bool {
+	return t != nil && t.requeueing.Load()
 }
 
 func (t *Task) GetPriority() int {
@@ -80,6 +102,15 @@ var statePriority = map[job.State]int{
 	job.StateSucceeded: 2,
 }
 
+// rank is the task's place by state: back in the queue, a requeued task is on the
+// same terms as a new one, and only its Priority sets it apart.
+func (t *Task) rank() int {
+	if t.requeueing.Load() {
+		return statePriority[job.StateCreated]
+	}
+	return statePriority[t.Job.State()]
+}
+
 func priorityFunc(a, b *Task) bool {
 	if a == nil || a.Job == nil {
 		return false
@@ -87,7 +118,7 @@ func priorityFunc(a, b *Task) bool {
 	if b == nil || b.Job == nil {
 		return true
 	}
-	stateDiff := statePriority[a.Job.State()] - statePriority[b.Job.State()]
+	stateDiff := a.rank() - b.rank()
 	if stateDiff != 0 {
 		return stateDiff > 0
 	}
