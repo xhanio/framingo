@@ -113,3 +113,22 @@ func (r *iotest) Read(p []byte) (int, error) {
 	r.off++
 	return 1, nil
 }
+
+func TestLimitWriterReportsATruncatedWriteAsWhole(t *testing.T) {
+	var kept, all bytes.Buffer
+	// io.MultiWriter gives up on a short count, so a truncating write must not report one
+	w := io.MultiWriter(NewLimitWriter(&kept, 4), &all)
+	n, err := w.Write([]byte("abcdefgh"))
+	if err != nil {
+		t.Fatalf("Write = %v", err)
+	}
+	if n != 8 {
+		t.Fatalf("n = %d, want 8", n)
+	}
+	if got := kept.String(); got != "abcd" {
+		t.Fatalf("kept = %q, want %q", got, "abcd")
+	}
+	if got := all.String(); got != "abcdefgh" {
+		t.Fatalf("all = %q, want %q", got, "abcdefgh")
+	}
+}

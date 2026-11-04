@@ -27,12 +27,17 @@ func (lw *lwriter) Write(p []byte) (int, error) {
 	if remaining <= 0 {
 		return len(p), nil
 	}
-	if len(p) > remaining {
+	whole := len(p)
+	if whole > remaining {
 		p = p[:remaining]
 	}
 	n, err := lw.w.Write(p)
 	lw.written += n
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	// what is past the limit is discarded, not unwritten: a short count is an error to a caller
+	return whole, nil
 }
 
 func (lw *lwriter) Written() int {
