@@ -20,6 +20,24 @@ func (m *manager) setDefaults() {
 	if m.name == "" {
 		m.name = nameutil.Name(m)
 	}
+	if m.tailBytes <= 0 {
+		m.tailBytes = defaultTailBytes
+	}
+}
+
+// WithLogDir is where command plans keep one log file per run, under a directory per plan.
+// Empty keeps no files.
+func WithLogDir(dir string) Option {
+	return func(m *manager) {
+		m.logDir = dir
+	}
+}
+
+// WithOutputTailBytes is how much trailing output a command plan's run reports.
+func WithOutputTailBytes(n int) Option {
+	return func(m *manager) {
+		m.tailBytes = n
+	}
 }
 
 func WithLogger(logger log.Logger) Option {

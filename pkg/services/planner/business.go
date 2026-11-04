@@ -15,6 +15,11 @@ func (m *manager) Add(todo *entity.Plan) error {
 	if todo.ID == "" {
 		todo.ID = uuid.NewString()
 	}
+	if todo.Kind != "" {
+		if err := m.buildJob(todo); err != nil {
+			return err
+		}
+	}
 	m.Lock()
 	defer m.Unlock()
 	if !todo.Task.IsValid() {
@@ -28,14 +33,40 @@ func (m *manager) Add(todo *entity.Plan) error {
 	return nil
 }
 
+func (m *manager) Trigger(id string) (string, error) {
+	m.RLock()
+	defer m.RUnlock()
+	todo, ok := m.todos[id]
+	if !ok {
+		return "", errors.NotFound.Newf("failed to trigger todo %s: todo id not found", id)
+	}
+	var (
+		runID  string
+		params any
+	)
+	if todo.Kind != "" {
+		runID = uuid.NewString()
+		params = &manualRun{id: runID}
+	}
+	if err := m.tm.Trigger(todo.Task.ID(), params); err != nil {
+		return "", errors.Wrap(err)
+	}
+	return runID, nil
+}
+
 func (m *manager) Cancel(id string) error {
 	m.RLock()
 	defer m.RUnlock()
-	if todo, ok := m.todos[id]; ok {
-		todo.Task.Job.Cancel()
-		return nil
+	todo, ok := m.todos[id]
+	if !ok {
+		return errors.NotFound.Newf("failed to cancel todo %s: todo id not found", id)
 	}
-	return errors.NotFound.Newf("failed to cancel todo %s: todo id not found", id)
+	err := m.tm.Cancel(todo.Task.ID())
+	if errors.Is(err, errors.NotFound) {
+		// the plan is here, its one-shot task finished and left the task manager
+		return errors.Conflict.Newf("todo %s is not running", id)
+	}
+	return errors.Wrap(err)
 }
 
 func (m *manager) Delete(id string, force bool) error {

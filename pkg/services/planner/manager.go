@@ -9,7 +9,10 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
-const timeFormat = "2006-01-02 15:04:05.00"
+const (
+	timeFormat       = "2006-01-02 15:04:05.00"
+	defaultTailBytes = 4096
+)
 
 var _ Manager = (*manager)(nil)
 
@@ -20,6 +23,9 @@ type manager struct {
 	es common.MessageSender
 
 	tm task.Manager
+
+	logDir    string
+	tailBytes int
 
 	sync.RWMutex
 	todos map[string]*entity.Plan
@@ -49,5 +55,8 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	return nil
+	if m.es == nil {
+		return nil
+	}
+	return []common.Service{m.es}
 }

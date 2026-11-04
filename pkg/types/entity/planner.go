@@ -8,11 +8,71 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
+// PlanKindCommand runs a command: its Task.Params is a CommandParams, the planner builds
+// its Task.Job, and every run of it is reported with PlanRunStarted and PlanRunFinished.
+const PlanKindCommand = "command"
+
 type Plan struct {
 	ID          string     `json:"id"`
 	Metadata    labels.Set `json:"metadata"`
 	Description string     `json:"description"`
+	Kind        string     `json:"kind,omitempty"` // a predefined kind, or empty for a Task with its own Job
 	Task        *task.Task `json:"task"`
+}
+
+type CommandParams struct {
+	Command []string          `json:"command"` // argv, the executable first
+	Dir     string            `json:"dir,omitempty"`
+	Env     map[string]string `json:"env,omitempty"` // on top of the process environment
+}
+
+type PlanRunSource string
+
+const (
+	PlanRunSchedule PlanRunSource = "schedule"
+	PlanRunManual   PlanRunSource = "manual"
+)
+
+type PlanRunState string
+
+const (
+	PlanRunRunning   PlanRunState = "running"
+	PlanRunSucceeded PlanRunState = "succeeded"
+	PlanRunFailed    PlanRunState = "failed"
+	PlanRunCanceled  PlanRunState = "canceled"
+)
+
+// PlanRun is one run of a plan of a predefined kind, as of when it was reported. A retry or
+// a requeue is a new run. GetResult returns the plan's latest one.
+type PlanRun struct {
+	ID         string        `json:"id"`
+	PlanID     string        `json:"plan_id"`
+	Source     PlanRunSource `json:"source"`
+	State      PlanRunState  `json:"state"`
+	StartedAt  time.Time     `json:"started_at"`
+	EndedAt    time.Time     `json:"ended_at,omitzero"`
+	ExitCode   int           `json:"exit_code"`
+	OutputTail string        `json:"output_tail,omitempty"`
+	LogPath    string        `json:"log_path,omitempty"`
+	Error      string        `json:"error,omitempty"`
+}
+
+// PlanRunStarted is sent through the planner's MessageSender as a run starts.
+type PlanRunStarted struct {
+	PlanRun
+}
+
+func (PlanRunStarted) Kind() string {
+	return "planner.run.started"
+}
+
+// PlanRunFinished is sent through the planner's MessageSender as a run ends.
+type PlanRunFinished struct {
+	PlanRun
+}
+
+func (PlanRunFinished) Kind() string {
+	return "planner.run.finished"
 }
 
 type PlannerStatsOptions struct {

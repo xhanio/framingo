@@ -8,6 +8,8 @@ import (
 type Planner interface {
 	common.Service
 	Add(todo *entity.Plan) error
+	// Trigger runs the plan now and returns the run's ID, empty for a plan without a kind.
+	Trigger(id string) (string, error)
 	Cancel(id string) error
 	Delete(id string, force bool) error
 	GetResult(id string) (any, error)
