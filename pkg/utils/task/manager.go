@@ -83,6 +83,9 @@ func (m *manager) Add(tasks ...*Task) error {
 		if key == "" {
 			continue
 		}
+		if t.Manual && t.Schedule != "" {
+			return errors.InvalidArgument.Newf("task %s cannot be both manual and scheduled", key)
+		}
 		m.el.Lock()
 		if _, ok := m.registered[key]; ok {
 			m.el.Unlock()
@@ -90,6 +93,11 @@ func (m *manager) Add(tasks ...*Task) error {
 		}
 		reg := &registration{task: t, exec: newExecutor(t)}
 		m.registered[key] = reg
+		if t.isOneShot() {
+			// run directly
+			reg.queued = true
+			m.pq.Push(t)
+		}
 		m.el.Unlock()
 		if t.Schedule != "" {
 			// scheduled by cron
@@ -103,9 +111,6 @@ func (m *manager) Add(tasks ...*Task) error {
 			m.cl.Lock()
 			m.crons[key] = cronID
 			m.cl.Unlock()
-		} else {
-			// run directly
-			m.pq.Push(t)
 		}
 	}
 	return nil
@@ -129,14 +134,19 @@ func (m *manager) Remove(tasks ...*Task) {
 		// try removing anyway since task could be executing already; first, since
 		// ending its requeue changes what the queue orders it by
 		m.pq.Remove(t)
+		var cancelRun context.CancelFunc
 		if reg, ok := m.registered[key]; ok && reg.task == t {
 			delete(m.registered, key)
 			if reg.loop != nil {
 				reg.loop.cancel()
 			}
+			cancelRun = reg.cancelRun
 		}
 		m.el.Unlock()
 		t.Job.Cancel()
+		if cancelRun != nil {
+			cancelRun()
+		}
 	}
 }
 
@@ -218,6 +228,11 @@ func (m *manager) Start(ctx context.Context) error {
 				for _, te := range m.running {
 					_ = te.Stop(false)
 				}
+				for _, reg := range m.registered {
+					if reg.cancelRun != nil {
+						reg.cancelRun() // after the job's cancel, so a run ends canceled, not failed
+					}
+				}
 				clear(m.registered)
 				m.log.Infof("stopped executing tasks")
 				return
@@ -239,23 +254,35 @@ func (m *manager) Start(ctx context.Context) error {
 					m.el.Lock()
 					reg, registered := m.registered[key]
 					_, busy := m.running[task]
-					if !registered || reg.task != task || busy || !reg.admit() {
+					if !registered || reg.task != task || busy || !reg.queued {
 						m.el.Unlock()
 						m.ew.Done()
-						m.log.Debugf("task %s skipped: removed, previous execution still in progress, or waiting to requeue", key)
+						m.log.Debugf("task %s skipped: removed, canceled, or previous execution still in progress", key)
 						return
 					}
-					m.pq.Remove(task) // a tick that came in behind this one; see tick
+					reg.queued = false
+					m.pq.Remove(task) // a copy from a Remove and Add during the handoff; see fire
 					task.requeueing.Store(false)
 					m.running[task] = reg.exec
 					rerun := reg.loop
+					params := task.Params
+					if reg.params != nil {
+						params = reg.params
+					}
+					parent := task.Ctx
+					if parent == nil {
+						parent = context.Background()
+					}
+					execCtx, cancel := context.WithCancel(parent)
+					reg.cancelRun = cancel
 					m.el.Unlock()
 					var err error
 					defer func() {
-						m.settle(runCtx, reg, rerun, err)
+						m.settle(runCtx, execCtx, reg, rerun, err)
+						cancel()
 						m.ew.Done() // unblock task queue before releasing the worker
 					}()
-					err = reg.exec.Start(task.Ctx, task.Params)
+					err = reg.exec.Start(execCtx, params)
 					if err != nil {
 						m.log.Debugf("task %s ended with err: %s", task.ID(), err)
 					} else {
@@ -280,6 +307,56 @@ func (m *manager) Stop(wait bool) error {
 	return nil
 }
 
+// Trigger queues the registered task to run now, with params in place of Task.Params for
+// this execution and its requeues; nil keeps Task.Params. A task already queued, running or
+// being requeued is a Conflict.
+func (m *manager) Trigger(id string, params any) error {
+	m.el.RLock()
+	reg, ok := m.registered[id]
+	m.el.RUnlock()
+	if !ok {
+		return errors.NotFound.Newf("task %s not found", id)
+	}
+	return m.fire(reg, params)
+}
+
+// Cancel ends what the task is doing, whether queued, running, waiting for a retry or being
+// requeued, and keeps it registered unless it is one-shot. A task doing none of those is a
+// Conflict.
+func (m *manager) Cancel(id string) error {
+	m.el.Lock()
+	reg, ok := m.registered[id]
+	if !ok {
+		m.el.Unlock()
+		return errors.NotFound.Newf("task %s not found", id)
+	}
+	task := reg.task
+	_, running := m.running[task]
+	if !running && !reg.queued && reg.loop == nil {
+		m.el.Unlock()
+		return errors.Conflict.Newf("task %s is not running", id)
+	}
+	if reg.queued {
+		m.pq.Remove(task) // first: ending a requeue changes what the queue orders it by
+		reg.queued = false
+		if !running && reg.loop == nil && task.isOneShot() {
+			delete(m.registered, id)
+		}
+	}
+	if reg.loop != nil {
+		reg.loop.cancel()
+	}
+	cancelRun := reg.cancelRun
+	m.el.Unlock()
+	if running {
+		task.Job.Cancel()
+	}
+	if cancelRun != nil {
+		cancelRun()
+	}
+	return nil
+}
+
 func (m *manager) Stats(id string) *Stats {
 	m.el.RLock()
 	defer m.el.RUnlock()
@@ -301,24 +378,37 @@ type registration struct {
 	exec executor.Executor
 
 	// guarded by the manager's el
-	loop     *requeueLoop // set while a failed execution is being requeued
-	requeues uint         // times the latest execution went back to the queue
-	cooling  time.Time    // when the current RequeueCooldown ends
+	queued    bool               // in the queue, or held on its way to a worker
+	params    any                // what Trigger gave this firing, in place of Task.Params
+	cancelRun context.CancelFunc // ends the current execution, its retry waits included
+	loop      *requeueLoop       // set while a failed execution is being requeued
+	requeues  uint               // times the latest execution went back to the queue
+	cooling   time.Time          // when the current RequeueCooldown ends
 }
 
-// tick queues a scheduled task unless it is running or being requeued. The queue
-// orders by state, so a task must be out of it while its state changes: a queue out
-// of order cannot find the task again, and removing it panics.
-func (m *manager) tick(reg *registration) {
+// fire queues a registered task unless it is queued, running or being requeued. The queue
+// orders by state, so a task must be out of it while its state changes: a queue out of
+// order cannot find the task again, and removing it panics.
+func (m *manager) fire(reg *registration, params any) error {
 	key := reg.task.ID()
 	m.el.Lock()
 	defer m.el.Unlock()
-	_, busy := m.running[reg.task]
-	if m.registered[key] != reg || busy || reg.loop != nil {
-		m.log.Debugf("task %s tick skipped: removed, previous execution still in progress, or waiting to requeue", key)
-		return
+	if m.registered[key] != reg {
+		return errors.NotFound.Newf("task %s not found", key)
 	}
+	if _, running := m.running[reg.task]; running || reg.queued || reg.loop != nil {
+		return errors.Conflict.Newf("task %s is already queued, running or being requeued", key)
+	}
+	reg.queued = true
+	reg.params = params
 	m.pq.Push(reg.task)
+	return nil
+}
+
+func (m *manager) tick(reg *registration) {
+	if err := m.fire(reg, nil); err != nil {
+		m.log.Debugf("tick skipped: %s", err)
+	}
 }
 
 func (m *manager) unregister(reg *registration) {

@@ -20,6 +20,8 @@ type Manager interface {
 	common.Daemon
 	Add(tasks ...*Task) error
 	Remove(tasks ...*Task)
+	Trigger(id string, params any) error
+	Cancel(id string) error
 	Stats(id string) *Stats
 }
 
@@ -31,15 +33,17 @@ type Stats struct {
 }
 
 type Task struct {
-	Job           job.Job         `json:"-"`
-	Ctx           context.Context `json:"-"`
-	Params        any             `json:"params"`
-	Schedule      string          `json:"schedule"`
-	Priority      int             `json:"priority"`
-	Exclusive     bool            `json:"exclusive"`
-	Timeout       time.Duration   `json:"timeout,omitempty"`
-	RetryAttempts int             `json:"retry_attempts,omitempty"`
-	RetryDelay    time.Duration   `json:"retry_delay,omitempty"`
+	Job      job.Job         `json:"-"`
+	Ctx      context.Context `json:"-"`
+	Params   any             `json:"params"`
+	Schedule string          `json:"schedule"`
+	// Manual keeps the task registered without running it on its own: only Trigger does.
+	Manual        bool          `json:"manual,omitempty"`
+	Priority      int           `json:"priority"`
+	Exclusive     bool          `json:"exclusive"`
+	Timeout       time.Duration `json:"timeout,omitempty"`
+	RetryAttempts int           `json:"retry_attempts,omitempty"`
+	RetryDelay    time.Duration `json:"retry_delay,omitempty"`
 	// RequeueAttempts is how many times a failed execution, its retries used
 	// up, goes back to the queue. Unlike a retry it gives up its worker while
 	// it waits, and it counts on top: a task runs up to
@@ -69,6 +73,11 @@ func (t *Task) Key() string {
 // down or back in the queue. Its job stays failed meanwhile: that run did fail.
 func (t *Task) IsRequeueing() bool {
 	return t != nil && t.requeueing.Load()
+}
+
+// isOneShot reports whether the task leaves the manager after its execution.
+func (t *Task) isOneShot() bool {
+	return t.Schedule == "" && !t.Manual
 }
 
 func (t *Task) GetPriority() int {

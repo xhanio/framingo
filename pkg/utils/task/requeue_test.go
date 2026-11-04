@@ -505,7 +505,7 @@ func TestTickDuringARunStaysOutOfTheQueue(t *testing.T) {
 	}
 }
 
-func TestStartingARunLeavesNoTickInTheQueue(t *testing.T) {
+func TestStartingARunLeavesNoCopyInTheQueue(t *testing.T) {
 	block := make(chan struct{})
 	release := make(chan struct{})
 	defer close(release)
@@ -514,13 +514,13 @@ func TestStartingARunLeavesNoTickInTheQueue(t *testing.T) {
 		return nil
 	})}
 	tk := &Task{
-		Job: job.New("ticking", func(job.Context) error {
+		Job: job.New("copied", func(job.Context) error {
 			<-release
 			return nil
 		}),
-		Schedule: "* * * * * *",
+		Manual: true,
 	}
-	// more urgent than the tick, so it is what the fetching goroutine takes once the handoff is done
+	// more urgent than the copy, so it is what the fetching goroutine takes once the handoff is done
 	waiting := &Task{Job: job.New("waiting", func(job.Context) error { return nil }), Priority: -1}
 	s := startedScheduler(t, MaxConcurrency(1))
 	if err := s.Add(busy); err != nil {
@@ -530,15 +530,18 @@ func TestStartingARunLeavesNoTickInTheQueue(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	// the first tick is held at the handoff, the second stays queued
-	eventually(t, "a second tick to be queued", func() bool { return !s.pq.IsEmpty() })
+	if err := s.Trigger(tk.ID(), nil); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the fetching goroutine to hold the task", s.pq.IsEmpty)
+	s.pq.Push(tk) // what a Remove and Add of the same task during the handoff leaves behind
 	if err := s.Add(waiting); err != nil {
 		t.Fatal(err)
 	}
 	close(block)
-	eventually(t, "the ticking task to run", func() bool { return tk.Job.IsState(job.StateRunning) })
+	eventually(t, "the task to run", func() bool { return tk.Job.IsState(job.StateRunning) })
 	// the fetching goroutine holds waiting at the handoff: nothing else belongs in the queue
-	eventually(t, "the leftover tick to leave the queue", func() bool { return s.pq.IsEmpty() })
+	eventually(t, "the copy to leave the queue", s.pq.IsEmpty)
 }
 
 func TestStrayPopDuringARequeueDoesNotRunTheTask(t *testing.T) {

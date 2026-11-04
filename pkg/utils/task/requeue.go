@@ -16,33 +16,22 @@ import (
 type requeueLoop struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	queued bool       // guarded by the manager's el: the loop pushed the task and no worker took it yet
 	result chan error // the outcome of the rerun; buffered, the worker never waits for the loop
-}
-
-// admit reports whether a popped task may run. While a requeue is going only the
-// loop's own push may: anything else is a cron tick landing inside the cooldown.
-func (r *registration) admit() bool {
-	if r.loop == nil {
-		return true
-	}
-	queued := r.loop.queued
-	r.loop.queued = false
-	return queued
 }
 
 // settle closes an execution that was admitted, rerun being its requeue loop if it
 // was run by one.
-func (m *manager) settle(ctx context.Context, reg *registration, rerun *requeueLoop, err error) {
+func (m *manager) settle(ctx, execCtx context.Context, reg *registration, rerun *requeueLoop, err error) {
 	task := reg.task
 	key := task.ID()
 	m.el.Lock()
 	defer m.el.Unlock()
 	delete(m.running, task)
+	reg.cancelRun = nil
 	// what ended on a cancellation did not fail, and a job already running elsewhere
 	// refused this start without failing
 	failed := err != nil && task.Job.IsState(job.StateFailed) &&
-		ctx.Err() == nil && (task.Ctx == nil || task.Ctx.Err() == nil)
+		ctx.Err() == nil && execCtx.Err() == nil
 	if rerun != nil {
 		if err != nil && !failed {
 			err = retry.Unrecoverable(err)
@@ -64,7 +53,7 @@ func (m *manager) settle(ctx context.Context, reg *registration, rerun *requeueL
 		}()
 		return
 	}
-	if task.Schedule == "" && m.registered[key] == reg {
+	if task.isOneShot() && m.registered[key] == reg {
 		delete(m.registered, key)
 	}
 }
@@ -91,7 +80,7 @@ func (m *manager) requeue(reg *registration, loop *requeueLoop, failure error) {
 				m.el.Unlock()
 				return retry.Unrecoverable(err)
 			}
-			loop.queued = true
+			reg.queued = true
 			m.pq.Push(task) // under el: nothing pushes after Remove let go of it
 			m.el.Unlock()
 			select {
@@ -130,8 +119,9 @@ func (m *manager) requeue(reg *registration, loop *requeueLoop, failure error) {
 		return // removed and added again: the queue and the task's state are the new registration's
 	}
 	if registered {
+		reg.queued = false
 		m.pq.Remove(task) // a rerun the loop was cut short before, while its state still holds
-		if task.Schedule == "" {
+		if task.isOneShot() {
 			delete(m.registered, key)
 		}
 	}
