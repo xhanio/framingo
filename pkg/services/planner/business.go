@@ -33,7 +33,10 @@ func (m *manager) Add(todo *entity.Plan) error {
 	return nil
 }
 
-func (m *manager) Trigger(id string) (string, error) {
+func (m *manager) Trigger(id string, source entity.PlanRunSource) (string, error) {
+	if source == "" {
+		return "", errors.InvalidArgument.Newf("failed to trigger todo %s: no source", id)
+	}
 	m.RLock()
 	defer m.RUnlock()
 	todo, ok := m.todos[id]
@@ -46,7 +49,7 @@ func (m *manager) Trigger(id string) (string, error) {
 	)
 	if todo.Kind != "" {
 		runID = uuid.NewString()
-		params = &manualRun{id: runID}
+		params = &triggeredRun{id: runID, source: source}
 	}
 	if err := m.tm.Trigger(todo.Task.ID(), params); err != nil {
 		return "", errors.Wrap(err)
@@ -88,6 +91,27 @@ func (m *manager) GetResult(id string) (any, error) {
 		return todo.Task.Job.Result(), nil
 	}
 	return nil, errors.NotFound.Newf("failed to get result of todo %s: todo id not found", id)
+}
+
+func (m *manager) LastRun(id string) (*entity.PlanRun, error) {
+	m.RLock()
+	defer m.RUnlock()
+	todo, ok := m.todos[id]
+	if !ok {
+		return nil, errors.NotFound.Newf("failed to get the last run of todo %s: todo id not found", id)
+	}
+	return lastRun(todo), nil
+}
+
+func lastRun(todo *entity.Plan) *entity.PlanRun {
+	if todo.Kind == "" {
+		return nil
+	}
+	run, ok := todo.Task.Job.Result().(entity.PlanRun)
+	if !ok {
+		return nil
+	}
+	return &run
 }
 
 func (m *manager) stats(all bool) []*entity.PlannerStats {

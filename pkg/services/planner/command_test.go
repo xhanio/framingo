@@ -110,7 +110,7 @@ func commandPlan(id string, tk *task.Task, command ...string) *entity.Plan {
 
 func triggered(t *testing.T, m *manager, id string) string {
 	t.Helper()
-	runID, err := m.Trigger(id)
+	runID, err := m.Trigger(id, entity.PlanRunManual)
 	if err != nil {
 		t.Fatalf("Trigger = %v", err)
 	}
@@ -344,6 +344,64 @@ func TestScheduledCommandPlanReportsItsSource(t *testing.T) {
 	}
 }
 
+func TestTriggerRecordsTheSourceOnTheRunAndItsReruns(t *testing.T) {
+	const usage entity.PlanRunSource = "usage"
+	cases := []struct {
+		name string
+		task *task.Task
+		runs int
+	}{
+		{name: "a single run", task: &task.Task{}, runs: 1},
+		{name: "a retry", task: &task.Task{RetryAttempts: 1, RetryDelay: time.Millisecond}, runs: 2},
+		{name: "a requeue", task: &task.Task{RequeueAttempts: 1, RequeueCooldown: 10 * time.Millisecond}, runs: 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, sender := startedPlanner(t)
+			if err := m.Add(commandPlan("sourced", tc.task, "false")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := m.Trigger("sourced", usage); err != nil {
+				t.Fatal(err)
+			}
+			eventually(t, "the runs to finish", func() bool { return len(sender.finished()) == tc.runs })
+			for _, run := range append(sender.started(), sender.finished()...) {
+				if run.Source != usage {
+					t.Fatalf("run = %+v, want the source given to Trigger", run)
+				}
+			}
+		})
+	}
+}
+
+func TestTriggerWithAScheduleSourceIsRecordedAsSuch(t *testing.T) {
+	m, sender := startedPlanner(t)
+	if err := m.Add(commandPlan("late", &task.Task{}, "true")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Trigger("late", entity.PlanRunSchedule); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
+	if src := sender.finished()[0].Source; src != entity.PlanRunSchedule {
+		t.Fatalf("source = %s", src)
+	}
+}
+
+func TestTriggerRejectsAnEmptySource(t *testing.T) {
+	m, sender := startedPlanner(t)
+	if err := m.Add(commandPlan("plain", &task.Task{}, "true")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Trigger("plain", ""); !errors.Is(err, errors.InvalidArgument) {
+		t.Fatalf("Trigger = %v, want InvalidArgument", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if kinds := sender.kinds(); len(kinds) != 0 {
+		t.Fatalf("events from a rejected Trigger: %v", kinds)
+	}
+}
+
 func TestEveryRerunIsANewRun(t *testing.T) {
 	cases := []struct {
 		name string
@@ -408,6 +466,65 @@ func TestGetResultFollowsTheLatestRun(t *testing.T) {
 	}
 }
 
+func TestLastRunOfAnUnknownPlanIsNotFound(t *testing.T) {
+	m, _ := startedPlanner(t)
+	if _, err := m.LastRun("nobody"); !errors.Is(err, errors.NotFound) {
+		t.Fatalf("LastRun = %v, want NotFound", err)
+	}
+}
+
+func TestLastRunFollowsTheLatestRun(t *testing.T) {
+	m, sender := startedPlanner(t)
+	release := filepath.Join(t.TempDir(), "release")
+	script := "while [ ! -e " + release + " ]; do sleep 0.01; done"
+	if err := m.Add(commandPlan("latest", &task.Task{}, "sh", "-c", script)); err != nil {
+		t.Fatal(err)
+	}
+	if run, err := m.LastRun("latest"); err != nil || run != nil {
+		t.Fatalf("LastRun before any run = %+v, %v", run, err)
+	}
+	runID := triggered(t, m, "latest")
+	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
+	run, err := m.LastRun("latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run == nil || run.ID != runID || run.State != entity.PlanRunRunning {
+		t.Fatalf("LastRun during the run = %+v", run)
+	}
+	if err := os.WriteFile(release, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
+	eventually(t, "the run's end to show", func() bool {
+		run, err := m.LastRun("latest")
+		return err == nil && run != nil && run.ID == runID && run.State == entity.PlanRunSucceeded
+	})
+}
+
+func TestLastRunOfAPlanWithoutAKindIsNil(t *testing.T) {
+	m, _ := startedPlanner(t)
+	var runs atomic.Int32
+	plan := &entity.Plan{ID: "own", Task: &task.Task{
+		Job: job.New("own-job", func(jc job.Context) error {
+			jc.SetResult(entity.PlanRun{ID: "not a run of the planner's"})
+			runs.Add(1)
+			return nil
+		}),
+		Manual: true,
+	}}
+	if err := m.Add(plan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Trigger("own", entity.PlanRunManual); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the job", func() bool { return runs.Load() == 1 })
+	if run, err := m.LastRun("own"); err != nil || run != nil {
+		t.Fatalf("LastRun = %+v, %v", run, err)
+	}
+}
+
 func TestAddRejectsAnInvalidPlan(t *testing.T) {
 	cases := []struct {
 		name string
@@ -424,7 +541,7 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 			if err := m.Add(tc.plan); !errors.Is(err, errors.InvalidArgument) {
 				t.Fatalf("Add = %v, want InvalidArgument", err)
 			}
-			if _, err := m.Trigger("x"); !errors.Is(err, errors.NotFound) {
+			if _, err := m.Trigger("x", entity.PlanRunManual); !errors.Is(err, errors.NotFound) {
 				t.Fatalf("a rejected plan stayed: Trigger = %v", err)
 			}
 		})
@@ -433,7 +550,7 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 
 func TestTriggerAndCancelErrors(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if _, err := m.Trigger("nobody"); !errors.Is(err, errors.NotFound) {
+	if _, err := m.Trigger("nobody", entity.PlanRunManual); !errors.Is(err, errors.NotFound) {
 		t.Fatalf("Trigger of an unknown plan = %v, want NotFound", err)
 	}
 	if err := m.Cancel("nobody"); !errors.Is(err, errors.NotFound) {
@@ -447,7 +564,7 @@ func TestTriggerAndCancelErrors(t *testing.T) {
 	}
 	triggered(t, m, "busy")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
-	if _, err := m.Trigger("busy"); !errors.Is(err, errors.Conflict) {
+	if _, err := m.Trigger("busy", entity.PlanRunManual); !errors.Is(err, errors.Conflict) {
 		t.Fatalf("Trigger of a busy plan = %v, want Conflict", err)
 	}
 	if err := m.Cancel("busy"); err != nil {
@@ -465,7 +582,7 @@ func TestPlanWithItsOwnJobStillWorks(t *testing.T) {
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
 	}
-	runID, err := m.Trigger("own")
+	runID, err := m.Trigger("own", entity.PlanRunManual)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +692,7 @@ func TestPlannerStopEndsItsPlansAndLeavesTheManagerRunning(t *testing.T) {
 	if st := sender.finished()[0].State; st != entity.PlanRunCanceled {
 		t.Fatalf("state = %s", st)
 	}
-	if _, err := m.Trigger("mine"); !errors.Is(err, errors.NotFound) {
+	if _, err := m.Trigger("mine", entity.PlanRunManual); !errors.Is(err, errors.NotFound) {
 		t.Fatalf("Trigger after Stop = %v, want NotFound", err)
 	}
 	if !other.Job.IsExecuting() {

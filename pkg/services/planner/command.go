@@ -27,10 +27,12 @@ var (
 	_ common.Message = entity.PlanRunFinished{}
 )
 
-// manualRun is what Trigger gives the firing it starts: the first run takes the ID Trigger
-// returned, and the retries and requeues after it, being runs of their own, take new ones.
-type manualRun struct {
+// triggeredRun is what Trigger gives the firing it starts: every run of it takes the source,
+// the first takes the ID Trigger returned, and the retries and requeues after it, being runs
+// of their own, take new ones.
+type triggeredRun struct {
 	id      string
+	source  entity.PlanRunSource
 	claimed atomic.Bool
 }
 
@@ -65,10 +67,10 @@ func (m *manager) runCommand(jc job.Context, plan *entity.Plan, params entity.Co
 		State:     entity.PlanRunRunning,
 		StartedAt: time.Now(),
 	}
-	if manual, ok := jc.GetParams().(*manualRun); ok {
-		run.Source = entity.PlanRunManual
-		if manual.claimed.CompareAndSwap(false, true) {
-			run.ID = manual.id
+	if triggered, ok := jc.GetParams().(*triggeredRun); ok {
+		run.Source = triggered.source
+		if triggered.claimed.CompareAndSwap(false, true) {
+			run.ID = triggered.id
 		}
 	}
 	tail := ioutil.NewTailWriter(m.tailBytes)
