@@ -6,22 +6,24 @@ import (
 	"io"
 	"time"
 
-	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
+// Start has nothing to do: the task manager is the caller's, a dependency that starts first.
 func (m *manager) Start(ctx context.Context) error {
-	err := m.tm.Start(ctx)
-	if err != nil {
-		return errors.Wrap(err)
-	}
 	return nil
 }
 
+// Stop ends and forgets the planner's own plans, leaving the task manager and whatever else
+// runs on it alone.
 func (m *manager) Stop(wait bool) error {
-	var errs []error
-	errs = append(errs, m.tm.Stop(wait))
-	return errors.Combine(errs...)
+	m.Lock()
+	defer m.Unlock()
+	for id, todo := range m.todos {
+		m.tm.Remove(todo.Task)
+		delete(m.todos, id)
+	}
+	return nil
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

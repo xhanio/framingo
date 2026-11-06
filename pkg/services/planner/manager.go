@@ -31,22 +31,19 @@ type manager struct {
 	todos map[string]*entity.Plan
 }
 
-func New(es common.MessageSender, opts ...Option) Manager {
-	return newManager(es, opts...)
+func New(es common.MessageSender, tm task.Manager, opts ...Option) Manager {
+	return newManager(es, tm, opts...)
 }
 
-func newManager(es common.MessageSender, opts ...Option) *manager {
+func newManager(es common.MessageSender, tm task.Manager, opts ...Option) *manager {
 	m := &manager{
 		es:    es,
+		tm:    tm,
 		todos: make(map[string]*entity.Plan),
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
 	m.log = m.log.By(m)
-	m.tm = task.New(
-		task.MaxConcurrency(10),
-		task.WithLogger(m.log),
-	)
 	return m
 }
 
@@ -55,8 +52,9 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	if m.es == nil {
-		return nil
+	deps := []common.Service{m.tm}
+	if m.es != nil {
+		deps = append(deps, m.es)
 	}
-	return []common.Service{m.es}
+	return deps
 }

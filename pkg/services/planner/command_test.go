@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -78,10 +79,20 @@ func eventually(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+func startedTaskManager(t *testing.T, opts ...task.Option) task.Manager {
+	t.Helper()
+	tm := task.New(opts...)
+	if err := tm.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tm.Stop(true) })
+	return tm
+}
+
 func startedPlanner(t *testing.T, opts ...Option) (*manager, *recordingSender) {
 	t.Helper()
 	sender := &recordingSender{}
-	m := newManager(sender, append([]Option{WithLogDir(t.TempDir())}, opts...)...)
+	m := newManager(sender, startedTaskManager(t), append([]Option{WithLogDir(t.TempDir())}, opts...)...)
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -482,19 +493,114 @@ func TestCancelOfAFinishedOneShotPlanConflicts(t *testing.T) {
 	}
 }
 
-func TestPlannerDependsOnItsSender(t *testing.T) {
+func TestPlannerDependsOnItsManagerAndSender(t *testing.T) {
 	sender := &recordingSender{}
-	deps := newManager(sender).Dependencies()
-	if len(deps) != 1 || deps[0] != common.Service(sender) {
+	tm := task.New()
+	deps := newManager(sender, tm).Dependencies()
+	if !slices.Contains(deps, common.Service(tm)) || !slices.Contains(deps, common.Service(sender)) {
 		t.Fatalf("dependencies = %v", deps)
 	}
-	if deps := newManager(nil).Dependencies(); len(deps) != 0 {
+	if deps := newManager(nil, tm).Dependencies(); len(deps) != 1 || deps[0] != common.Service(tm) {
 		t.Fatalf("dependencies without a sender = %v", deps)
 	}
 }
 
+func TestInjectedManagerSetsTheConcurrency(t *testing.T) {
+	sender := &recordingSender{}
+	m := newManager(sender, startedTaskManager(t, task.MaxConcurrency(1)), WithLogDir(t.TempDir()))
+	if err := m.Add(commandPlan("first", &task.Task{}, "sleep", "30")); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Add(commandPlan("second", &task.Task{}, "true")); err != nil {
+		t.Fatal(err)
+	}
+	triggered(t, m, "first")
+	eventually(t, "the first run to start", func() bool { return len(sender.started()) == 1 })
+	triggered(t, m, "second")
+	time.Sleep(100 * time.Millisecond)
+	if started := sender.started(); len(started) != 1 {
+		t.Fatalf("started = %+v, want the second plan held back by the limit", started)
+	}
+	if err := m.Cancel("first"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the second run", func() bool { return len(sender.finished()) == 2 })
+}
+
+func TestPlannerStartDoesNotStartTheManager(t *testing.T) {
+	sender := &recordingSender{}
+	m := newManager(sender, task.New(), WithLogDir(t.TempDir()))
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Stop(true) })
+	if err := m.Add(commandPlan("idle", &task.Task{}, "true")); err != nil {
+		t.Fatal(err)
+	}
+	triggered(t, m, "idle")
+	time.Sleep(50 * time.Millisecond)
+	if kinds := sender.kinds(); len(kinds) != 0 {
+		t.Fatalf("events from a manager nobody started: %v", kinds)
+	}
+}
+
+func TestPlannerStopEndsItsPlansAndLeavesTheManagerRunning(t *testing.T) {
+	sender := &recordingSender{}
+	tm := startedTaskManager(t)
+	release := make(chan struct{})
+	defer close(release)
+	other := &task.Task{Job: job.New("other", func(job.Context) error { <-release; return nil }), Manual: true}
+	if err := tm.Add(other); err != nil {
+		t.Fatal(err)
+	}
+	if err := tm.Trigger(other.ID(), nil); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the other task to start", other.Job.IsExecuting)
+
+	m := newManager(sender, tm, WithLogDir(t.TempDir()))
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Add(commandPlan("mine", &task.Task{}, "sleep", "30")); err != nil {
+		t.Fatal(err)
+	}
+	triggered(t, m, "mine")
+	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
+	time.Sleep(50 * time.Millisecond)
+	if err := m.Stop(true); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the run to end", func() bool { return len(sender.finished()) == 1 })
+	if st := sender.finished()[0].State; st != entity.PlanRunCanceled {
+		t.Fatalf("state = %s", st)
+	}
+	if _, err := m.Trigger("mine"); !errors.Is(err, errors.NotFound) {
+		t.Fatalf("Trigger after Stop = %v, want NotFound", err)
+	}
+	if !other.Job.IsExecuting() {
+		t.Fatalf("the other task's state = %s after the planner stopped", other.Job.State())
+	}
+	var runs atomic.Int32
+	if err := tm.Add(&task.Task{Job: job.New("later", func(job.Context) error { runs.Add(1); return nil })}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the manager to run a new task", func() bool { return runs.Load() == 1 })
+}
+
+func TestPlanIDTakenOnTheManagerIsAConflict(t *testing.T) {
+	m, _ := startedPlanner(t)
+	taken := &task.Task{Job: job.New("taken", func(job.Context) error { return nil }), Manual: true}
+	if err := m.tm.Add(taken); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Add(commandPlan("taken", &task.Task{}, "true")); !errors.Is(err, errors.Conflict) {
+		t.Fatalf("Add = %v, want Conflict", err)
+	}
+}
+
 func TestCommandPlanWithoutASenderStillRuns(t *testing.T) {
-	m := newManager(nil, WithLogDir(t.TempDir()))
+	m := newManager(nil, startedTaskManager(t), WithLogDir(t.TempDir()))
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
