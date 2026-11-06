@@ -143,6 +143,41 @@ func (m *manager) createRunLog(run *entity.PlanRun, params entity.CommandParams)
 	return f
 }
 
+// OpenRunLog goes by path, not run ID: the planner only remembers the latest run, and a caller's
+// records go further back. The check is lexical, the files being ones the planner created.
+func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error) {
+	if m.logDir == "" {
+		return nil, errors.NotFound.Newf("failed to open run log %s: no log dir is configured", path)
+	}
+	root, err := filepath.Abs(m.logDir)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	if rel, err := filepath.Rel(root, abs); err != nil || !filepath.IsLocal(rel) {
+		return nil, errors.Forbidden.Newf("failed to open run log %s: it is outside the log dir", path)
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, errors.NotFound.Newf("failed to open run log %s: the file is gone", path)
+		}
+		return nil, errors.Wrap(err)
+	}
+	if tailBytes > 0 {
+		if st, err := f.Stat(); err == nil && st.Size() > tailBytes {
+			if _, err := f.Seek(st.Size()-tailBytes, io.SeekStart); err != nil {
+				f.Close()
+				return nil, errors.Wrap(err)
+			}
+		}
+	}
+	return f, nil
+}
+
 func commandEnv(env map[string]string) []string {
 	out := make([]string, 0, len(env))
 	for k, v := range env {

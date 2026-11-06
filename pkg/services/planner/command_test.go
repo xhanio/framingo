@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -731,4 +732,143 @@ func TestCommandPlanWithoutASenderStillRuns(t *testing.T) {
 		run, ok := res.(entity.PlanRun)
 		return ok && run.ID == runID && run.State == entity.PlanRunSucceeded
 	})
+}
+
+func writeLogFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestOpenRunLogReadsTheFile(t *testing.T) {
+	cases := []struct {
+		name string
+		tail int64
+		want string
+	}{
+		{name: "the whole file", tail: 0, want: "0123456789"},
+		{name: "its tail", tail: 4, want: "6789"},
+		{name: "a tail longer than the file", tail: 100, want: "0123456789"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			m := newManager(nil, task.New(), WithLogDir(dir))
+			path := writeLogFile(t, dir, "plan/run.log", "0123456789")
+			f, err := m.OpenRunLog(path, tc.tail)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			raw, err := io.ReadAll(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != tc.want {
+				t.Fatalf("read %q, want %q", raw, tc.want)
+			}
+		})
+	}
+}
+
+func TestOpenRunLogTakesAFileStillBeingWritten(t *testing.T) {
+	dir := t.TempDir()
+	m := newManager(nil, task.New(), WithLogDir(dir))
+	path := writeLogFile(t, dir, "plan/run.log", "first\n")
+	w, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	f, err := m.OpenRunLog(path, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := w.WriteString("second\n"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "first\nsecond\n" {
+		t.Fatalf("read %q", raw)
+	}
+}
+
+func TestOpenRunLogOfARealRun(t *testing.T) {
+	m, sender := startedPlanner(t)
+	if err := m.Add(commandPlan("logged", &task.Task{}, "sh", "-c", "echo hello")); err != nil {
+		t.Fatal(err)
+	}
+	triggered(t, m, "logged")
+	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
+	f, err := m.OpenRunLog(sender.finished()[0].LogPath, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "hello\n" {
+		t.Fatalf("read %q", raw)
+	}
+}
+
+func TestOpenRunLogKeepsToTheLogDir(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "logs")
+	m := newManager(nil, task.New(), WithLogDir(dir))
+	writeLogFile(t, parent, "logs-other/run.log", "secret")
+	writeLogFile(t, parent, "outside.log", "secret")
+	cases := []struct {
+		name string
+		path string
+	}{
+		{name: "an unrelated absolute path", path: "/etc/passwd"},
+		{name: "a path climbing out with ..", path: filepath.Join(dir, "..", "outside.log")},
+		{name: "a raw path climbing out with ..", path: dir + "/plan/../../outside.log"},
+		{name: "a sibling sharing the prefix", path: filepath.Join(parent, "logs-other", "run.log")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := m.OpenRunLog(tc.path, 0); !errors.Is(err, errors.Forbidden) {
+				t.Fatalf("OpenRunLog = %v, want Forbidden", err)
+			}
+		})
+	}
+}
+
+func TestOpenRunLogTakesARelativeLogDir(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	m := newManager(nil, task.New(), WithLogDir("logs"))
+	writeLogFile(t, dir, "logs/plan/run.log", "hi")
+	f, err := m.OpenRunLog(filepath.Join("logs", "plan", "run.log"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if _, err := m.OpenRunLog(filepath.Join("..", "run.log"), 0); !errors.Is(err, errors.Forbidden) {
+		t.Fatalf("OpenRunLog = %v, want Forbidden", err)
+	}
+}
+
+func TestOpenRunLogNotFound(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := newManager(nil, task.New(), WithLogDir(dir)).OpenRunLog(filepath.Join(dir, "gone.log"), 0); !errors.Is(err, errors.NotFound) {
+		t.Fatalf("a missing file = %v, want NotFound", err)
+	}
+	if _, err := newManager(nil, task.New()).OpenRunLog(filepath.Join(dir, "any.log"), 0); !errors.Is(err, errors.NotFound) {
+		t.Fatalf("no log dir = %v, want NotFound", err)
+	}
 }
