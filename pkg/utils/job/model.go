@@ -26,6 +26,7 @@ type Context interface {
 	SetProgress(progress float64)
 	SetResult(result any)
 	GetParams() any
+	Signaled(sig Signal) <-chan struct{}
 }
 
 type Job interface {
@@ -37,6 +38,7 @@ type Job interface {
 	Run(ctx context.Context, params any) bool
 	Wait()
 	Cancel() bool
+	Signal(sig Signal) bool
 	Result() any
 	Err() error
 	State() State
@@ -48,6 +50,13 @@ type Job interface {
 	IsState(state State) bool
 	Stats() *Stats
 }
+
+// Signal is a request to a job's running execution beyond its context; what it means to
+// the job is up to the job's function.
+type Signal string
+
+// SignalKill asks the execution to end now, cutting short whatever it was doing to stop.
+const SignalKill Signal = "kill"
 
 type State string
 

@@ -32,6 +32,7 @@ type job struct {
 	endedAt      time.Time
 
 	progress float64
+	signals  map[Signal]chan struct{} // the current execution's, each closed when it arrives
 
 	wg     *sync.WaitGroup
 	ctx    context.Context
@@ -74,6 +75,7 @@ func (j *job) initialize() {
 	j.startedAt = time.Now()
 	j.endedAt = time.Time{}
 	j.result = nil
+	j.signals = nil
 	// j.sendEvent(JobActionUpdate)
 }
 
@@ -156,6 +158,42 @@ func (j *job) Cancel() bool {
 	j.log.Debugf("canceling job %s", j.id)
 	cancel() // outside the lock: it wakes the job goroutine
 	return true
+}
+
+// Signal sends sig to the execution going on now, being canceled included, and reports
+// whether there was one. It never reaches a later execution.
+func (j *job) Signal(sig Signal) bool {
+	j.Lock()
+	defer j.Unlock()
+	if !IsPending(j.state) {
+		return false
+	}
+	ch := j.signalLocked(sig)
+	select {
+	case <-ch:
+	default:
+		close(ch)
+	}
+	return true
+}
+
+// Signaled is closed once the current execution has been sent sig, before or after the call.
+func (j *job) Signaled(sig Signal) <-chan struct{} {
+	j.Lock()
+	defer j.Unlock()
+	return j.signalLocked(sig)
+}
+
+func (j *job) signalLocked(sig Signal) chan struct{} {
+	if j.signals == nil {
+		j.signals = make(map[Signal]chan struct{})
+	}
+	ch, ok := j.signals[sig]
+	if !ok {
+		ch = make(chan struct{})
+		j.signals[sig] = ch
+	}
+	return ch
 }
 
 func (j *job) Context() context.Context {
