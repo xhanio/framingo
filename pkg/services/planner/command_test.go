@@ -262,7 +262,7 @@ func TestDeleteOfARunningPlanEndsItCanceled(t *testing.T) {
 	triggered(t, m, "deleted")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
 	time.Sleep(50 * time.Millisecond)
-	if err := m.Delete("deleted", true); err != nil {
+	if _, err := m.Delete("deleted", true); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the run to end", func() bool { return len(sender.finished()) == 1 })
@@ -830,6 +830,7 @@ func TestOpenRunLogKeepsToTheLogDir(t *testing.T) {
 	m := newManager(nil, task.New(), WithLogDir(dir))
 	writeLogFile(t, parent, "logs-other/run.log", "secret")
 	writeLogFile(t, parent, "outside.log", "secret")
+	writeLogFile(t, dir, "plan/run.log", "")
 	cases := []struct {
 		name string
 		path string
@@ -838,6 +839,7 @@ func TestOpenRunLogKeepsToTheLogDir(t *testing.T) {
 		{name: "a path climbing out with ..", path: filepath.Join(dir, "..", "outside.log")},
 		{name: "a raw path climbing out with ..", path: dir + "/plan/../../outside.log"},
 		{name: "a sibling sharing the prefix", path: filepath.Join(parent, "logs-other", "run.log")},
+		{name: "the log dir itself", path: dir},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

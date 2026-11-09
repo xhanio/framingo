@@ -16,7 +16,11 @@ type Planner interface {
 	// InvalidArgument. A plan without a kind has no run to record it on.
 	Trigger(id string, source entity.PlanRunSource) (string, error)
 	Cancel(id string) error
-	Delete(id string, force bool) error
+	// Delete ends what the plan is doing, forgets the plan and returns its latest run, nil if
+	// it has none or has no kind. Its cron entry goes first, so no new run starts meanwhile.
+	// A plan's job gets the GracePeriod of its task to end; force also sends it SignalKill
+	// and does not wait for a plan without a kind, whose goroutine Go cannot kill.
+	Delete(id string, force bool) (*entity.PlanRun, error)
 	// LastRun returns the plan's latest run, nil if it has none yet or has no kind.
 	LastRun(id string) (*entity.PlanRun, error)
 	// OpenRunLog opens the log file of a run, by its PlanRun.LogPath, which may still be

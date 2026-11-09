@@ -15,12 +15,13 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
-	"github.com/xhanio/framingo/pkg/utils/cmdutil"
 	"github.com/xhanio/framingo/pkg/utils/ioutil"
 	"github.com/xhanio/framingo/pkg/utils/job"
+	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
-const commandWaitDelay = 10 * time.Second
+// commandKillWait is how long a killed command gets to be reaped.
+const commandKillWait = 2 * time.Second
 
 var (
 	_ common.Message = entity.PlanRunStarted{}
@@ -59,7 +60,6 @@ func (m *manager) buildJob(plan *entity.Plan) error {
 }
 
 func (m *manager) runCommand(jc job.Context, plan *entity.Plan, params entity.CommandParams) error {
-	ctx := jc.Context()
 	run := entity.PlanRun{
 		ID:        uuid.NewString(),
 		PlanID:    plan.ID,
@@ -82,44 +82,35 @@ func (m *manager) runCommand(jc job.Context, plan *entity.Plan, params entity.Co
 	jc.SetResult(run)
 	m.report(entity.PlanRunStarted{PlanRun: run})
 
-	cmd := cmdutil.New(params.Command[0], params.Command[1:],
-		cmdutil.WithContext(ctx),
-		cmdutil.WithDir(params.Dir),
-		cmdutil.WithEnv(commandEnv(params.Env)...),
-		cmdutil.WithProcessGroup(),
-		cmdutil.WithWaitDelay(commandWaitDelay),
-		cmdutil.WithMaxBuffer(m.tailBytes),
-		cmdutil.WithStdout(out),
-		cmdutil.WithStderr(out),
-	)
-	err := cmd.Start()
+	command := task.Command{Argv: params.Command, Dir: params.Dir, Env: params.Env}
+	res := task.RunCommand(jc, command, plan.Task.Grace(), out)
 
 	run.EndedAt = time.Now()
-	run.ExitCode = cmd.ExitCode()
+	run.ExitCode = res.ExitCode
 	run.OutputTail = tail.String()
-	switch {
-	case err == nil:
-		run.State = entity.PlanRunSucceeded
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		run.State = entity.PlanRunFailed
-		run.Error = fmt.Sprintf("timed out after %s", plan.Task.Timeout)
-	case ctx.Err() != nil:
-		run.State = entity.PlanRunCanceled
-		run.Error = "canceled"
-	case run.ExitCode > 0:
-		// the output is already in the tail and the log, the error need not repeat it
-		run.State = entity.PlanRunFailed
-		run.Error = fmt.Sprintf("exit status %d", run.ExitCode)
-	default:
-		run.State = entity.PlanRunFailed
-		run.Error = err.Error()
-	}
+	run.State, run.Error = runOutcome(res, plan.Task.Timeout)
 	jc.SetResult(run)
 	m.report(entity.PlanRunFinished{PlanRun: run})
-	if err != nil {
+	if err := res.Failure(); err != nil {
 		return errors.Wrapf(err, "plan %s run %s", plan.ID, run.ID)
 	}
 	return nil
+}
+
+func runOutcome(res task.CommandResult, timeout time.Duration) (entity.PlanRunState, string) {
+	switch {
+	case errors.Is(res.Stopped, context.DeadlineExceeded):
+		return entity.PlanRunFailed, fmt.Sprintf("timed out after %s", timeout)
+	case res.Stopped != nil:
+		return entity.PlanRunCanceled, "canceled"
+	case res.ExitCode == 0:
+		return entity.PlanRunSucceeded, ""
+	case res.ExitCode > 0:
+		// the output is already in the tail and the log, the error need not repeat it
+		return entity.PlanRunFailed, fmt.Sprintf("exit status %d", res.ExitCode)
+	default:
+		return entity.PlanRunFailed, res.Err.Error()
+	}
 }
 
 // createRunLog opens the run's log file and records its path; a run without one still runs.
@@ -157,8 +148,8 @@ func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	if rel, err := filepath.Rel(root, abs); err != nil || !filepath.IsLocal(rel) {
-		return nil, errors.Forbidden.Newf("failed to open run log %s: it is outside the log dir", path)
+	if rel, err := filepath.Rel(root, abs); err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return nil, errors.Forbidden.Newf("failed to open run log %s: it is not under the log dir", path)
 	}
 	f, err := os.Open(abs)
 	if err != nil {
@@ -176,14 +167,6 @@ func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error
 		}
 	}
 	return f, nil
-}
-
-func commandEnv(env map[string]string) []string {
-	out := make([]string, 0, len(env))
-	for k, v := range env {
-		out = append(out, k+"="+v)
-	}
-	return out
 }
 
 func (m *manager) report(msg common.Message) {

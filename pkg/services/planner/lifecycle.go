@@ -14,15 +14,16 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop ends and forgets the planner's own plans, leaving the task manager and whatever else
-// runs on it alone.
+// Stop ends and forgets the planner's own plans the way Delete does, with force unless told to
+// wait, leaving the task manager and whatever else runs on it alone.
 func (m *manager) Stop(wait bool) error {
 	m.Lock()
-	defer m.Unlock()
-	for id, todo := range m.todos {
-		m.tm.Remove(todo.Task)
-		delete(m.todos, id)
+	endings := make([]ending, 0, len(m.todos))
+	for _, todo := range m.todos {
+		endings = append(endings, m.forget(todo))
 	}
+	m.Unlock()
+	m.awaitEnd(!wait, endings...)
 	return nil
 }
 

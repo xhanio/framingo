@@ -2,6 +2,7 @@ package planner
 
 import (
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/xhanio/errors"
@@ -72,16 +73,70 @@ func (m *manager) Cancel(id string) error {
 	return errors.Wrap(err)
 }
 
-func (m *manager) Delete(id string, force bool) error {
+func (m *manager) Delete(id string, force bool) (*entity.PlanRun, error) {
 	m.Lock()
-	defer m.Unlock()
 	todo, ok := m.todos[id]
-	if ok {
-		m.tm.Remove(todo.Task)
-		delete(m.todos, id)
-		return nil
+	if !ok {
+		m.Unlock()
+		return nil, errors.NotFound.Newf("todo id %s not found", id)
 	}
-	return errors.NotFound.Newf("todo id %s not found", id)
+	ending := m.forget(todo)
+	m.Unlock()
+	m.awaitEnd(force, ending)
+	return lastRun(todo), nil
+}
+
+// ending is a forgotten plan and the channel that closes once its execution has ended.
+type ending struct {
+	todo  *entity.Plan
+	ended <-chan struct{}
+}
+
+// forget takes the plan off the task manager, which ends what it is doing, cron entry first.
+// The caller holds the lock.
+func (m *manager) forget(todo *entity.Plan) ending {
+	delete(m.todos, todo.ID)
+	return ending{todo: todo, ended: m.tm.Remove(todo.Task)}
+}
+
+// awaitEnd waits for forgotten plans. Their limits run from the same moment, so the wait lasts
+// as long as the slowest of them, not the sum. With force, each job is sent SignalKill; what
+// it does with that is up to the job.
+func (m *manager) awaitEnd(force bool, endings ...ending) {
+	if force {
+		for _, e := range endings {
+			e.todo.Task.Job.Signal(job.SignalKill)
+		}
+	}
+	begin := time.Now()
+	for _, e := range endings {
+		limit := endLimit(e.todo, force)
+		timer := time.NewTimer(time.Until(begin.Add(limit)))
+		select {
+		case <-e.ended:
+		case <-timer.C:
+			if limit > 0 {
+				m.log.Warnf("todo %s is still running %s after it was stopped", e.todo.ID, limit)
+			}
+		}
+		timer.Stop()
+	}
+}
+
+// endLimit is how long a stopped plan is waited for. A command is killed once its grace period
+// is up, so only one stuck in the kernel takes longer, and waiting on is not worth stopping for.
+// Go cannot kill a goroutine, so a forced plan with a job of its own is not waited for.
+func endLimit(todo *entity.Plan, force bool) time.Duration {
+	switch {
+	case todo.Kind == "" && force:
+		return 0
+	case todo.Kind == "":
+		return todo.Task.Grace()
+	case force:
+		return commandKillWait
+	default:
+		return todo.Task.Grace() + commandKillWait
+	}
 }
 
 func (m *manager) GetResult(id string) (any, error) {
