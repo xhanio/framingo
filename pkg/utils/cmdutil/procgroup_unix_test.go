@@ -96,3 +96,70 @@ func TestWithProcessGroupStopsChildrenOnCancel(t *testing.T) {
 	}
 	assertGone(t, child)
 }
+
+// stubbornChild writes its pid once it ignores SIGTERM; the shell itself dies of it
+const stubbornChild = `sh -c 'trap "" TERM; echo $$ > "$1"; exec sleep 60' sh "$1"`
+
+func startGroup(t *testing.T, script, pidFile string) (*exec.Cmd, <-chan error) {
+	t.Helper()
+	p := exec.Command("sh", "-c", script, "sh", pidFile)
+	SetProcessGroup(p)
+	if err := p.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- p.Wait() }()
+	return p, done
+}
+
+func waitDone(t *testing.T, done <-chan error) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the command did not end")
+	}
+}
+
+func TestTerminateProcessGroupReachesTheChildren(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	p, done := startGroup(t, childScript, pidFile)
+	child := readPid(t, pidFile)
+	if err := TerminateProcessGroup(p); err != nil {
+		t.Fatal(err)
+	}
+	waitDone(t, done)
+	assertGone(t, child)
+}
+
+func TestKillProcessGroupEndsWhatIgnoresTheTerm(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "pid")
+	p, done := startGroup(t, `trap "" TERM; `+stubbornChild+` & wait`, pidFile)
+	child := readPid(t, pidFile)
+	if err := TerminateProcessGroup(p); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if gone(child) {
+		t.Fatal("a child ignoring SIGTERM died of it")
+	}
+	if err := KillProcessGroup(p); err != nil {
+		t.Fatal(err)
+	}
+	waitDone(t, done)
+	assertGone(t, child)
+}
+
+func TestSignalingAGroupThatIsGoneIsNoError(t *testing.T) {
+	p := exec.Command("true")
+	SetProcessGroup(p)
+	if err := p.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := TerminateProcessGroup(p); err != nil {
+		t.Fatalf("TerminateProcessGroup = %v", err)
+	}
+	if err := KillProcessGroup(p); err != nil {
+		t.Fatalf("KillProcessGroup = %v", err)
+	}
+}
