@@ -37,6 +37,7 @@ type manager struct {
 	ew         *sync.WaitGroup // wait group for executing
 	registered map[string]*registration
 	running    map[*Task]executor.Executor
+	ended      map[*Task]chan struct{} // closed as a removed task's execution settles
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -55,6 +56,7 @@ func newScheduler(opts ...Option) *manager {
 		ew:         &sync.WaitGroup{},
 		registered: make(map[string]*registration),
 		running:    make(map[*Task]executor.Executor),
+		ended:      make(map[*Task]chan struct{}),
 		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
@@ -116,7 +118,8 @@ func (m *manager) Add(tasks ...*Task) error {
 	return nil
 }
 
-func (m *manager) Remove(tasks ...*Task) {
+func (m *manager) Remove(tasks ...*Task) <-chan struct{} {
+	var going []chan struct{}
 	for _, t := range tasks {
 		key := t.ID()
 		if key == "" {
@@ -142,12 +145,36 @@ func (m *manager) Remove(tasks ...*Task) {
 			}
 			cancelRun = reg.cancelRun
 		}
+		// admission happens under el too, so an execution is either here or never starts
+		if _, running := m.running[t]; running {
+			ended, ok := m.ended[t]
+			if !ok {
+				ended = make(chan struct{})
+				m.ended[t] = ended
+			}
+			going = append(going, ended)
+		}
 		m.el.Unlock()
 		t.Job.Cancel()
 		if cancelRun != nil {
 			cancelRun()
 		}
 	}
+	return allClosed(going)
+}
+
+func allClosed(chans []chan struct{}) <-chan struct{} {
+	if len(chans) == 1 {
+		return chans[0]
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for _, ch := range chans {
+			<-ch
+		}
+	}()
+	return done
 }
 
 func (m *manager) Start(ctx context.Context) error {

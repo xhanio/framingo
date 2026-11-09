@@ -9,6 +9,8 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
+const defaultConcurrency = 10
+
 type Option func(*manager)
 
 func (m *manager) applyOptions(opts ...Option) {
@@ -23,6 +25,9 @@ func (m *manager) setDefaults() {
 	}
 	if m.name == "" {
 		m.name = nameutil.Name(m)
+	}
+	if m.concurrent <= 0 {
+		m.concurrent = defaultConcurrency
 	}
 	if m.cm == nil {
 		m.cm = cron.New(

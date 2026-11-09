@@ -27,6 +27,10 @@ func (m *manager) settle(ctx, execCtx context.Context, reg *registration, rerun 
 	m.el.Lock()
 	defer m.el.Unlock()
 	delete(m.running, task)
+	if ended, ok := m.ended[task]; ok {
+		close(ended)
+		delete(m.ended, task)
+	}
 	reg.cancelRun = nil
 	// what ended on a cancellation did not fail, and a job already running elsewhere
 	// refused this start without failing

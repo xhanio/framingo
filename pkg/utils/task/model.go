@@ -10,6 +10,8 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/job/executor"
 )
 
+const DefaultGracePeriod = 10 * time.Second
+
 var (
 	_ common.Unique   = (*Task)(nil)
 	_ common.Weighted = (*Task)(nil)
@@ -19,7 +21,9 @@ type Manager interface {
 	common.Service
 	common.Daemon
 	Add(tasks ...*Task) error
-	Remove(tasks ...*Task)
+	// Remove forgets the tasks and ends what they are doing. The channel it returns closes
+	// once none of them has an execution still going; nothing of them starts after Remove.
+	Remove(tasks ...*Task) <-chan struct{}
 	Trigger(id string, params any) error
 	Cancel(id string) error
 	Stats(id string) *Stats
@@ -44,6 +48,9 @@ type Task struct {
 	Timeout       time.Duration `json:"timeout,omitempty"`
 	RetryAttempts int           `json:"retry_attempts,omitempty"`
 	RetryDelay    time.Duration `json:"retry_delay,omitempty"`
+	// GracePeriod is how long a canceled or timed out execution gets to end on its own, for
+	// whoever stops it to honor. Zero means DefaultGracePeriod.
+	GracePeriod time.Duration `json:"grace_period,omitempty"`
 	// RequeueAttempts is how many times a failed execution, its retries used
 	// up, goes back to the queue. Unlike a retry it gives up its worker while
 	// it waits, and it counts on top: a task runs up to
@@ -73,6 +80,14 @@ func (t *Task) Key() string {
 // down or back in the queue. Its job stays failed meanwhile: that run did fail.
 func (t *Task) IsRequeueing() bool {
 	return t != nil && t.requeueing.Load()
+}
+
+// Grace is the task's GracePeriod with the default applied.
+func (t *Task) Grace() time.Duration {
+	if t.GracePeriod <= 0 {
+		return DefaultGracePeriod
+	}
+	return t.GracePeriod
 }
 
 // isOneShot reports whether the task leaves the manager after its execution.
