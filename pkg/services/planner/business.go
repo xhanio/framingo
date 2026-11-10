@@ -1,6 +1,9 @@
 package planner
 
 import (
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -12,47 +15,47 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
-func (m *manager) Add(todo *entity.Plan) error {
-	if todo.ID == "" {
-		todo.ID = uuid.NewString()
+func (m *manager) Add(plan *entity.Plan) error {
+	if plan.ID == "" {
+		plan.ID = uuid.NewString()
 	}
-	if todo.Kind != "" {
-		if err := m.buildJob(todo); err != nil {
+	if plan.Kind != "" {
+		if err := m.buildJob(plan); err != nil {
 			return err
 		}
 	}
 	m.Lock()
 	defer m.Unlock()
-	if !todo.Task.IsValid() {
+	if !plan.Task.IsValid() {
 		return nil
 	}
-	err := m.tm.Add(todo.Task)
+	err := m.tm.Add(plan.Task)
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	m.todos[todo.ID] = todo
+	m.plans[plan.ID] = plan
 	return nil
 }
 
 func (m *manager) Trigger(id string, source entity.PlanRunSource) (string, error) {
 	if source == "" {
-		return "", errors.InvalidArgument.Newf("failed to trigger todo %s: no source", id)
+		return "", errors.InvalidArgument.Newf("failed to trigger plan %s: no source", id)
 	}
 	m.RLock()
 	defer m.RUnlock()
-	todo, ok := m.todos[id]
+	plan, ok := m.plans[id]
 	if !ok {
-		return "", errors.NotFound.Newf("failed to trigger todo %s: todo id not found", id)
+		return "", errors.NotFound.Newf("failed to trigger plan %s: plan not found", id)
 	}
 	var (
 		runID  string
 		params any
 	)
-	if todo.Kind != "" {
+	if plan.Kind != "" {
 		runID = uuid.NewString()
 		params = &triggeredRun{id: runID, source: source}
 	}
-	if err := m.tm.Trigger(todo.Task.ID(), params); err != nil {
+	if err := m.tm.Trigger(plan.Task.ID(), params); err != nil {
 		return "", errors.Wrap(err)
 	}
 	return runID, nil
@@ -61,57 +64,52 @@ func (m *manager) Trigger(id string, source entity.PlanRunSource) (string, error
 func (m *manager) Cancel(id string) error {
 	m.RLock()
 	defer m.RUnlock()
-	todo, ok := m.todos[id]
+	plan, ok := m.plans[id]
 	if !ok {
-		return errors.NotFound.Newf("failed to cancel todo %s: todo id not found", id)
+		return errors.NotFound.Newf("failed to cancel plan %s: plan not found", id)
 	}
-	err := m.tm.Cancel(todo.Task.ID())
+	err := m.tm.Cancel(plan.Task.ID())
 	if errors.Is(err, errors.NotFound) {
 		// the plan is here, its one-shot task finished and left the task manager
-		return errors.Conflict.Newf("todo %s is not running", id)
+		return errors.Conflict.Newf("plan %s is not running", id)
 	}
 	return errors.Wrap(err)
 }
 
 func (m *manager) Delete(id string, force bool) (*entity.PlanRun, error) {
 	m.Lock()
-	todo, ok := m.todos[id]
+	plan, ok := m.plans[id]
 	if !ok {
 		m.Unlock()
-		return nil, errors.NotFound.Newf("todo id %s not found", id)
+		return nil, errors.NotFound.Newf("plan %s not found", id)
 	}
-	ending := m.forget(todo)
+	ending := m.forget(plan)
 	m.Unlock()
 	m.awaitEnd(force, ending)
-	return lastRun(todo), nil
-}
-
-type ending struct {
-	todo  *entity.Plan
-	ended <-chan struct{}
+	return lastRun(plan), nil
 }
 
 // The caller holds the lock.
-func (m *manager) forget(todo *entity.Plan) ending {
-	delete(m.todos, todo.ID)
-	return ending{todo: todo, ended: m.tm.Remove(todo.Task)}
+func (m *manager) forget(plan *entity.Plan) ending {
+	delete(m.plans, plan.ID)
+	return ending{plan: plan, ended: m.tm.Remove(plan.Task)}
 }
 
 func (m *manager) awaitEnd(force bool, endings ...ending) {
 	if force {
 		for _, e := range endings {
-			e.todo.Task.Job.Signal(job.SignalKill)
+			e.plan.Task.Job.Signal(job.SignalKill)
 		}
 	}
 	begin := time.Now() // every limit runs from here, so the wait is the slowest plan's, not the sum
 	for _, e := range endings {
-		limit := endLimit(e.todo, force)
+		limit := endLimit(e.plan, force)
 		timer := time.NewTimer(time.Until(begin.Add(limit)))
 		select {
 		case <-e.ended:
 		case <-timer.C:
 			if limit > 0 {
-				m.log.Warnf("todo %s is still running %s after it was stopped", e.todo.ID, limit)
+				m.log.Warnf("plan %s is still running %s after it was stopped", e.plan.ID, limit)
 			}
 		}
 		timer.Stop()
@@ -120,53 +118,88 @@ func (m *manager) awaitEnd(force bool, endings ...ending) {
 
 // A command is killed once its grace period is up, so waiting longer only helps one stuck in the
 // kernel. Go cannot kill a goroutine, so a forced plan with a job of its own is not waited for.
-func endLimit(todo *entity.Plan, force bool) time.Duration {
+func endLimit(plan *entity.Plan, force bool) time.Duration {
 	switch {
-	case todo.Kind == "" && force:
+	case plan.Kind == "" && force:
 		return 0
-	case todo.Kind == "":
-		return todo.Task.Grace()
+	case plan.Kind == "":
+		return plan.Task.Grace()
 	case force:
 		return commandKillWait
 	default:
-		return todo.Task.Grace() + commandKillWait
+		return plan.Task.Grace() + commandKillWait
 	}
 }
 
 func (m *manager) GetResult(id string) (any, error) {
 	m.RLock()
 	defer m.RUnlock()
-	if todo, ok := m.todos[id]; ok {
-		return todo.Task.Job.Result(), nil
+	if plan, ok := m.plans[id]; ok {
+		return plan.Task.Job.Result(), nil
 	}
-	return nil, errors.NotFound.Newf("failed to get result of todo %s: todo id not found", id)
+	return nil, errors.NotFound.Newf("failed to get result of plan %s: plan not found", id)
 }
 
 func (m *manager) LastRun(id string) (*entity.PlanRun, error) {
 	m.RLock()
 	defer m.RUnlock()
-	todo, ok := m.todos[id]
+	plan, ok := m.plans[id]
 	if !ok {
-		return nil, errors.NotFound.Newf("failed to get the last run of todo %s: todo id not found", id)
+		return nil, errors.NotFound.Newf("failed to get the last run of plan %s: plan not found", id)
 	}
-	return lastRun(todo), nil
+	return lastRun(plan), nil
 }
 
-func lastRun(todo *entity.Plan) *entity.PlanRun {
-	if todo.Kind == "" {
+func lastRun(plan *entity.Plan) *entity.PlanRun {
+	if plan.Kind == "" {
 		return nil
 	}
-	run, ok := todo.Task.Job.Result().(entity.PlanRun)
+	run, ok := plan.Task.Job.Result().(entity.PlanRun)
 	if !ok {
 		return nil
 	}
 	return &run
 }
 
+// By path, not run ID, since the planner only remembers the latest run. The check is lexical:
+// the planner made these files.
+func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error) {
+	if m.logDir == "" {
+		return nil, errors.NotFound.Newf("failed to open run log %s: no log dir is configured", path)
+	}
+	root, err := filepath.Abs(m.logDir)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	if rel, err := filepath.Rel(root, abs); err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return nil, errors.Forbidden.Newf("failed to open run log %s: it is not under the log dir", path)
+	}
+	f, err := os.Open(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, errors.NotFound.Newf("failed to open run log %s: the file is gone", path)
+		}
+		return nil, errors.Wrap(err)
+	}
+	if tailBytes > 0 {
+		if st, err := f.Stat(); err == nil && st.Size() > tailBytes {
+			if _, err := f.Seek(st.Size()-tailBytes, io.SeekStart); err != nil {
+				f.Close()
+				return nil, errors.Wrap(err)
+			}
+		}
+	}
+	return f, nil
+}
+
 func (m *manager) stats(all bool) []*entity.PlannerStats {
 	result := make([]*entity.PlannerStats, 0)
-	for _, todo := range m.todos {
-		t := todo.Task.Job
+	for _, plan := range m.plans {
+		t := plan.Task.Job
 		if !all && t.State() == job.StateSucceeded {
 			continue
 		}
@@ -180,7 +213,7 @@ func (m *manager) stats(all bool) []*entity.PlannerStats {
 			Labels:        ts.Labels,
 			Error:         ts.Error,
 		}
-		stats.Schedule = todo.Task.Schedule
+		stats.Schedule = plan.Task.Schedule
 		ss := m.tm.Stats(t.ID())
 		if ss != nil {
 			stats.Cooldown = ss.Cooldown
@@ -202,9 +235,9 @@ func (m *manager) Stats(opts entity.PlannerStatsOptions) ([]*entity.PlannerStats
 	m.RLock()
 	defer m.RUnlock()
 	var result []*entity.PlannerStats
-	for _, todo := range m.stats(opts.All) {
-		if selector.Empty() || selector.Matches(todo.Labels) {
-			result = append(result, todo)
+	for _, plan := range m.stats(opts.All) {
+		if selector.Empty() || selector.Matches(plan.Labels) {
+			result = append(result, plan)
 		}
 	}
 	return result, nil

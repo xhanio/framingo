@@ -306,7 +306,7 @@ func TestChildHoldingTheOutputDoesNotFailACommandThatEndedOnItsOwn(t *testing.T)
 }
 
 func TestCommandRunIsATaskJobThatHonorsItsGracePeriod(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	pids := pidPath(t)
 	c := sh(stubbornCommand, pids)
 	c.Grace = 200 * time.Millisecond
@@ -327,7 +327,7 @@ func TestCommandRunIsATaskJobThatHonorsItsGracePeriod(t *testing.T) {
 }
 
 func TestCommandRunFailsTheJobAsTheCommandFails(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	tk := &Task{Job: job.New("failing", sh("exit 4").Run)}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)

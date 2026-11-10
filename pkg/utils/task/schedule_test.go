@@ -9,7 +9,7 @@ import (
 )
 
 func TestValidScheduleIsAcceptedByTheManager(t *testing.T) {
-	s := newScheduler()
+	s := newManager()
 	for _, spec := range []string{"0 30 6 * * *", "*/5 * * * *", "@daily", "@every 10m"} {
 		if err := cronutil.Validate(spec); err != nil {
 			t.Fatalf("cronutil.Validate(%q) = %v", spec, err)

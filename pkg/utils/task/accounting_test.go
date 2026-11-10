@@ -13,7 +13,7 @@ import (
 func TestQuickTasksDoNotUnbalanceTheQueue(t *testing.T) {
 	const n = 3000
 	var done atomic.Int32
-	s := newScheduler(MaxConcurrency(3))
+	s := newManager(MaxConcurrency(3))
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}

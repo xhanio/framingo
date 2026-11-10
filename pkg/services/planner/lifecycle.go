@@ -21,9 +21,9 @@ func (m *manager) Start(ctx context.Context) error {
 // SignalKill. It leaves the task manager running: other tasks may share it.
 func (m *manager) Stop(ctx context.Context) error {
 	m.Lock()
-	endings := make([]ending, 0, len(m.todos))
-	for _, todo := range m.todos {
-		endings = append(endings, m.forget(todo))
+	endings := make([]ending, 0, len(m.plans))
+	for _, plan := range m.plans {
+		endings = append(endings, m.forget(plan))
 	}
 	m.Unlock()
 	for _, e := range endings {
@@ -42,7 +42,7 @@ func kill(cause error, endings []ending) error {
 		select {
 		case <-e.ended:
 		default:
-			e.todo.Task.Job.Signal(job.SignalKill)
+			e.plan.Task.Job.Signal(job.SignalKill)
 			left++
 		}
 	}

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,14 +25,6 @@ var (
 	_ common.Message = entity.PlanRunStarted{}
 	_ common.Message = entity.PlanRunFinished{}
 )
-
-// triggeredRun goes with a firing of Trigger: all its runs take the source, only the first
-// the ID Trigger returned, as retries and requeues are runs of their own.
-type triggeredRun struct {
-	id      string
-	source  entity.PlanRunSource
-	claimed atomic.Bool
-}
 
 func (m *manager) buildJob(plan *entity.Plan) error {
 	if plan.Task == nil {
@@ -138,43 +129,8 @@ func (m *manager) createRunLog(run *entity.PlanRun, argv []string) *os.File {
 	return f
 }
 
-// By path, not run ID, since the planner only remembers the latest run. The check is lexical:
-// the planner made these files.
-func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error) {
-	if m.logDir == "" {
-		return nil, errors.NotFound.Newf("failed to open run log %s: no log dir is configured", path)
-	}
-	root, err := filepath.Abs(m.logDir)
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	if rel, err := filepath.Rel(root, abs); err != nil || rel == "." || !filepath.IsLocal(rel) {
-		return nil, errors.Forbidden.Newf("failed to open run log %s: it is not under the log dir", path)
-	}
-	f, err := os.Open(abs)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, errors.NotFound.Newf("failed to open run log %s: the file is gone", path)
-		}
-		return nil, errors.Wrap(err)
-	}
-	if tailBytes > 0 {
-		if st, err := f.Stat(); err == nil && st.Size() > tailBytes {
-			if _, err := f.Seek(st.Size()-tailBytes, io.SeekStart); err != nil {
-				f.Close()
-				return nil, errors.Wrap(err)
-			}
-		}
-	}
-	return f, nil
-}
-
 func (m *manager) report(msg common.Message) {
-	if m.es != nil {
-		m.es.SendMessage(context.Background(), m, msg)
+	if m.ms != nil {
+		m.ms.SendMessage(context.Background(), m, msg)
 	}
 }

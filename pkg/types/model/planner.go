@@ -9,7 +9,7 @@ import (
 
 type Planner interface {
 	common.Service
-	Add(todo *entity.Plan) error
+	Add(plan *entity.Plan) error
 	// Trigger runs the plan now and returns the run's ID, empty for a plan without a kind.
 	// source goes on the run and on its retries and requeues; empty is an InvalidArgument.
 	Trigger(id string, source entity.PlanRunSource) (string, error)

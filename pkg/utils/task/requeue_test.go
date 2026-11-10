@@ -47,7 +47,7 @@ func TestRequeueRerunsAFailedTaskUntilItSucceeds(t *testing.T) {
 		RequeueAttempts: 5,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestRequeueGivesUpAfterItsAttempts(t *testing.T) {
 		RequeueAttempts: 2,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestRequeueDoesNothingWithoutAttempts(t *testing.T) {
 		Job:             alwaysFailingJob("no-requeue", &runs),
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestRequeueComesOnTopOfTheJobRetry(t *testing.T) {
 		RequeueAttempts: 2,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestRequeueWaitsOutTheCooldown(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: cooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestRequeueCooldownFreesTheWorker(t *testing.T) {
 		ran.Store(true)
 		return nil
 	})}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(cooling); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestRequeueKeepsTheTaskRegisteredWhileCooling(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestRemoveEndsARequeue(t *testing.T) {
 		RequeueAttempts: 3,
 		RequeueCooldown: 50 * time.Millisecond,
 	}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: 200 * time.Millisecond,
 	}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestStopEndsARequeue(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestTaskContextEndsARequeue(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestCanceledRunIsNotRequeued(t *testing.T) {
 		RequeueAttempts: 3,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +367,7 @@ func TestRunEndedByItsContextIsNotRequeued(t *testing.T) {
 		RequeueAttempts: 3,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestTicksAreSkippedDuringARequeue(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: cooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +420,7 @@ func TestStatsRequeuesStartOverWithANewFiring(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestTickDuringARunStaysOutOfTheQueue(t *testing.T) {
 		}),
 		Schedule: "* * * * * *",
 	}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +475,7 @@ func TestStartingARunLeavesNoCopyInTheQueue(t *testing.T) {
 		Manual:    true,
 		Exclusive: true,
 	}
-	s := startedScheduler(t, MaxConcurrency(2))
+	s := startedManager(t, MaxConcurrency(2))
 	if err := s.Add(busy); err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +502,7 @@ func TestStrayPopDuringARequeueDoesNotRunTheTask(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +532,7 @@ func TestTaskContextTakesAQueuedRerunOutOfTheQueue(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: 200 * time.Millisecond,
 	}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -567,7 +567,7 @@ func TestCanceledRerunEndsTheRequeue(t *testing.T) {
 		RequeueAttempts: 3,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -590,7 +590,7 @@ func TestAddAfterRemoveDuringARequeue(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -626,7 +626,7 @@ func TestARerunIsNotRequeueing(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -653,7 +653,7 @@ func TestRefusedStartIsNotRequeued(t *testing.T) {
 	}
 	tk.Job.Run(context.Background(), nil) // running before the manager ever sees it
 	<-started
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}

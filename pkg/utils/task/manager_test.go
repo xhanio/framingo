@@ -48,7 +48,7 @@ func TestMaxConcurrency(t *testing.T) {
 	r.Shuffle(20, func(i, j int) {
 		tasks[i], tasks[j] = tasks[j], tasks[i]
 	})
-	s := newScheduler(MaxConcurrency(3))
+	s := newManager(MaxConcurrency(3))
 	log.Default.Debugln("sequence:", strutil.Join(" ", tasks[:10]...))
 	_ = s.Add(tasks[:10]...)
 	_ = s.Start(context.Background())
@@ -74,7 +74,7 @@ func TestExclusivePlan(t *testing.T) {
 	r.Shuffle(20, func(i, j int) {
 		tasks[i], tasks[j] = tasks[j], tasks[i]
 	})
-	s := newScheduler(MaxConcurrency(3))
+	s := newManager(MaxConcurrency(3))
 	log.Default.Debugln("sequence:", strutil.Join(" ", tasks[:10]...))
 	_ = s.Add(tasks[:10]...)
 	_ = s.Start(context.Background())

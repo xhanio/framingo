@@ -20,7 +20,7 @@ type manager struct {
 	name string
 	log  log.Logger
 
-	es common.MessageSender
+	ms common.MessageSender
 
 	tm task.Manager
 
@@ -28,18 +28,18 @@ type manager struct {
 	tailBytes int
 
 	sync.RWMutex
-	todos map[string]*entity.Plan
+	plans map[string]*entity.Plan
 }
 
-func New(es common.MessageSender, tm task.Manager, opts ...Option) Manager {
-	return newManager(es, tm, opts...)
+func New(ms common.MessageSender, tm task.Manager, opts ...Option) Manager {
+	return newManager(ms, tm, opts...)
 }
 
-func newManager(es common.MessageSender, tm task.Manager, opts ...Option) *manager {
+func newManager(ms common.MessageSender, tm task.Manager, opts ...Option) *manager {
 	m := &manager{
-		es:    es,
+		ms:    ms,
 		tm:    tm,
-		todos: make(map[string]*entity.Plan),
+		plans: make(map[string]*entity.Plan),
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
@@ -53,8 +53,8 @@ func (m *manager) Name() string {
 
 func (m *manager) Dependencies() []common.Service {
 	deps := []common.Service{m.tm}
-	if m.es != nil {
-		deps = append(deps, m.es)
+	if m.ms != nil {
+		deps = append(deps, m.ms)
 	}
 	return deps
 }

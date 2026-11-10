@@ -38,7 +38,7 @@ func blockedJob(id string, runs *atomic.Int32, release <-chan struct{}) job.Job 
 func TestManualTaskRunsOnlyWhenTriggered(t *testing.T) {
 	var runs atomic.Int32
 	tk := &Task{Job: countingJob("manual", &runs), Manual: true}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func busy(s *manager, tk *Task) bool {
 func TestAddRejectsAManualTaskWithASchedule(t *testing.T) {
 	var runs atomic.Int32
 	tk := &Task{Job: countingJob("both", &runs), Manual: true, Schedule: neverFires}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); !errors.Is(err, errors.InvalidArgument) {
 		t.Fatalf("Add = %v, want InvalidArgument", err)
 	}
@@ -94,7 +94,7 @@ func TestAddRejectsAManualTaskWithASchedule(t *testing.T) {
 func TestTriggerRunsAScheduledTaskNow(t *testing.T) {
 	var runs atomic.Int32
 	tk := &Task{Job: countingJob("scheduled", &runs), Schedule: neverFires}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestTriggerRunsAScheduledTaskNow(t *testing.T) {
 }
 
 func TestTriggerOfAnUnknownTaskIsNotFound(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Trigger("nobody", nil); !errors.Is(err, errors.NotFound) {
 		t.Fatalf("Trigger = %v, want NotFound", err)
 	}
@@ -119,7 +119,7 @@ func TestTriggerOfARunningTaskConflicts(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	tk := &Task{Job: blockedJob("running", &runs, release), Manual: true}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestTriggerOfAQueuedTaskConflicts(t *testing.T) {
 	defer close(release)
 	other := &Task{Job: blockedJob("other", &busyRuns, release)}
 	tk := &Task{Job: countingJob("waiting", &runs), Manual: true}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(other, tk); err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestTriggerDuringARequeueConflicts(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestTriggerParamsLastForThatFiring(t *testing.T) {
 		RequeueAttempts: 1,
 		RequeueCooldown: 10 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestCancelOfARunEndsItAndKeepsTheTask(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	tk := &Task{Job: blockedJob("cancel-run", &runs, release), Manual: true}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestCancelEndsAOneShotTask(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	tk := &Task{Job: blockedJob("cancel-one-shot", &runs, release)}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestCancelInterruptsARetryWait(t *testing.T) {
 		RequeueAttempts: 1, // a canceled execution did not fail, so nothing here may run it again
 		RequeueCooldown: time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestCancelEndsARequeueCooldown(t *testing.T) {
 		RequeueAttempts: 3,
 		RequeueCooldown: longCooldown,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +325,7 @@ func TestCancelTakesAQueuedTaskOutOfTheQueue(t *testing.T) {
 	release := make(chan struct{})
 	other := &Task{Job: blockedJob("other", &busyRuns, release)}
 	tk := &Task{Job: countingJob("queued-cancel", &runs), Manual: true}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +360,7 @@ func TestCancelOfAQueuedOneShotTaskEndsIt(t *testing.T) {
 	defer close(release)
 	other := &Task{Job: blockedJob("other", &busyRuns, release)}
 	tk := &Task{Job: countingJob("queued-one-shot", &runs)}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestCancelOfAQueuedOneShotTaskEndsIt(t *testing.T) {
 func TestCancelOfAnIdleTaskConflicts(t *testing.T) {
 	var runs atomic.Int32
 	tk := &Task{Job: countingJob("idle", &runs), Manual: true}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +389,7 @@ func TestCancelOfAnIdleTaskConflicts(t *testing.T) {
 }
 
 func TestCancelOfAnUnknownTaskIsNotFound(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Cancel("nobody"); !errors.Is(err, errors.NotFound) {
 		t.Fatalf("Cancel = %v, want NotFound", err)
 	}
@@ -402,7 +402,7 @@ func TestRemoveInterruptsARetryWait(t *testing.T) {
 		RetryAttempts: 3,
 		RetryDelay:    time.Hour,
 	}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +422,7 @@ func TestStopInterruptsARetryWait(t *testing.T) {
 		RetryAttempts: 3,
 		RetryDelay:    100 * time.Millisecond,
 	}
-	s := newScheduler(MaxConcurrency(1))
+	s := newManager(MaxConcurrency(1))
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +445,7 @@ func TestTickWhileQueuedIsSkipped(t *testing.T) {
 	release := make(chan struct{})
 	other := &Task{Job: blockedJob("other", &busyRuns, release)}
 	tk := &Task{Job: countingJob("ticking", &runs), Schedule: "* * * * * *"}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}

@@ -7,9 +7,9 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
-func startedScheduler(t *testing.T, opts ...Option) *manager {
+func startedManager(t *testing.T, opts ...Option) *manager {
 	t.Helper()
-	s := newScheduler(append([]Option{MaxConcurrency(3)}, opts...)...)
+	s := newManager(append([]Option{MaxConcurrency(3)}, opts...)...)
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +18,7 @@ func startedScheduler(t *testing.T, opts ...Option) *manager {
 }
 
 func TestRemoveAndStopForgetTheTask(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	tk := &Task{Job: job.New("yearly", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)

@@ -14,7 +14,7 @@ import (
 // held starts a manager running a job that ignores its cancel until released.
 func held(t *testing.T, concurrency int) (*manager, chan struct{}) {
 	t.Helper()
-	s := newScheduler(MaxConcurrency(concurrency))
+	s := newManager(MaxConcurrency(concurrency))
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestAForcedStopReturnsAtOnce(t *testing.T) {
 }
 
 func TestAForcedStopWithNothingLeftReturnsNil(t *testing.T) {
-	s := newScheduler()
+	s := newManager()
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func stubborn(t *testing.T, s *manager) (killed <-chan struct{}) {
 }
 
 func TestStopKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	killed := stubborn(t, s)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -153,7 +153,7 @@ func TestStopKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
 }
 
 func TestCancelingAStopGoingOnForcesIt(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	killed := stubborn(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan error, 1)
@@ -218,7 +218,7 @@ func TestStopWaitingWaitsForWhatAForcedStopLeft(t *testing.T) {
 }
 
 func TestAForcedStopKillsTheExecutions(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	killed := stubborn(t, s)
 	forceStop(t, s)
 	select {
@@ -229,7 +229,7 @@ func TestAForcedStopKillsTheExecutions(t *testing.T) {
 }
 
 func TestAStopThatWaitsDoesNotKill(t *testing.T) {
-	s := newScheduler()
+	s := newManager()
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestAStopThatWaitsDoesNotKill(t *testing.T) {
 }
 
 func TestATaskAddedAgainRunsOnceWhatAForcedStopLeftEnds(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	started, release := make(chan struct{}), make(chan struct{})
 	var runs atomic.Int32
 	tk := &Task{Job: job.New("again", func(job.Context) error {
@@ -312,7 +312,7 @@ func TestAForcedStopIsNotHeldUpByAnExclusiveTaskWaitingToRun(t *testing.T) {
 }
 
 func TestAnExclusiveTaskRunsAlone(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	firstStarted, firstRelease := make(chan struct{}), make(chan struct{})
 	if err := s.Add(&Task{Job: holdJob("first", firstStarted, firstRelease)}); err != nil {
 		t.Fatal(err)
@@ -346,7 +346,7 @@ func TestAnExclusiveTaskRunsAlone(t *testing.T) {
 }
 
 func TestAnExclusiveTaskGivesBackEverySlot(t *testing.T) {
-	s := startedScheduler(t, MaxConcurrency(2))
+	s := startedManager(t, MaxConcurrency(2))
 	var runs atomic.Int32
 	if err := s.Add(&Task{Job: countingJob("exclusive", &runs), Exclusive: true}); err != nil {
 		t.Fatal(err)
@@ -411,7 +411,7 @@ func TestStopLeavesTheQueueEmpty(t *testing.T) {
 
 func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 	t.Run("queued", func(t *testing.T) {
-		s := startedScheduler(t, MaxConcurrency(1))
+		s := startedManager(t, MaxConcurrency(1))
 		var staleRuns, runs atomic.Int32
 		stale := &Task{Job: countingJob("same", &staleRuns), Manual: true}
 		if err := s.Add(stale); err != nil {
@@ -436,7 +436,7 @@ func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 		eventually(t, "the successor to run", func() bool { return runs.Load() == 1 })
 	})
 	t.Run("scheduled", func(t *testing.T) {
-		s := startedScheduler(t)
+		s := startedManager(t)
 		var staleRuns, runs atomic.Int32
 		stale := &Task{Job: countingJob("same", &staleRuns), Schedule: "0 0 1 1 *"}
 		if err := s.Add(stale); err != nil {
@@ -453,7 +453,7 @@ func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 }
 
 func TestCancelOfATaskWaitingForWhatAForcedStopLeftEndsIt(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	started, release := make(chan struct{}), make(chan struct{})
 	var runs atomic.Int32
 	tk := &Task{Job: job.New("waiting", func(job.Context) error {

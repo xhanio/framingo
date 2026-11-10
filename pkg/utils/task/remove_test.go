@@ -47,7 +47,7 @@ func TestNewWithoutAConcurrencyStillRunsTasks(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := newScheduler(tc.opts...)
+			s := newManager(tc.opts...)
 			if err := s.Start(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -81,7 +81,7 @@ func TestGraceDefaultsToTenSeconds(t *testing.T) {
 }
 
 func TestRemoveOfATaskNotRunningIsDoneAtOnce(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	var runs atomic.Int32
 	tk := &Task{Job: countingJob("idle", &runs), Manual: true}
 	if err := s.Add(tk); err != nil {
@@ -91,7 +91,7 @@ func TestRemoveOfATaskNotRunningIsDoneAtOnce(t *testing.T) {
 }
 
 func TestRemoveIsDoneOnceTheExecutionHasEnded(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	started, release := make(chan struct{}), make(chan struct{})
 	tk := &Task{Job: holdJob("held", started, release), Manual: true}
 	if err := s.Add(tk); err != nil {
@@ -111,7 +111,7 @@ func TestRemoveIsDoneOnceTheExecutionHasEnded(t *testing.T) {
 }
 
 func TestRemoveOfSeveralIsDoneOnceTheLastHasEnded(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	firstStarted, firstRelease := make(chan struct{}), make(chan struct{})
 	secondStarted, secondRelease := make(chan struct{}), make(chan struct{})
 	first := &Task{Job: holdJob("first", firstStarted, firstRelease), Manual: true}
@@ -134,7 +134,7 @@ func TestRemoveOfSeveralIsDoneOnceTheLastHasEnded(t *testing.T) {
 }
 
 func TestQueuedTaskRemovedIsDoneAtOnceAndNeverRuns(t *testing.T) {
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	started, release := make(chan struct{}), make(chan struct{})
 	blocker := &Task{Job: holdJob("blocker", started, release), Manual: true}
 	var runs atomic.Int32
@@ -158,7 +158,7 @@ func TestQueuedTaskRemovedIsDoneAtOnceAndNeverRuns(t *testing.T) {
 }
 
 func TestTaskRemovedDuringARequeueNeverRunsAgain(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	var runs atomic.Int32
 	tk := &Task{Job: alwaysFailingJob("requeued", &runs), Manual: true, RequeueAttempts: 100, RequeueCooldown: 10 * time.Millisecond}
 	if err := s.Add(tk); err != nil {

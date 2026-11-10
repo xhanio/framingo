@@ -106,7 +106,7 @@ func TestDeleteOfAnIdlePlanReturnsItsLastRunAtOnce(t *testing.T) {
 	}
 	runID := triggered(t, m, "idle")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
-	eventually(t, "the run to settle", func() bool { return !m.todos["idle"].Task.Job.IsExecuting() })
+	eventually(t, "the run to settle", func() bool { return !m.plans["idle"].Task.Job.IsExecuting() })
 	begin := time.Now()
 	run, err := m.Delete("idle", false)
 	if err != nil {

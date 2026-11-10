@@ -21,7 +21,7 @@ func TestQueueTakesTheMoreUrgentThenTheEarlierQueued(t *testing.T) {
 			return nil
 		})
 	}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedManager(t, MaxConcurrency(1))
 	// ran has run before, so its job is no longer new; older is created before newer
 	ran := &Task{Job: recorded("ran"), Manual: true, Priority: 1}
 	older := &Task{Job: recorded("older"), Manual: true, Priority: 3}

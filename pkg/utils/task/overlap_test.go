@@ -24,7 +24,7 @@ func TestTickOverlappingARunIsSkipped(t *testing.T) {
 		RetryAttempts: 5,
 		RetryDelay:    20 * time.Millisecond,
 	}
-	s := startedScheduler(t)
+	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestTickOverlappingARunIsSkipped(t *testing.T) {
 }
 
 func TestAddRejectsTaskIDAlreadyAdded(t *testing.T) {
-	s := startedScheduler(t)
+	s := startedManager(t)
 	first := &Task{Job: job.New("dup", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
 	second := &Task{Job: job.New("dup", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
 	if err := s.Add(first); err != nil {
