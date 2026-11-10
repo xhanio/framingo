@@ -624,3 +624,34 @@ func TestDeleteWithForceSendsTheKillToAnOwnJob(t *testing.T) {
 	}
 	eventually(t, "the job to see the kill", killed.Load)
 }
+
+func TestDeleteSendsTheKillToAnOwnJobOnceTheGracePeriodIsUp(t *testing.T) {
+	m, _ := startedPlanner(t)
+	var started atomic.Bool
+	killed := make(chan time.Time, 1)
+	plan := ownJobPlan("own", &task.Task{GracePeriod: 200 * time.Millisecond}, func(jc job.Context) error {
+		started.Store(true)
+		<-jc.Signaled(job.SignalKill)
+		killed <- time.Now()
+		return nil
+	})
+	if err := m.Add(plan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Trigger("own", entity.PlanRunManual); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the job to start", started.Load)
+	begin := time.Now()
+	if _, err := m.Delete("own", false); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case at := <-killed:
+		if took := at.Sub(begin); took < 200*time.Millisecond || took > 2*time.Second {
+			t.Fatalf("the kill came %s after Delete, want as the 200ms grace period ends", took)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the grace period passed without a kill")
+	}
+}

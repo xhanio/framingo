@@ -1,10 +1,12 @@
 package task
 
 import (
+	"context"
 	"time"
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/job/executor"
 )
 
@@ -46,8 +48,8 @@ func (m *manager) add(t *Task) error {
 	return nil
 }
 
-func (m *manager) Remove(tasks ...*Task) <-chan struct{} {
-	var going []chan struct{}
+func (m *manager) Remove(ctx context.Context, tasks ...*Task) error {
+	var going []*execution
 	for _, t := range tasks {
 		key := t.ID()
 		if key == "" {
@@ -61,7 +63,7 @@ func (m *manager) Remove(tasks ...*Task) <-chan struct{} {
 		// admission happens under el too, so an execution is either here or never starts
 		e, running := m.running[t]
 		if running {
-			going = append(going, e.done)
+			going = append(going, e)
 		}
 		m.el.Unlock()
 		t.Job.Cancel()
@@ -69,21 +71,31 @@ func (m *manager) Remove(tasks ...*Task) <-chan struct{} {
 			e.cancel()
 		}
 	}
-	return allClosed(going)
+	for _, e := range going {
+		select {
+		case <-e.done:
+		case <-ctx.Done():
+			if left := killGoing(going); left > 0 {
+				return errors.Wrapf(ctx.Err(), "%d removed executions still going", left)
+			}
+			return nil
+		}
+	}
+	return nil
 }
 
-func allClosed(chans []chan struct{}) <-chan struct{} {
-	if len(chans) == 1 {
-		return chans[0]
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for _, ch := range chans {
-			<-ch
+// killGoing sends SignalKill to those of the executions still going, and says how many there are.
+func killGoing(executions []*execution) int {
+	var left int
+	for _, e := range executions {
+		select {
+		case <-e.done:
+		default:
+			e.reg.task.Job.Signal(job.SignalKill)
+			left++
 		}
-	}()
-	return done
+	}
+	return left
 }
 
 // Trigger queues the registered task to run now, with params in place of Task.Params for

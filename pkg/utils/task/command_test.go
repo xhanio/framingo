@@ -319,7 +319,7 @@ func TestCommandRunIsATaskJobThatHonorsItsGracePeriod(t *testing.T) {
 	}
 	child := readPid(t, pids)
 	begin := time.Now()
-	assertClosed(t, s.Remove(tk))
+	assertRemoved(t, removeInBackground(s, context.Background(), tk))
 	if took := time.Since(begin); took < 200*time.Millisecond || took > 2*time.Second {
 		t.Fatalf("Remove's end came %s after it, want about the 200ms grace period", took)
 	}

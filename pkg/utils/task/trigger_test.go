@@ -408,7 +408,9 @@ func TestRemoveInterruptsARetryWait(t *testing.T) {
 	}
 	eventually(t, "the first run", func() bool { return runs.Load() == 1 })
 	eventually(t, "the job to wait for its retry", tk.Job.IsDone)
-	s.Remove(tk)
+	if err := s.Remove(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Add(&Task{Job: countingJob("next", &otherRuns)}); err != nil {
 		t.Fatal(err)
 	}

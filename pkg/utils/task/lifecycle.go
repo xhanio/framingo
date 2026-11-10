@@ -4,8 +4,6 @@ import (
 	"context"
 
 	"github.com/xhanio/errors"
-
-	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
 // Start can come right after any Stop, while what that Stop left still runs.
@@ -169,9 +167,10 @@ func (m *manager) halt() {
 // kill sends SignalKill to the executions still going, and says how many there are.
 func (m *manager) kill() int {
 	m.el.RLock()
-	defer m.el.RUnlock()
+	going := make([]*execution, 0, len(m.running))
 	for _, e := range m.running {
-		e.reg.task.Job.Signal(job.SignalKill)
+		going = append(going, e)
 	}
-	return len(m.running)
+	m.el.RUnlock()
+	return killGoing(going)
 }

@@ -26,7 +26,9 @@ func TestRemoveAndStopForgetTheTask(t *testing.T) {
 	if s.Stats(tk.ID()) == nil {
 		t.Fatal("an added scheduled task must have stats before it ever runs")
 	}
-	s.Remove(tk)
+	if err := s.Remove(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
 	if st := s.Stats(tk.ID()); st != nil {
 		t.Fatalf("a removed task still has stats: %+v", st)
 	}

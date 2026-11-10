@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,21 +19,30 @@ func holdJob(id string, started chan<- struct{}, release <-chan struct{}) job.Jo
 	})
 }
 
-func assertOpen(t *testing.T, done <-chan struct{}) {
+func removeInBackground(s *manager, ctx context.Context, tasks ...*Task) <-chan error {
+	removed := make(chan error, 1)
+	go func() { removed <- s.Remove(ctx, tasks...) }()
+	return removed
+}
+
+func assertStillRemoving(t *testing.T, removed <-chan error) {
 	t.Helper()
 	select {
-	case <-done:
-		t.Fatal("Remove reported the end while the execution is still going")
+	case err := <-removed:
+		t.Fatalf("Remove = %v while the execution is still going", err)
 	case <-time.After(50 * time.Millisecond):
 	}
 }
 
-func assertClosed(t *testing.T, done <-chan struct{}) {
+func assertRemoved(t *testing.T, removed <-chan error) {
 	t.Helper()
 	select {
-	case <-done:
+	case err := <-removed:
+		if err != nil {
+			t.Fatalf("Remove = %v", err)
+		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("Remove never reported the end of the execution")
+		t.Fatal("Remove never returned")
 	}
 }
 
@@ -87,7 +97,7 @@ func TestRemoveOfATaskNotRunningIsDoneAtOnce(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	assertClosed(t, s.Remove(tk))
+	assertRemoved(t, removeInBackground(s, context.Background(), tk))
 }
 
 func TestRemoveIsDoneOnceTheExecutionHasEnded(t *testing.T) {
@@ -101,12 +111,12 @@ func TestRemoveIsDoneOnceTheExecutionHasEnded(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-started
-	done := s.Remove(tk)
-	assertOpen(t, done)
+	removed := removeInBackground(s, context.Background(), tk)
+	assertStillRemoving(t, removed)
 	close(release)
-	assertClosed(t, done)
+	assertRemoved(t, removed)
 	if !tk.Job.IsDone() {
-		t.Fatalf("job state = %s once Remove reported the end", tk.Job.State())
+		t.Fatalf("job state = %s once Remove returned", tk.Job.State())
 	}
 }
 
@@ -126,11 +136,11 @@ func TestRemoveOfSeveralIsDoneOnceTheLastHasEnded(t *testing.T) {
 	}
 	<-firstStarted
 	<-secondStarted
-	done := s.Remove(first, second)
+	removed := removeInBackground(s, context.Background(), first, second)
 	close(firstRelease)
-	assertOpen(t, done)
+	assertStillRemoving(t, removed)
 	close(secondRelease)
-	assertClosed(t, done)
+	assertRemoved(t, removed)
 }
 
 func TestQueuedTaskRemovedIsDoneAtOnceAndNeverRuns(t *testing.T) {
@@ -149,7 +159,7 @@ func TestQueuedTaskRemovedIsDoneAtOnceAndNeverRuns(t *testing.T) {
 	if err := s.Trigger(queued.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
-	assertClosed(t, s.Remove(queued))
+	assertRemoved(t, removeInBackground(s, context.Background(), queued))
 	close(release)
 	time.Sleep(50 * time.Millisecond)
 	if n := runs.Load(); n != 0 {
@@ -168,10 +178,71 @@ func TestTaskRemovedDuringARequeueNeverRunsAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "a requeue", func() bool { return runs.Load() >= 2 })
-	assertClosed(t, s.Remove(tk))
+	assertRemoved(t, removeInBackground(s, context.Background(), tk))
 	n := runs.Load()
 	time.Sleep(100 * time.Millisecond)
 	if got := runs.Load(); got != n {
 		t.Fatalf("runs went from %d to %d after the end was reported", n, got)
+	}
+}
+
+func TestRemoveKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
+	s := startedManager(t)
+	tk, killed := stubborn(t, s)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	begin := time.Now()
+	if err := s.Remove(ctx, tk); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Remove = %v, want the deadline's error", err)
+	}
+	if took := time.Since(begin); took < 100*time.Millisecond {
+		t.Fatalf("Remove gave up after %s, before its deadline", took)
+	}
+	select {
+	case <-killed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the deadline passed without a kill")
+	}
+}
+
+func TestARemoveWithAnEndedContextKillsAtOnce(t *testing.T) {
+	s := startedManager(t)
+	tk, killed := stubborn(t, s)
+	if err := s.Remove(canceled(), tk); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Remove = %v, want the context's error for what it left", err)
+	}
+	select {
+	case <-killed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a forced remove did not kill")
+	}
+}
+
+func TestRemoveKillsOnlyWhatItRemoves(t *testing.T) {
+	s := startedManager(t)
+	tk, _ := stubborn(t, s)
+	otherStarted, otherRelease := make(chan struct{}), make(chan struct{})
+	defer close(otherRelease)
+	var otherKilled atomic.Bool
+	other := &Task{Job: job.New("other", func(jc job.Context) error {
+		close(otherStarted)
+		select {
+		case <-jc.Signaled(job.SignalKill):
+			otherKilled.Store(true)
+		case <-otherRelease:
+		}
+		return nil
+	}), Manual: true}
+	if err := s.Add(other); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Trigger(other.ID(), nil); err != nil {
+		t.Fatal(err)
+	}
+	<-otherStarted
+	_ = s.Remove(canceled(), tk)
+	time.Sleep(50 * time.Millisecond)
+	if otherKilled.Load() {
+		t.Fatal("Remove killed a task it did not remove")
 	}
 }

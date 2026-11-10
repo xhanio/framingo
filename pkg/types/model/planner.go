@@ -16,8 +16,9 @@ type Planner interface {
 	Cancel(id string) error
 	// Delete ends what the plan is doing, forgets the plan and returns its latest run, nil if
 	// it has none or has no kind. Its cron entry goes first, so no new run starts meanwhile.
-	// A plan's job gets the GracePeriod of its task to end; force also sends it SignalKill
-	// and does not wait for a plan without a kind, whose goroutine Go cannot kill.
+	// A plan's job gets the GracePeriod of its task to end, and SignalKill once it is up;
+	// force sends SignalKill at once, and does not wait for a plan without a kind, whose
+	// goroutine Go cannot kill.
 	Delete(id string, force bool) (*entity.PlanRun, error)
 	// LastRun returns the plan's latest run, nil if it has none yet or has no kind.
 	LastRun(id string) (*entity.PlanRun, error)

@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -83,37 +84,21 @@ func (m *manager) Delete(id string, force bool) (*entity.PlanRun, error) {
 		m.Unlock()
 		return nil, errors.NotFound.Newf("plan %s not found", id)
 	}
-	ending := m.forget(plan)
+	delete(m.plans, id)
 	m.Unlock()
-	m.awaitEnd(force, ending)
-	return lastRun(plan), nil
-}
-
-// The caller holds the lock.
-func (m *manager) forget(plan *entity.Plan) ending {
-	delete(m.plans, plan.ID)
-	return ending{plan: plan, ended: m.tm.Remove(plan.Task)}
-}
-
-func (m *manager) awaitEnd(force bool, endings ...ending) {
 	if force {
-		for _, e := range endings {
-			e.plan.Task.Job.Signal(job.SignalKill)
-		}
+		// an ended context cancels and then kills at once; the wait below lets the kill land
+		ended, end := context.WithCancel(context.Background())
+		end()
+		_ = m.tm.Remove(ended, plan.Task)
 	}
-	begin := time.Now() // every limit runs from here, so the wait is the slowest plan's, not the sum
-	for _, e := range endings {
-		limit := endLimit(e.plan, force)
-		timer := time.NewTimer(time.Until(begin.Add(limit)))
-		select {
-		case <-e.ended:
-		case <-timer.C:
-			if limit > 0 {
-				m.log.Warnf("plan %s is still running %s after it was stopped", e.plan.ID, limit)
-			}
-		}
-		timer.Stop()
+	limit := endLimit(plan, force)
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	if err := m.tm.Remove(ctx, plan.Task); err != nil && limit > 0 {
+		m.log.Warnf("plan %s is still running %s after it was deleted", id, limit)
 	}
+	return lastRun(plan), nil
 }
 
 // A command is killed once its grace period is up, so waiting longer only helps one stuck in the

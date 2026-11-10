@@ -15,9 +15,10 @@ type Manager interface {
 	common.Service
 	common.Daemon
 	Add(tasks ...*Task) error
-	// Remove forgets the tasks and ends what they are doing. The channel it returns closes
-	// once none of them has an execution still going; nothing of them starts after Remove.
-	Remove(tasks ...*Task) <-chan struct{}
+	// Remove forgets the tasks and ends what they are doing, then waits for their executions
+	// until ctx ends; nothing of them starts after Remove. What still runs once ctx ends is
+	// sent SignalKill, like Stop, and the error wraps ctx's.
+	Remove(ctx context.Context, tasks ...*Task) error
 	Trigger(id string, params any) error
 	Cancel(id string) error
 	Stats(id string) *Stats

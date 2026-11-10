@@ -216,7 +216,9 @@ func TestRemoveEndsARequeue(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the task to start cooling", requeueing(s, tk))
-	s.Remove(tk)
+	if err := s.Remove(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
 	if st := s.Stats(tk.ID()); st != nil {
 		t.Fatalf("a removed task still has stats: %+v", st)
 	}
@@ -257,7 +259,9 @@ func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 	}
 	eventually(t, "the only worker to be busy", func() bool { return busy.Job.IsState(job.StateRunning) })
 	eventually(t, "the rerun to be queued", func() bool { return !s.pq.IsEmpty() })
-	s.Remove(tk)
+	if err := s.Remove(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
 	if !s.pq.IsEmpty() {
 		t.Fatal("a removed task stayed in the queue")
 	}
@@ -595,7 +599,9 @@ func TestAddAfterRemoveDuringARequeue(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the task to start cooling", requeueing(s, tk))
-	s.Remove(tk)
+	if err := s.Remove(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Add(tk); err != nil {
 		t.Fatalf("Add after Remove = %v", err)
 	}

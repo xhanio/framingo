@@ -8,8 +8,8 @@ import (
 
 	"github.com/xhanio/errors"
 
-	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
+	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 // The task manager is the caller's, a dependency started before the planner.
@@ -21,35 +21,16 @@ func (m *manager) Start(ctx context.Context) error {
 // SignalKill. It leaves the task manager running: other tasks may share it.
 func (m *manager) Stop(ctx context.Context) error {
 	m.Lock()
-	endings := make([]ending, 0, len(m.plans))
+	tasks := make([]*task.Task, 0, len(m.plans))
 	for _, plan := range m.plans {
-		endings = append(endings, m.forget(plan))
+		tasks = append(tasks, plan.Task)
 	}
+	clear(m.plans)
 	m.Unlock()
-	for _, e := range endings {
-		select {
-		case <-e.ended:
-		case <-ctx.Done():
-			return kill(ctx.Err(), endings)
-		}
+	if err := m.tm.Remove(ctx, tasks...); err != nil {
+		return errors.Wrapf(err, "planner stopped with runs still going")
 	}
 	return nil
-}
-
-func kill(cause error, endings []ending) error {
-	var left int
-	for _, e := range endings {
-		select {
-		case <-e.ended:
-		default:
-			e.plan.Task.Job.Signal(job.SignalKill)
-			left++
-		}
-	}
-	if left == 0 {
-		return nil
-	}
-	return errors.Wrapf(cause, "planner stopped with %d runs still going", left)
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

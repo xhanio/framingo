@@ -110,7 +110,7 @@ func TestStopGivesUpOnceItsContextEnds(t *testing.T) {
 }
 
 // stubborn ignores its cancel and ends only on the kill signal.
-func stubborn(t *testing.T, s *manager) (killed <-chan struct{}) {
+func stubborn(t *testing.T, s *manager) (_ *Task, killed <-chan struct{}) {
 	t.Helper()
 	started, kill, ended := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	t.Cleanup(func() { close(ended) })
@@ -130,12 +130,12 @@ func stubborn(t *testing.T, s *manager) (killed <-chan struct{}) {
 		t.Fatal(err)
 	}
 	<-started
-	return kill
+	return tk, kill
 }
 
 func TestStopKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
 	s := startedManager(t)
-	killed := stubborn(t, s)
+	_, killed := stubborn(t, s)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	stopped := stopInBackground(s, ctx)
@@ -154,7 +154,7 @@ func TestStopKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
 
 func TestCancelingAStopGoingOnForcesIt(t *testing.T) {
 	s := startedManager(t)
-	killed := stubborn(t, s)
+	_, killed := stubborn(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan error, 1)
 	go func() { stopped <- s.Stop(ctx) }()
@@ -219,7 +219,7 @@ func TestStopWaitingWaitsForWhatAForcedStopLeft(t *testing.T) {
 
 func TestAForcedStopKillsTheExecutions(t *testing.T) {
 	s := startedManager(t)
-	killed := stubborn(t, s)
+	_, killed := stubborn(t, s)
 	forceStop(t, s)
 	select {
 	case <-killed:
@@ -417,7 +417,9 @@ func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 		if err := s.Add(stale); err != nil {
 			t.Fatal(err)
 		}
-		s.Remove(stale)
+		if err := s.Remove(context.Background(), stale); err != nil {
+			t.Fatal(err)
+		}
 		successor := &Task{Job: countingJob("same", &runs), Manual: true}
 		started, release := make(chan struct{}), make(chan struct{})
 		blocker := &Task{Job: holdJob("blocker", started, release), Manual: true}
@@ -431,7 +433,9 @@ func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 		if err := s.Trigger(successor.ID(), nil); err != nil {
 			t.Fatal(err)
 		}
-		s.Remove(stale)
+		if err := s.Remove(context.Background(), stale); err != nil {
+			t.Fatal(err)
+		}
 		close(release)
 		eventually(t, "the successor to run", func() bool { return runs.Load() == 1 })
 	})
@@ -442,12 +446,16 @@ func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 		if err := s.Add(stale); err != nil {
 			t.Fatal(err)
 		}
-		s.Remove(stale)
+		if err := s.Remove(context.Background(), stale); err != nil {
+			t.Fatal(err)
+		}
 		successor := &Task{Job: countingJob("same", &runs), Schedule: "* * * * * *"}
 		if err := s.Add(successor); err != nil {
 			t.Fatal(err)
 		}
-		s.Remove(stale)
+		if err := s.Remove(context.Background(), stale); err != nil {
+			t.Fatal(err)
+		}
 		eventually(t, "the successor's schedule to run it", func() bool { return runs.Load() >= 1 })
 	})
 }
