@@ -89,20 +89,17 @@ func TestExclusivePlan(t *testing.T) {
 func TestPriorityQueue(t *testing.T) {
 	pq := staque.NewPriority(
 		staque.WithLessFunc(priorityFunc),
-		staque.BlockIfEmpty[*Task](),
+		staque.BlockIfEmpty[*registration](),
 	)
-	tasks := make([]*Task, 20)
+	regs := make([]*registration, 20)
 	for i := range 20 {
-		tasks[i] = &Task{
-			Job:      newTestJob(fmt.Sprintf("#%d", i), 2*time.Second, false),
-			Priority: i,
-		}
-		if i%5 == 0 {
-			tasks[i].Exclusive = true
+		regs[i] = &registration{
+			task:     &Task{Job: newTestJob(fmt.Sprintf("#%d", i), 2*time.Second, false), Priority: i, Exclusive: i%5 == 0},
+			priority: i,
 		}
 	}
 	pq.Push(exiting)
-	pq.Push(tasks...)
+	pq.Push(regs...)
 	pq.Push(exiting)
 	table := printutil.NewTable(os.Stdout)
 	for range 21 {

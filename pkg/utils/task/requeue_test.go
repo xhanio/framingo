@@ -77,7 +77,7 @@ func TestRequeueGivesUpAfterItsAttempts(t *testing.T) {
 	if st := tk.Job.State(); st != job.StateFailed {
 		t.Fatalf("state after the last attempt = %s, want %s", st, job.StateFailed)
 	}
-	if tk.IsRequeueing() {
+	if requeueing(s, tk)() {
 		t.Fatal("a task out of attempts is still requeueing")
 	}
 }
@@ -168,7 +168,7 @@ func TestRequeueCooldownFreesTheWorker(t *testing.T) {
 	if err := s.Add(cooling); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", cooling.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, cooling))
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestRequeueKeepsTheTaskRegisteredWhileCooling(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	if st := tk.Job.State(); st != job.StateFailed {
 		t.Fatalf("job state while the task waits = %s, want %s: the run did fail", st, job.StateFailed)
 	}
@@ -216,12 +216,12 @@ func TestRemoveEndsARequeue(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	s.Remove(tk)
 	if st := s.Stats(tk.ID()); st != nil {
 		t.Fatalf("a removed task still has stats: %+v", st)
 	}
-	eventually(t, "the task to stop waiting", func() bool { return !tk.IsRequeueing() })
+	eventually(t, "the task to stop waiting", func() bool { return !requeueing(s, tk)() })
 	time.Sleep(200 * time.Millisecond) // longer than the cooldown
 	if n := runs.Load(); n != 1 {
 		t.Fatalf("runs = %d, want 1: a removed task must not run again", n)
@@ -254,7 +254,7 @@ func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	if err := s.Add(busy); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 	if !s.pq.IsEmpty() {
 		t.Fatal("a removed task stayed in the queue")
 	}
-	eventually(t, "the task to stop waiting", func() bool { return !tk.IsRequeueing() })
+	eventually(t, "the task to stop waiting", func() bool { return !requeueing(s, tk)() })
 	if n := runs.Load(); n != 1 {
 		t.Fatalf("runs = %d, want 1: a removed task must not run again", n)
 	}
@@ -285,7 +285,7 @@ func TestStopEndsARequeue(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	stopped := make(chan struct{})
 	go func() {
 		_ = s.Stop(true)
@@ -296,7 +296,7 @@ func TestStopEndsARequeue(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop(true) hung on a task waiting out its requeue cooldown")
 	}
-	if tk.IsRequeueing() {
+	if requeueing(s, tk)() {
 		t.Fatal("a stopped task is still requeueing")
 	}
 	if n := runs.Load(); n != 1 {
@@ -318,10 +318,10 @@ func TestTaskContextEndsARequeue(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	cancel()
 	eventually(t, "the task to be unregistered", func() bool { return s.Stats(tk.ID()) == nil })
-	if tk.IsRequeueing() {
+	if requeueing(s, tk)() {
 		t.Fatal("a task whose context ended is still requeueing")
 	}
 	if n := runs.Load(); n != 1 {
@@ -467,12 +467,12 @@ func TestQueueOrdersARequeuedTaskLikeANewOne(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ran := &Task{Job: failedJob(t, "ran"), Priority: tc.priority}
+			ran := &registration{task: &Task{Job: failedJob(t, "ran")}, priority: tc.priority}
 			ran.requeueing.Store(tc.requeueing)
 			pq := staque.NewPriority(staque.WithLessFunc(priorityFunc))
 			pq.Push(ran)
-			pq.Push(&Task{Job: job.New("new", func(job.Context) error { return nil }), Priority: 2})
-			if got := pq.MustPop().ID(); got != tc.wantFirst {
+			pq.Push(&registration{task: &Task{Job: job.New("new", func(job.Context) error { return nil })}, priority: 2})
+			if got := pq.MustPop().Key(); got != tc.wantFirst {
 				t.Fatalf("first popped = %s, want %s", got, tc.wantFirst)
 			}
 		})
@@ -534,7 +534,7 @@ func TestStartingARunLeavesNoCopyInTheQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the fetching goroutine to hold the task", s.pq.IsEmpty)
-	s.pq.Push(tk) // what a Remove and Add of the same task during the handoff leaves behind
+	s.pq.Push(registrationOf(s, tk)) // what a Remove and Add of the same task during the handoff leaves behind
 	if err := s.Add(waiting); err != nil {
 		t.Fatal(err)
 	}
@@ -555,9 +555,9 @@ func TestStrayPopDuringARequeueDoesNotRunTheTask(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	// what the fetching goroutine can still be holding from before the run ended
-	s.pq.Push(tk)
+	s.pq.Push(registrationOf(s, tk))
 	eventually(t, "the stray pop to be taken", s.pq.IsEmpty)
 	time.Sleep(100 * time.Millisecond)
 	if n := runs.Load(); n != 1 {
@@ -587,7 +587,7 @@ func TestTaskContextTakesAQueuedRerunOutOfTheQueue(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	if err := s.Add(busy); err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +598,7 @@ func TestTaskContextTakesAQueuedRerunOutOfTheQueue(t *testing.T) {
 	eventually(t, "the fetching goroutine to hold a task", s.pq.IsEmpty)
 	eventually(t, "the rerun to be queued", func() bool { return !s.pq.IsEmpty() })
 	cancel()
-	eventually(t, "the task to stop waiting", func() bool { return !tk.IsRequeueing() })
+	eventually(t, "the task to stop waiting", func() bool { return !requeueing(s, tk)() })
 	if !s.pq.IsEmpty() {
 		t.Fatal("a task whose context ended stayed in the queue")
 	}
@@ -649,15 +649,15 @@ func TestAddAfterRemoveDuringARequeue(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	s.Remove(tk)
 	if err := s.Add(tk); err != nil {
 		t.Fatalf("Add after Remove = %v", err)
 	}
 	eventually(t, "the task to run again", func() bool { return runs.Load() == 2 })
-	eventually(t, "the new registration to start cooling", tk.IsRequeueing)
+	eventually(t, "the new registration to start cooling", requeueing(s, tk))
 	time.Sleep(50 * time.Millisecond) // the first requeue must not undo the second as it ends
-	if !tk.IsRequeueing() {
+	if !requeueing(s, tk)() {
 		t.Fatal("the removed registration's requeue ended the new one's")
 	}
 	if st := s.Stats(tk.ID()); st == nil || st.Requeues != 1 {
@@ -687,7 +687,7 @@ func TestARerunIsNotRequeueing(t *testing.T) {
 	}
 	<-rerunning
 	defer close(release)
-	if tk.IsRequeueing() {
+	if requeueing(s, tk)() {
 		t.Fatal("a task running again is not waiting to run again")
 	}
 }

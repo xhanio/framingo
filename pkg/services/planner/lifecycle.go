@@ -9,13 +9,12 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
-// Start has nothing to do: the task manager is the caller's, a dependency that starts first.
+// The task manager is the caller's, a dependency started before the planner.
 func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop ends and forgets the planner's own plans the way Delete does, with force unless told to
-// wait, leaving the task manager and whatever else runs on it alone.
+// Stop leaves the task manager running: other tasks may share it.
 func (m *manager) Stop(wait bool) error {
 	m.Lock()
 	endings := make([]ending, 0, len(m.todos))

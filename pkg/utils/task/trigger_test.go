@@ -57,13 +57,26 @@ func TestManualTaskRunsOnlyWhenTriggered(t *testing.T) {
 	}
 }
 
+func requeueing(s *manager, tk *Task) func() bool {
+	return func() bool {
+		st := s.Stats(tk.ID())
+		return st != nil && st.Requeueing
+	}
+}
+
+func registrationOf(s *manager, tk *Task) *registration {
+	s.el.RLock()
+	defer s.el.RUnlock()
+	return s.registered[tk.ID()]
+}
+
 // busy reports whether a task is queued, running or being requeued.
 func busy(s *manager, tk *Task) bool {
 	s.el.RLock()
 	defer s.el.RUnlock()
 	_, running := s.running[tk]
 	reg := s.registered[tk.ID()]
-	return running || (reg != nil && (reg.queued || reg.loop != nil))
+	return running || (reg != nil && (reg.queued || reg.cooldown != nil))
 }
 
 func TestAddRejectsAManualTaskWithASchedule(t *testing.T) {
@@ -153,7 +166,7 @@ func TestTriggerDuringARequeueConflicts(t *testing.T) {
 	if err := s.Trigger(tk.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	if err := s.Trigger(tk.ID(), nil); !errors.Is(err, errors.Conflict) {
 		t.Fatalf("Trigger during a requeue = %v, want Conflict", err)
 	}
@@ -294,11 +307,11 @@ func TestCancelEndsARequeueCooldown(t *testing.T) {
 	if err := s.Trigger(tk.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the task to start cooling", tk.IsRequeueing)
+	eventually(t, "the task to start cooling", requeueing(s, tk))
 	if err := s.Cancel(tk.ID()); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the requeue to end", func() bool { return !busy(s, tk) && !tk.IsRequeueing() })
+	eventually(t, "the requeue to end", func() bool { return !busy(s, tk) && !requeueing(s, tk)() })
 	if s.Stats(tk.ID()) == nil {
 		t.Fatal("a canceled manual task must stay registered")
 	}

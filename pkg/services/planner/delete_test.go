@@ -139,7 +139,7 @@ func TestDeleteWithoutARunReturnsNil(t *testing.T) {
 func TestDeleteReturnsOnlyOnceTheCanceledRunHasEnded(t *testing.T) {
 	m, sender := startedPlanner(t)
 	ready := filepath.Join(t.TempDir(), "ready")
-	script := `trap 'sleep 0.3; exit 0' TERM; touch ` + ready + `; sleep 30 & wait`
+	script := `trap 'sleep 0.3; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
 	if err := m.Add(commandPlan("slow", &task.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestNoCronRunStartsAfterDeleteBegan(t *testing.T) {
 	m, sender := startedPlanner(t)
 	ready := filepath.Join(t.TempDir(), "ready")
 	// the run ends just as the next ticks are due
-	script := `trap 'sleep 1.1; exit 0' TERM; touch ` + ready + `; sleep 30 & wait`
+	script := `trap 'sleep 1.1; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
 	if err := m.Add(commandPlan("cron", &task.Task{Schedule: "* * * * * *"}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +419,7 @@ func TestShortGracePeriodEndsEarlierThanTheDefault(t *testing.T) {
 func TestZeroGracePeriodStillGivesACommandTimeToCleanUp(t *testing.T) {
 	m, sender := startedPlanner(t)
 	ready := filepath.Join(t.TempDir(), "ready")
-	script := `trap 'sleep 0.3; echo cleaned; exit 0' TERM; touch ` + ready + `; sleep 30 & wait`
+	script := `trap 'sleep 0.3; echo cleaned; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
 	if err := m.Add(commandPlan("tidy", &task.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +478,7 @@ func TestPlannerStopWaitsForTheSlowestPlanNotTheSum(t *testing.T) {
 	for i := range plans {
 		id := fmt.Sprintf("slow-%d", i)
 		ready := filepath.Join(dir, id)
-		script := `trap 'sleep 0.5; exit 0' TERM; touch ` + ready + `; sleep 30 & wait`
+		script := `trap 'sleep 0.5; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
 		if err := m.Add(commandPlan(id, &task.Task{}, "sh", "-c", script)); err != nil {
 			t.Fatal(err)
 		}
@@ -498,7 +498,6 @@ func TestPlannerStopWaitsForTheSlowestPlanNotTheSum(t *testing.T) {
 	}
 }
 
-// countingSender counts each plan's started and finished runs.
 type countingSender struct {
 	mu       sync.Mutex
 	started  map[string]int
@@ -525,8 +524,6 @@ func (c *countingSender) counts(id string) (started, finished int) {
 	return c.started[id], c.finished[id]
 }
 
-// TestDeleteUnderStress races Delete against everything else a plan can be doing. When Delete
-// returns nothing of the plan may still be going, and the same ID must be free again.
 func TestDeleteUnderStress(t *testing.T) {
 	sender := &countingSender{started: map[string]int{}, finished: map[string]int{}}
 	m := newManager(sender, startedTaskManager(t, task.MaxConcurrency(4)), WithLogDir(t.TempDir()))

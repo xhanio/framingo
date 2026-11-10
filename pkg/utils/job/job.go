@@ -32,7 +32,7 @@ type job struct {
 	endedAt      time.Time
 
 	progress float64
-	signals  map[Signal]chan struct{} // the current execution's, each closed when it arrives
+	signals  map[Signal]chan struct{} // the current execution's, each closed once sent
 
 	wg     *sync.WaitGroup
 	ctx    context.Context

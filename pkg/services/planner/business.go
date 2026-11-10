@@ -86,29 +86,24 @@ func (m *manager) Delete(id string, force bool) (*entity.PlanRun, error) {
 	return lastRun(todo), nil
 }
 
-// ending is a forgotten plan and the channel that closes once its execution has ended.
 type ending struct {
 	todo  *entity.Plan
 	ended <-chan struct{}
 }
 
-// forget takes the plan off the task manager, which ends what it is doing, cron entry first.
 // The caller holds the lock.
 func (m *manager) forget(todo *entity.Plan) ending {
 	delete(m.todos, todo.ID)
 	return ending{todo: todo, ended: m.tm.Remove(todo.Task)}
 }
 
-// awaitEnd waits for forgotten plans. Their limits run from the same moment, so the wait lasts
-// as long as the slowest of them, not the sum. With force, each job is sent SignalKill; what
-// it does with that is up to the job.
 func (m *manager) awaitEnd(force bool, endings ...ending) {
 	if force {
 		for _, e := range endings {
 			e.todo.Task.Job.Signal(job.SignalKill)
 		}
 	}
-	begin := time.Now()
+	begin := time.Now() // every limit runs from here, so the wait is the slowest plan's, not the sum
 	for _, e := range endings {
 		limit := endLimit(e.todo, force)
 		timer := time.NewTimer(time.Until(begin.Add(limit)))
@@ -123,9 +118,8 @@ func (m *manager) awaitEnd(force bool, endings ...ending) {
 	}
 }
 
-// endLimit is how long a stopped plan is waited for. A command is killed once its grace period
-// is up, so only one stuck in the kernel takes longer, and waiting on is not worth stopping for.
-// Go cannot kill a goroutine, so a forced plan with a job of its own is not waited for.
+// A command is killed once its grace period is up, so waiting longer only helps one stuck in the
+// kernel. Go cannot kill a goroutine, so a forced plan with a job of its own is not waited for.
 func endLimit(todo *entity.Plan, force bool) time.Duration {
 	switch {
 	case todo.Kind == "" && force:

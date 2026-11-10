@@ -2,7 +2,6 @@ package task
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -11,11 +10,6 @@ import (
 )
 
 const DefaultGracePeriod = 10 * time.Second
-
-var (
-	_ common.Unique   = (*Task)(nil)
-	_ common.Weighted = (*Task)(nil)
-)
 
 type Manager interface {
 	common.Service
@@ -34,7 +28,13 @@ type Stats struct {
 	executor.Stats
 	Requeues uint          `json:"requeues"` // times the latest execution went back to the queue
 	Cooldown time.Duration `json:"cooldown"` // what is left of the current RequeueCooldown
+	// Requeueing says the latest execution failed and the task waits to run again, cooling
+	// down or back in the queue. Its job stays failed meanwhile: that run did fail.
+	Requeueing bool `json:"requeueing"`
 }
+
+// Task is configuration; the manager keeps its state of a task elsewhere, so a Task copies like
+// any value.
 
 type Task struct {
 	Job      job.Job         `json:"-"`
@@ -60,8 +60,6 @@ type Task struct {
 	// RequeueCooldown is how long a failed execution waits before going back to
 	// the queue.
 	RequeueCooldown time.Duration `json:"requeue_cooldown,omitempty"`
-
-	requeueing atomic.Bool // see IsRequeueing; the queue orders by it, so it only changes out of the queue
 }
 
 // ID is the task's identity, its job's ID; look tasks up by ID only.
@@ -72,18 +70,6 @@ func (t *Task) ID() string {
 	return t.Job.ID()
 }
 
-// Key only satisfies common.Unique for the priority queue; it is the ID.
-func (t *Task) Key() string {
-	return t.ID()
-}
-
-// IsRequeueing reports whether the task failed and is waiting to run again, cooling
-// down or back in the queue. Its job stays failed meanwhile: that run did fail.
-func (t *Task) IsRequeueing() bool {
-	return t != nil && t.requeueing.Load()
-}
-
-// Grace is the task's GracePeriod with the default applied.
 func (t *Task) Grace() time.Duration {
 	if t.GracePeriod <= 0 {
 		return DefaultGracePeriod
@@ -96,64 +82,10 @@ func (t *Task) isOneShot() bool {
 	return t.Schedule == "" && !t.Manual
 }
 
-func (t *Task) GetPriority() int {
-	if t == nil {
-		return 0
-	}
-	return t.Priority
-}
-
-func (t *Task) SetPriority(priority int) {
-	if t == nil {
-		return
-	}
-	t.Priority = priority
-}
-
 func (t *Task) String() string {
 	return t.ID()
 }
 
 func (t *Task) IsValid() bool {
 	return t != nil && t.Job != nil
-}
-
-var statePriority = map[job.State]int{
-	job.StateCreated:   0,
-	job.StateRunning:   1,
-	job.StateCanceling: 1,
-	job.StateCanceled:  2,
-	job.StateFailed:    2,
-	job.StateSucceeded: 2,
-}
-
-// rank is the task's place by state: back in the queue, a requeued task is on the
-// same terms as a new one, and only its Priority sets it apart.
-func (t *Task) rank() int {
-	if t.requeueing.Load() {
-		return statePriority[job.StateCreated]
-	}
-	return statePriority[t.Job.State()]
-}
-
-func priorityFunc(a, b *Task) bool {
-	if a == nil || a.Job == nil {
-		return false
-	}
-	if b == nil || b.Job == nil {
-		return true
-	}
-	stateDiff := a.rank() - b.rank()
-	if stateDiff != 0 {
-		return stateDiff > 0
-	}
-	priorityDiff := a.Priority - b.Priority
-	if priorityDiff != 0 {
-		return priorityDiff > 0
-	}
-	timeDiff := a.Job.CreatedAt().Sub(b.Job.CreatedAt())
-	if timeDiff != 0 {
-		return timeDiff > 0
-	}
-	return a.Key() > b.Key()
 }

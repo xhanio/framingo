@@ -11,9 +11,7 @@ type Planner interface {
 	common.Service
 	Add(todo *entity.Plan) error
 	// Trigger runs the plan now and returns the run's ID, empty for a plan without a kind.
-	// source is recorded on the run and on its retries and requeues; PlanRunManual and
-	// PlanRunSchedule are the planner's own, other values the caller's. Empty is an
-	// InvalidArgument. A plan without a kind has no run to record it on.
+	// source goes on the run and on its retries and requeues; empty is an InvalidArgument.
 	Trigger(id string, source entity.PlanRunSource) (string, error)
 	Cancel(id string) error
 	// Delete ends what the plan is doing, forgets the plan and returns its latest run, nil if

@@ -39,7 +39,6 @@ func (s *safeBuffer) String() string {
 	return s.b.String()
 }
 
-// commandRun runs c as a job of its own and hands back the job and how the command ended.
 func commandRun(ctx context.Context, c Command, grace time.Duration) (job.Job, *safeBuffer, <-chan CommandResult) {
 	out := &safeBuffer{}
 	ended := make(chan CommandResult, 1)
@@ -182,7 +181,7 @@ func TestCommandIsNotStartedOnceItsContextIsDone(t *testing.T) {
 
 func TestCanceledCommandGetsItsGracePeriodToCleanUp(t *testing.T) {
 	ready := filepath.Join(t.TempDir(), "ready")
-	script := `trap 'sleep 0.3; echo cleaned; exit 0' TERM; touch ` + ready + `; sleep 30 & wait`
+	script := `trap 'sleep 0.3; echo cleaned; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, out, ended := commandRun(ctx, sh(script), 5*time.Second)
@@ -341,7 +340,6 @@ func TestCommandRunFailsTheJobAsTheCommandFails(t *testing.T) {
 	}
 }
 
-// runOnce runs c's Run as a job and returns its error.
 func runOnce(ctx context.Context, c Command) error {
 	j := job.New("once", c.Run)
 	j.Run(ctx, nil)

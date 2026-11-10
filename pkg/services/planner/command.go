@@ -20,7 +20,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
-// commandKillWait is how long a killed command gets to be reaped.
 const commandKillWait = 2 * time.Second
 
 var (
@@ -28,9 +27,8 @@ var (
 	_ common.Message = entity.PlanRunFinished{}
 )
 
-// triggeredRun is what Trigger gives the firing it starts: every run of it takes the source,
-// the first takes the ID Trigger returned, and the retries and requeues after it, being runs
-// of their own, take new ones.
+// triggeredRun goes with a firing of Trigger: all its runs take the source, only the first
+// the ID Trigger returned, as retries and requeues are runs of their own.
 type triggeredRun struct {
 	id      string
 	source  entity.PlanRunSource
@@ -60,7 +58,6 @@ func (m *manager) buildJob(plan *entity.Plan) error {
 	}
 }
 
-// runCommand is a command plan's job function: the run's bookkeeping around the command task.
 func (m *manager) runCommand(jc job.Context, plan *entity.Plan, cmd task.Command) error {
 	run := entity.PlanRun{
 		ID:        uuid.NewString(),
@@ -141,8 +138,8 @@ func (m *manager) createRunLog(run *entity.PlanRun, argv []string) *os.File {
 	return f
 }
 
-// OpenRunLog goes by path, not run ID: the planner only remembers the latest run, and a caller's
-// records go further back. The check is lexical, the files being ones the planner created.
+// By path, not run ID, since the planner only remembers the latest run. The check is lexical:
+// the planner made these files.
 func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error) {
 	if m.logDir == "" {
 		return nil, errors.NotFound.Newf("failed to open run log %s: no log dir is configured", path)

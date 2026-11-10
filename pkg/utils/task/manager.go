@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -15,8 +16,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
-var exiting = &Task{}
-
 var _ Manager = (*manager)(nil)
 
 type manager struct {
@@ -28,16 +27,15 @@ type manager struct {
 	cl    *sync.RWMutex // lock for crons
 	crons map[string]cron.EntryID
 
-	pq   staque.Priority[*Task]
-	pipe chan *Task
+	pq   staque.Priority[*registration]
+	pipe chan *registration
 
 	concurrent int
 	workers    chan struct{}
 	el         *sync.RWMutex   // lock for registered and running
 	ew         *sync.WaitGroup // wait group for executing
 	registered map[string]*registration
-	running    map[*Task]executor.Executor
-	ended      map[*Task]chan struct{} // closed as a removed task's execution settles
+	running    map[*Task]*execution
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -55,18 +53,17 @@ func newScheduler(opts ...Option) *manager {
 		el:         &sync.RWMutex{},
 		ew:         &sync.WaitGroup{},
 		registered: make(map[string]*registration),
-		running:    make(map[*Task]executor.Executor),
-		ended:      make(map[*Task]chan struct{}),
+		running:    make(map[*Task]*execution),
 		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
 	m.pq = staque.NewPriority(
 		staque.WithLessFunc(priorityFunc),
-		staque.WithLogger[*Task](m.log),
-		staque.BlockIfEmpty[*Task](),
+		staque.WithLogger[*registration](m.log),
+		staque.BlockIfEmpty[*registration](),
 	)
-	m.pipe = make(chan *Task)
+	m.pipe = make(chan *registration)
 	m.workers = make(chan struct{}, m.concurrent)
 	return m
 }
@@ -93,12 +90,12 @@ func (m *manager) Add(tasks ...*Task) error {
 			m.el.Unlock()
 			return errors.Conflict.Newf("task %s already added", key)
 		}
-		reg := &registration{task: t, exec: newExecutor(t)}
+		reg := &registration{task: t, exec: newExecutor(t), priority: t.Priority}
 		m.registered[key] = reg
 		if t.isOneShot() {
 			// run directly
 			reg.queued = true
-			m.pq.Push(t)
+			m.pq.Push(reg)
 		}
 		m.el.Unlock()
 		if t.Schedule != "" {
@@ -134,30 +131,25 @@ func (m *manager) Remove(tasks ...*Task) <-chan struct{} {
 			m.cl.Unlock()
 		}
 		m.el.Lock()
-		// try removing anyway since task could be executing already; first, since
-		// ending its requeue changes what the queue orders it by
-		m.pq.Remove(t)
-		var cancelRun context.CancelFunc
-		if reg, ok := m.registered[key]; ok && reg.task == t {
+		reg, ok := m.registered[key]
+		if ok {
+			// the queue holds one entry per ID, so this takes out whatever is queued under
+			// it; first, since ending a requeue changes what the queue orders it by
+			m.pq.Remove(reg)
+		}
+		if ok && reg.task == t {
 			delete(m.registered, key)
-			if reg.loop != nil {
-				reg.loop.cancel()
-			}
-			cancelRun = reg.cancelRun
+			m.stopWaiting(reg)
 		}
 		// admission happens under el too, so an execution is either here or never starts
-		if _, running := m.running[t]; running {
-			ended, ok := m.ended[t]
-			if !ok {
-				ended = make(chan struct{})
-				m.ended[t] = ended
-			}
-			going = append(going, ended)
+		e, running := m.running[t]
+		if running {
+			going = append(going, e.done)
 		}
 		m.el.Unlock()
 		t.Job.Cancel()
-		if cancelRun != nil {
-			cancelRun()
+		if running {
+			e.cancel()
 		}
 	}
 	return allClosed(going)
@@ -183,7 +175,7 @@ func (m *manager) Start(ctx context.Context) error {
 		return nil
 	}
 	m.cm.Start()
-	m.pipe = make(chan *Task)
+	m.pipe = make(chan *registration)
 	m.workers = make(chan struct{}, m.concurrent)
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	runCtx := m.ctx // a worker can outlive this run, and m.ctx with it
@@ -192,17 +184,17 @@ func (m *manager) Start(ctx context.Context) error {
 	go func() {
 		defer m.wg.Done()
 		for {
-			task, _ := m.pq.Pop()
-			if task == exiting {
+			reg, _ := m.pq.Pop()
+			if reg == exiting {
 				// keep the exiting loop until receiving cancel message from m.ctx.Done()
 				m.pq.Push(exiting)
-			} else if !task.IsValid() {
+			} else if !reg.valid() {
 				continue
 			}
-			if task.Exclusive {
-				m.log.Debugf("task %s wait for all other tasks to complete...", task.ID())
+			if reg.exclusive() {
+				m.log.Debugf("task %s wait for all other tasks to complete...", reg.Key())
 				m.ew.Wait()
-				m.log.Debugf("continue on current exclusive task %s...", task.ID())
+				m.log.Debugf("continue on current exclusive task %s...", reg.Key())
 			}
 			// before the handoff: a quick worker may call Done as soon as it receives
 			m.ew.Add(1)
@@ -210,8 +202,8 @@ func (m *manager) Start(ctx context.Context) error {
 			case <-m.ctx.Done():
 				m.ew.Done()
 				// Close only pipe: this goroutine is its sole sender, so
-				// closing here cannot race a send, and workers reading it get
-				// a nil task that IsValid() rejects.
+				// closing here cannot race a send, and workers reading it see
+				// it closed.
 				//
 				// workers is NOT closed here. Its only sender is the executor
 				// goroutine below, which selects on ctx.Done() at the same
@@ -223,11 +215,11 @@ func (m *manager) Start(ctx context.Context) error {
 				m.pq.Reset()
 				m.log.Infof("stopped fetching execution tasks")
 				return
-			case m.pipe <- task:
+			case m.pipe <- reg:
 			}
-			if task.Exclusive {
+			if reg.exclusive() {
 				// block all other tasks from being popped
-				m.log.Debugf("wait for current exclusive task %s to complete...", task.ID())
+				m.log.Debugf("wait for current exclusive task %s to complete...", reg.Key())
 				m.ew.Wait()
 				m.log.Debug("continue popping other tasks...")
 			}
@@ -252,30 +244,30 @@ func (m *manager) Start(ctx context.Context) error {
 				// cancel all currently executing tasks
 				m.el.Lock()
 				defer m.el.Unlock()
-				for _, te := range m.running {
-					_ = te.Stop(false)
+				for _, e := range m.running {
+					_ = e.reg.exec.Stop(false)
+					e.cancel() // after the job's cancel, so a run ends canceled, not failed
 				}
 				for _, reg := range m.registered {
-					if reg.cancelRun != nil {
-						reg.cancelRun() // after the job's cancel, so a run ends canceled, not failed
-					}
+					m.stopWaiting(reg)
 				}
 				clear(m.registered)
 				m.log.Infof("stopped executing tasks")
 				return
 			case m.workers <- struct{}{}:
 				go func() {
-					task, ok := <-m.pipe
+					popped, ok := <-m.pipe
 					defer func() {
 						<-m.workers
 					}()
 					if !ok {
 						return
 					}
-					if !task.IsValid() {
+					if !popped.valid() {
 						m.ew.Done()
 						return
 					}
+					task := popped.task
 					key := task.ID()
 					m.log.Debugf("task %s received", key)
 					m.el.Lock()
@@ -288,10 +280,12 @@ func (m *manager) Start(ctx context.Context) error {
 						return
 					}
 					reg.queued = false
-					m.pq.Remove(task) // a copy from a Remove and Add during the handoff; see fire
-					task.requeueing.Store(false)
-					m.running[task] = reg.exec
-					rerun := reg.loop
+					m.pq.Remove(reg) // a copy from a Remove and Add during the handoff; see fire
+					reg.requeueing.Store(false)
+					if reg.unwatch != nil {
+						reg.unwatch() // the rerun's own context comes from Task.Ctx
+						reg.unwatch = nil
+					}
 					params := task.Params
 					if reg.params != nil {
 						params = reg.params
@@ -301,11 +295,12 @@ func (m *manager) Start(ctx context.Context) error {
 						parent = context.Background()
 					}
 					execCtx, cancel := context.WithCancel(parent)
-					reg.cancelRun = cancel
+					e := &execution{reg: reg, cancel: cancel, done: make(chan struct{})}
+					m.running[task] = e
 					m.el.Unlock()
 					var err error
 					defer func() {
-						m.settle(runCtx, execCtx, reg, rerun, err)
+						m.settle(runCtx, execCtx, e, err)
 						cancel()
 						m.ew.Done() // unblock task queue before releasing the worker
 					}()
@@ -358,28 +353,21 @@ func (m *manager) Cancel(id string) error {
 		return errors.NotFound.Newf("task %s not found", id)
 	}
 	task := reg.task
-	_, running := m.running[task]
-	if !running && !reg.queued && reg.loop == nil {
+	e, running := m.running[task]
+	if !running && !reg.queued && reg.cooldown == nil {
 		m.el.Unlock()
 		return errors.Conflict.Newf("task %s is not running", id)
 	}
-	if reg.queued {
-		m.pq.Remove(task) // first: ending a requeue changes what the queue orders it by
-		reg.queued = false
-		if !running && reg.loop == nil && task.isOneShot() {
+	if reg.queued || reg.cooldown != nil {
+		m.stopWaiting(reg)
+		if !running && task.isOneShot() {
 			delete(m.registered, id)
 		}
 	}
-	if reg.loop != nil {
-		reg.loop.cancel()
-	}
-	cancelRun := reg.cancelRun
 	m.el.Unlock()
 	if running {
 		task.Job.Cancel()
-	}
-	if cancelRun != nil {
-		cancelRun()
+		e.cancel()
 	}
 	return nil
 }
@@ -391,26 +379,37 @@ func (m *manager) Stats(id string) *Stats {
 	if !ok {
 		return nil
 	}
-	st := &Stats{Stats: *reg.exec.Stats(), Requeues: reg.requeues}
+	st := &Stats{Stats: *reg.exec.Stats(), Requeues: reg.requeues, Requeueing: reg.requeueing.Load()}
 	if left := time.Until(reg.cooling); left > 0 {
 		st.Cooldown = left
 	}
 	return st
 }
 
-// registration is a task added to the manager; its executor outlives a single execution so
-// that retry state carries over from one push to the next.
+// registration lasts from Add to Remove; its executor outlives a single execution so that retry
+// state carries over from one push to the next.
 type registration struct {
 	task *Task
 	exec executor.Executor
 
 	// guarded by the manager's el
-	queued    bool               // in the queue, or held on its way to a worker
-	params    any                // what Trigger gave this firing, in place of Task.Params
-	cancelRun context.CancelFunc // ends the current execution, its retry waits included
-	loop      *requeueLoop       // set while a failed execution is being requeued
-	requeues  uint               // times the latest execution went back to the queue
-	cooling   time.Time          // when the current RequeueCooldown ends
+	queued   bool        // in the queue, or held on its way to a worker
+	params   any         // what Trigger gave this firing, in place of Task.Params
+	requeues uint        // times the current firing went back to the queue
+	cooldown *time.Timer // set while a failed execution cools down
+	cooling  time.Time   // when the cooldown ends
+	unwatch  func() bool // set while a rerun waits, which Task.Ctx ending stops
+
+	priority   int         // the task's Priority as the queue orders it
+	requeueing atomic.Bool // read by the queue without el, so it only changes out of the queue
+}
+
+// execution lasts from admission until it settles, which can be after Remove has forgotten its
+// registration.
+type execution struct {
+	reg    *registration
+	cancel context.CancelFunc // ends it, its retry waits included
+	done   chan struct{}      // closed as it settles
 }
 
 // fire queues a registered task unless it is queued, running or being requeued. The queue
@@ -423,12 +422,13 @@ func (m *manager) fire(reg *registration, params any) error {
 	if m.registered[key] != reg {
 		return errors.NotFound.Newf("task %s not found", key)
 	}
-	if _, running := m.running[reg.task]; running || reg.queued || reg.loop != nil {
-		return errors.Conflict.Newf("task %s is already queued, running or being requeued", key)
+	if _, running := m.running[reg.task]; running || reg.queued || reg.cooldown != nil {
+		return errors.Conflict.Newf("task %s is already queued, running or cooling down", key)
 	}
 	reg.queued = true
 	reg.params = params
-	m.pq.Push(reg.task)
+	reg.requeues = 0
+	m.pq.Push(reg)
 	return nil
 }
 

@@ -14,17 +14,15 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
-// Command defines a command task: what it runs, how it stops and where its output goes. Its
-// Run is the task's job function, as in job.New(id, cmd.Run), which fixes the definition there.
+// Command is a command task. job.New(id, cmd.Run) takes a copy, which fixes the definition.
 type Command struct {
 	Argv  []string          `json:"argv"` // the executable first
 	Dir   string            `json:"dir,omitempty"`
 	Env   map[string]string `json:"env,omitempty"`   // on top of the process environment
 	Grace time.Duration     `json:"grace,omitempty"` // how long a stopped command gets before a SIGKILL; zero is DefaultGracePeriod
-	Out   io.Writer         `json:"-"`               // where Run writes the output; nil discards it
+	Out   io.Writer         `json:"-"`               // nil discards the output
 }
 
-// CommandResult is how a command's execution ended.
 type CommandResult struct {
 	ExitCode int   // -1 if the command never started or died of a signal
 	Stopped  error // context.Canceled or context.DeadlineExceeded if it was stopped, nil if it ended on its own
@@ -36,9 +34,7 @@ func (r CommandResult) succeeded() bool {
 	return r.Stopped == nil && r.ExitCode == 0
 }
 
-// CommandError is what Run returns when the command did not end on its own with status 0. It
-// carries the whole result, and unwraps to what stopped the command or what kept it from
-// starting, so errors.Is(err, context.Canceled) still answers.
+// CommandError unwraps to what stopped the command, so errors.Is(err, context.Canceled) works.
 type CommandError struct {
 	Result CommandResult
 }
@@ -64,20 +60,8 @@ func (e *CommandError) Unwrap() error {
 	return e.Result.Err
 }
 
-// Run is the command task's job function. It runs the command once, its output to Out, and
-// returns nil when the command ended on its own with status 0, a *CommandError otherwise. A
-// job function with bookkeeping of its own calls it on a copy with the Out it wants.
-//
-// How the command is stopped:
-//
-//   - the job's context ends, by a cancel or a timeout: a SIGTERM to the group, then a
-//     SIGKILL once the grace period is up;
-//   - SignalKill: a SIGKILL at once, during the grace period too;
-//   - after a stop, whatever is left in the group goes with the command, which a command
-//     that ends on its own does not do to its background children.
-//
-// Once the command has exited, its output is waited for up to the grace period, so a child
-// still holding it open does not hold up the end.
+// Run returns nil when the command ended on its own with status 0, a *CommandError otherwise.
+// A job function with bookkeeping of its own calls it on a copy with the Out it wants.
 func (c Command) Run(jc job.Context) error {
 	if res := c.exec(jc); !res.succeeded() {
 		return &CommandError{Result: res}
@@ -101,7 +85,7 @@ func (c Command) exec(jc job.Context) CommandResult {
 	p.Dir = c.Dir
 	p.Env = append(os.Environ(), commandEnv(c.Env)...)
 	p.Stdout, p.Stderr = c.Out, c.Out
-	p.WaitDelay = grace
+	p.WaitDelay = grace // so a child still holding the output does not hold up the end
 	cmdutil.SetProcessGroup(p)
 	if err := p.Start(); err != nil {
 		return CommandResult{ExitCode: -1, Err: errors.Wrapf(err, "failed to start %s", c.Argv[0])}
@@ -116,6 +100,7 @@ func (c Command) exec(jc job.Context) CommandResult {
 		select {
 		case err := <-exited:
 			if res.Stopped != nil {
+				// what ignored the SIGTERM goes too; a command that ended on its own keeps its children
 				_ = cmdutil.KillProcessGroup(p)
 			}
 			res.ExitCode, res.Err = p.ProcessState.ExitCode(), err
