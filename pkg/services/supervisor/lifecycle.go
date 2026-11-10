@@ -41,22 +41,22 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *manager) Stop(wait bool) error {
+// Stop stops the services in reverse order, within the stop policy's timeout if one is set. A
+// stopped supervisor returns at once: what its services left is theirs to wait for.
+func (m *manager) Stop(ctx context.Context) error {
 	if m.cancel == nil {
 		m.log.Warnf("%s already stopped", m.Name())
 		return nil
 	}
 	m.cancel()
-	if wait {
-		m.wg.Wait()
-	}
+	m.wg.Wait() // the monitor: a restart it is in holds the lock the stops need anyway
 	m.cancel = nil
-	return m.c.StopAll(wait)
+	return m.c.StopAll(ctx)
 }
 
 func (m *manager) Restart(ctx context.Context) error {
 	m.log.Infof("restarting %s", m.Name())
-	if err := m.Stop(true); err != nil {
+	if err := m.Stop(ctx); err != nil {
 		m.log.Errorf("failed to stop %s for restart: %s", m.Name(), err)
 	}
 	if err := m.Init(ctx); err != nil {

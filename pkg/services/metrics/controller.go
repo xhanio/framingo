@@ -98,11 +98,11 @@ func (c *controller) lastOutcome() (time.Time, error) {
 }
 
 // shutdown closes a retired exporter, bounded by shutdownTimeout.
-func (c *controller) shutdown(retired sdkmetric.Exporter) error {
+func (c *controller) shutdown(ctx context.Context, retired sdkmetric.Exporter) error {
 	if retired == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	ctx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
 	return errors.Wrap(retired.Shutdown(ctx))
 }

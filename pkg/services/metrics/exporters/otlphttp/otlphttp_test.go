@@ -32,7 +32,7 @@ func TestRegistersOTLPHTTPExporter(t *testing.T) {
 		"timeout":     "1s",
 	})))
 	require.NoError(t, m.Alive(context.Background()))
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 func TestRejectsUnknownCompression(t *testing.T) {

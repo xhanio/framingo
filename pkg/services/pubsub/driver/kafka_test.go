@@ -41,7 +41,7 @@ func TestKafkaSubscribeAndGet(t *testing.T) {
 
 	require.NoError(t, b.Start(context.Background()))
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
-	defer b.Stop(true)
+	defer b.Stop(context.Background())
 
 	ch, err := b.Subscribe("svc1", "test/topic")
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestKafkaHierarchicalTopics(t *testing.T) {
 
 	require.NoError(t, b.Start(context.Background()))
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
-	defer b.Stop(true)
+	defer b.Stop(context.Background())
 
 	_, _ = b.Subscribe("root", "app")
 	_, _ = b.Subscribe("child", "app/module")
@@ -84,7 +84,7 @@ func TestKafkaUnsubscribe(t *testing.T) {
 
 	require.NoError(t, b.Start(context.Background()))
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
-	defer b.Stop(true)
+	defer b.Stop(context.Background())
 
 	_, _ = b.Subscribe("svc1", "topic")
 	_, _ = b.Subscribe("svc2", "topic")
@@ -113,10 +113,10 @@ func TestKafkaCrossInstance(t *testing.T) {
 	require.NoError(t, b2.Start(context.Background()))
 
 	defer func() {
-		_ = b1.Stop(true)
+		_ = b1.Stop(context.Background())
 	}()
 	defer func() {
-		_ = b2.Stop(true)
+		_ = b2.Stop(context.Background())
 	}()
 
 	// Give Kafka time to set up consumer groups
@@ -142,7 +142,7 @@ func TestKafkaStartStop(t *testing.T) {
 	err = b.Start(context.Background())
 	require.NoError(t, err)
 
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	require.NoError(t, err)
 }
 
@@ -156,7 +156,7 @@ func TestKafkaStopClosesChannels(t *testing.T) {
 
 	ch, _ := b.Subscribe("svc", "topic")
 
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	require.NoError(t, err)
 
 	_, ok := <-ch
@@ -173,11 +173,11 @@ func TestKafkaDoubleStop(t *testing.T) {
 
 	_, _ = b.Subscribe("svc", "topic")
 
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	require.NoError(t, err)
 
 	// Second stop should not panic
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }
 
@@ -190,6 +190,6 @@ func TestKafkaStopWithoutStart(t *testing.T) {
 	_, _ = b.Subscribe("svc", "topic")
 
 	// Stop without Start should not panic
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }

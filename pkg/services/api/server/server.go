@@ -94,11 +94,18 @@ func (s *server) start() error {
 
 // stop gracefully shuts down the server
 func (s *server) stop(ctx context.Context) error {
-	if err := s.echo.Shutdown(ctx); err != nil {
-		s.log.Errorf("failed to stop server %s: %v", s.name, err)
-		return err
+	err := s.echo.Shutdown(ctx)
+	if err == nil {
+		return nil
 	}
-	return nil
+	if ctx.Err() != nil {
+		if cerr := s.echo.Close(); cerr != nil {
+			s.log.Errorf("failed to close server %s: %v", s.name, cerr)
+		}
+		return errors.Wrapf(err, "server %s closed with requests still going", s.name)
+	}
+	s.log.Errorf("failed to stop server %s: %v", s.name, err)
+	return errors.Wrap(err)
 }
 
 // parseMiddlewareConfigs resolves the raw block handed to

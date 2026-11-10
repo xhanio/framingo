@@ -324,18 +324,15 @@ func TestCancelTakesAQueuedTaskOutOfTheQueue(t *testing.T) {
 	var busyRuns, runs atomic.Int32
 	release := make(chan struct{})
 	other := &Task{Job: blockedJob("other", &busyRuns, release)}
-	// the fetching goroutine holds this one at the handoff, leaving tk in the queue
-	held := &Task{Job: job.New("held", func(job.Context) error { return nil }), Priority: -1}
 	tk := &Task{Job: countingJob("queued-cancel", &runs), Manual: true}
 	s := startedScheduler(t, MaxConcurrency(1))
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the only worker to be busy", func() bool { return busyRuns.Load() == 1 })
-	if err := s.Add(held, tk); err != nil {
+	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the fetching goroutine to hold a task", s.pq.IsEmpty)
 	if err := s.Trigger(tk.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +343,7 @@ func TestCancelTakesAQueuedTaskOutOfTheQueue(t *testing.T) {
 		t.Fatal("a canceled task stayed in the queue")
 	}
 	close(release)
-	eventually(t, "the worker to be free", func() bool { return held.Job.IsDone() })
+	eventually(t, "the worker to be free", func() bool { return other.Job.IsDone() })
 	time.Sleep(50 * time.Millisecond)
 	if n := runs.Load(); n != 0 {
 		t.Fatalf("runs = %d, want 0", n)
@@ -434,7 +431,7 @@ func TestStopInterruptsARetryWait(t *testing.T) {
 	}
 	eventually(t, "the first run", func() bool { return runs.Load() == 1 })
 	eventually(t, "the job to wait for its retry", tk.Job.IsDone)
-	if err := s.Stop(true); err != nil {
+	if err := s.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(400 * time.Millisecond) // past the retry the stop must have ended
@@ -456,10 +453,11 @@ func TestTickWhileQueuedIsSkipped(t *testing.T) {
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
-	// the first tick is held at the handoff; those after it have nowhere to go
+	// the first tick waits in the queue; those after it have nowhere to go
 	time.Sleep(2200 * time.Millisecond)
-	if !s.pq.IsEmpty() {
-		t.Fatal("a tick behind a queued task stayed in the queue")
+	if n := s.pq.Length(); n != 1 {
+		t.Fatalf("queue length = %d, want 1", n)
 	}
 	close(release)
+	eventually(t, "the queued tick to run", func() bool { return runs.Load() >= 1 })
 }

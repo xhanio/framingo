@@ -38,7 +38,7 @@ func TestRegistersOTLPGRPCExporter(t *testing.T) {
 		"retry":       map[string]any{"initial_interval": "2s", "max_interval": "10s"},
 	})))
 	require.NoError(t, m.Alive(context.Background()))
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 func TestRejectsUnknownCompression(t *testing.T) {

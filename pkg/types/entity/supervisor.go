@@ -28,7 +28,8 @@ type SupervisorMonitorPolicy struct {
 }
 
 // SupervisorStopPolicy shapes how a shutdown ends: Timeout bounds the whole stop,
-// 0 waits indefinitely.
+// and the stop of each restart, after which what is left is forced; 0 leaves the
+// bound to the caller's context.
 type SupervisorStopPolicy struct {
 	Timeout time.Duration
 }

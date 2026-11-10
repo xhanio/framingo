@@ -97,7 +97,7 @@ func startServer(t *testing.T, st *stubTracer, configs []byte, routers ...*mockR
 		resp.Body.Close()
 		return true
 	}, 2*time.Second, 10*time.Millisecond)
-	cleanup = func() { require.NoError(t, m.Stop(true)) }
+	cleanup = func() { require.NoError(t, m.Stop(context.Background())) }
 	return
 }
 
@@ -342,7 +342,7 @@ func TestSurvivesRestartRebuild(t *testing.T) {
 	base, m, cleanup := startServer(t, st, []byte("trace:\n"), itemsRouter())
 	defer cleanup()
 
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
 	require.Eventually(t, func() bool {

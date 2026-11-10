@@ -50,14 +50,14 @@ func (m *manager) Init(ctx context.Context) error {
 	// state must not outlive. A failed shutdown only loses that exporter's
 	// buffered data - never the restart.
 	if !enabled {
-		if err := m.controller.shutdown(m.controller.retire(false)); err != nil {
+		if err := m.controller.shutdown(context.Background(), m.controller.retire(false)); err != nil {
 			m.log.Warnf("failed to shut down retiring metrics exporter: %s", err)
 		}
 		return nil
 	}
 	exp, err := m.buildExporter(ctx)
 	if err != nil {
-		if serr := m.controller.shutdown(m.controller.retire(false)); serr != nil {
+		if serr := m.controller.shutdown(context.Background(), m.controller.retire(false)); serr != nil {
 			m.log.Warnf("failed to shut down retiring metrics exporter: %s", serr)
 		}
 		return err
@@ -66,7 +66,7 @@ func (m *manager) Init(ctx context.Context) error {
 	// buildExporter hands back the same instance every Init - a registry
 	// factory always constructs a fresh one
 	if old := m.controller.swap(exp); old != exp {
-		if serr := m.controller.shutdown(old); serr != nil {
+		if serr := m.controller.shutdown(context.Background(), old); serr != nil {
 			m.log.Warnf("failed to shut down retiring metrics exporter: %s", serr)
 		}
 	}
@@ -182,10 +182,11 @@ func (m *manager) currentInterval() time.Duration {
 }
 
 // Stop ends the loop, performs the final collect+export (the flush), and
-// shuts the exporter down. The flush is best-effort - a dead collector
-// loses the last window's data, never the shutdown - while a failed
-// exporter shutdown is returned. Idempotent, like tracing's Stop.
-func (m *manager) Stop(_ bool) error {
+// shuts the exporter down, each until ctx ends or shutdownTimeout passes.
+// The flush is best-effort - a dead collector loses the last window's data,
+// never the shutdown - while a failed exporter shutdown is returned.
+// Idempotent, like tracing's Stop.
+func (m *manager) Stop(ctx context.Context) error {
 	if m.loopCancel != nil {
 		m.loopCancel()
 		m.loopCancel = nil
@@ -195,12 +196,12 @@ func (m *manager) Stop(_ bool) error {
 	// final cycle to reach it. Bounded by shutdownTimeout, not the looser
 	// exportTimeout - a stalled collector must not wedge the supervisor's
 	// stop sequence (export's own timeout nests inside this one).
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	flushCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
-	if err := m.export(ctx); err != nil {
+	if err := m.export(flushCtx); err != nil {
 		m.log.Warnf("final metrics flush failed: %s", err)
 	}
-	return m.controller.shutdown(m.controller.retire(true))
+	return m.controller.shutdown(ctx, m.controller.retire(true))
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

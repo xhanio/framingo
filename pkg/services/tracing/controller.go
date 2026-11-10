@@ -78,11 +78,11 @@ func (c *controller) state() (live bool, stopped bool) {
 
 // flush drains whatever the retired pipeline's processor still buffers,
 // bounded by shutdownTimeout.
-func (c *controller) flush(retired *sdktrace.TracerProvider) error {
+func (c *controller) flush(ctx context.Context, retired *sdktrace.TracerProvider) error {
 	if retired == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	ctx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
 	return errors.Wrap(retired.Shutdown(ctx))
 }

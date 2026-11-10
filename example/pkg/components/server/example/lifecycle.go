@@ -101,15 +101,13 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *manager) Stop(wait bool) error {
-	if err := m.services.Stop(wait); err != nil {
-		m.log.Error(err)
-	}
+func (m *manager) Stop(ctx context.Context) error {
+	err := m.services.Stop(ctx)
 	if m.cancel != nil {
 		m.cancel()
 		m.cancel = nil
 	}
-	return nil
+	return err
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

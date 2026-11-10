@@ -81,7 +81,7 @@ func TestPreflightThroughServer(t *testing.T) {
 	))
 	require.NoError(t, m.RegisterRouters(&stubRouter{}))
 	require.NoError(t, m.Start(context.Background()))
-	defer func() { require.NoError(t, m.Stop(true)) }()
+	defer func() { require.NoError(t, m.Stop(context.Background())) }()
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool {

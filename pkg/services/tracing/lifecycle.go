@@ -43,7 +43,7 @@ func (m *manager) Init(ctx context.Context) error {
 	// Init runs on first startup and on every restart: retire and flush the
 	// previous pipeline before building its replacement. A failed flush only
 	// loses buffered spans - never the restart.
-	if err := m.controller.flush(m.controller.retire(false)); err != nil {
+	if err := m.controller.flush(context.Background(), m.controller.retire(false)); err != nil {
 		m.log.Warnf("failed to flush retiring tracer provider: %s", err)
 	}
 	if !enabled {
@@ -113,10 +113,10 @@ func (m *manager) Start(_ context.Context) error {
 	return nil
 }
 
-// Stop flushes and retires the provider. The flush is synchronous either way
-// - bounded by shutdownTimeout - so wait needs no separate slow path.
-func (m *manager) Stop(_ bool) error {
-	return m.controller.flush(m.controller.retire(true))
+// Stop retires the provider and flushes it, until ctx ends or shutdownTimeout passes, whichever
+// comes first.
+func (m *manager) Stop(ctx context.Context) error {
+	return m.controller.flush(ctx, m.controller.retire(true))
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

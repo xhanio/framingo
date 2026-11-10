@@ -71,12 +71,12 @@ func (m *manager) StartService(name string) error {
 	return m.c.Start(service)
 }
 
-func (m *manager) StopService(name string, wait bool) error {
+func (m *manager) StopService(ctx context.Context, name string) error {
 	service := m.c.find(name)
 	if service == nil {
 		return errors.NotFound.Newf("service %s not found", name)
 	}
-	return m.c.Stop(service, wait)
+	return m.c.Stop(ctx, service)
 }
 
 func (m *manager) RestartService(ctx context.Context, name string) error {

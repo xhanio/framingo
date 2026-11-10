@@ -155,7 +155,7 @@ func TestHealthServesConcurrentlyWithMonitor(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	cancel()
 	wg.Wait()
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 // Info renders one row per service; the whole table must share a single

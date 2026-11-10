@@ -196,7 +196,9 @@ func (b *redisDriver) Start(ctx context.Context) error {
 	return nil
 }
 
-func (b *redisDriver) Stop(wait bool) error {
+// Stop waits for the listener and the pumps whatever ctx says: they end as soon as they are
+// stopped.
+func (b *redisDriver) Stop(_ context.Context) error {
 	if b.cancel != nil {
 		b.cancel()
 	}
@@ -213,11 +215,9 @@ func (b *redisDriver) Stop(wait bool) error {
 		sub.stop()
 	}
 
-	if wait {
-		b.wg.Wait()
-		for _, sub := range stopped {
-			sub.wait()
-		}
+	b.wg.Wait()
+	for _, sub := range stopped {
+		sub.wait()
 	}
 
 	if b.pubsub != nil {

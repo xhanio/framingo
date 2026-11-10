@@ -173,7 +173,8 @@ func (b *memoryDriver) Start(ctx context.Context) error {
 	return nil
 }
 
-func (b *memoryDriver) Stop(wait bool) error {
+// Stop waits for the pumps whatever ctx says: they end as soon as they are stopped.
+func (b *memoryDriver) Stop(_ context.Context) error {
 	b.mu.Lock()
 	var stopped []*subscriber
 	for _, key := range b.topics.Keys() {
@@ -187,10 +188,8 @@ func (b *memoryDriver) Stop(wait bool) error {
 	for _, sub := range stopped {
 		sub.stop()
 	}
-	if wait {
-		for _, sub := range stopped {
-			sub.wait()
-		}
+	for _, sub := range stopped {
+		sub.wait()
 	}
 	return nil
 }

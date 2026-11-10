@@ -56,7 +56,7 @@ func TestMaxConcurrency(t *testing.T) {
 	log.Default.Debugln("sequence:", strutil.Join(" ", tasks[10:]...))
 	_ = s.Add(tasks[10:]...)
 	time.Sleep(3 * time.Second)
-	_ = s.Stop(true)
+	_ = s.Stop(context.Background())
 }
 
 func TestExclusivePlan(t *testing.T) {
@@ -82,7 +82,7 @@ func TestExclusivePlan(t *testing.T) {
 	log.Default.Debugln("sequence:", strutil.Join(" ", tasks[10:]...))
 	_ = s.Add(tasks[10:]...)
 	time.Sleep(5 * time.Second)
-	_ = s.Stop(true)
+	_ = s.Stop(context.Background())
 	time.Sleep(1 * time.Second)
 }
 

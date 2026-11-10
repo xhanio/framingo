@@ -8,6 +8,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/syncutil"
 )
 
 // DefaultTopic is the topic messagebus uses when WithTopic is not provided.
@@ -24,9 +25,9 @@ type manager struct {
 	pingInterval time.Duration
 	pingTimeout  time.Duration
 
-	ctx    context.Context
+	ctx    context.Context // the latest Start's, for modules registered while it runs
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	wg     syncutil.WaitGroup // listeners, whichever Start they came from
 
 	mu      sync.Mutex
 	modules map[string]common.Named

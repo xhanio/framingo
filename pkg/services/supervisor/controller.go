@@ -126,7 +126,7 @@ func (c *controller) start(service common.Service) (bool, error) {
 	return true, err
 }
 
-func (c *controller) stop(service common.Service, wait bool) (bool, error) {
+func (c *controller) stop(ctx context.Context, service common.Service) (bool, error) {
 	svc, ok := service.(common.Daemon)
 	if !ok {
 		return false, nil
@@ -139,7 +139,7 @@ func (c *controller) stop(service common.Service, wait bool) (bool, error) {
 		stat.Ready = false
 		stat.StoppedAt = stoppedAt
 	})
-	err := svc.Stop(wait)
+	err := svc.Stop(ctx)
 	c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.StopErr = err
 		stat.StopDuration = time.Since(stoppedAt)
@@ -167,10 +167,10 @@ func (c *controller) Start(service common.Service) error {
 
 // Stop stops one service under the operation lock - the manual
 // StopService contract.
-func (c *controller) Stop(service common.Service, wait bool) error {
+func (c *controller) Stop(ctx context.Context, service common.Service) error {
 	c.op.Lock()
 	defer c.op.Unlock()
-	_, err := c.stop(service, wait)
+	_, err := c.stop(ctx, service)
 	return err
 }
 
@@ -202,7 +202,10 @@ func (c *controller) restart(ctx context.Context, service common.Service) error 
 		c.log.Infof("restarting service %s (attempt %d)", name, stat.Restarts+1)
 	}
 	if svc, ok := service.(common.Daemon); ok {
-		if err := svc.Stop(true); err != nil {
+		stopCtx, cancel := c.stopContext(ctx)
+		err := svc.Stop(stopCtx)
+		cancel()
+		if err != nil {
 			c.log.Errorf("failed to stop service %s for restart: %s", name, err)
 		}
 		c.stats.update(name, func(stat *entity.SupervisorStats) {
@@ -360,33 +363,24 @@ func (c *controller) startAll() error {
 
 // StopAll stops every service under the operation lock, honoring the stop
 // policy's timeout.
-func (c *controller) StopAll(wait bool) error {
+func (c *controller) StopAll(ctx context.Context) error {
 	c.op.Lock()
 	defer c.op.Unlock()
-	return c.stopAll(wait)
+	return c.stopAll(ctx)
 }
 
-func (c *controller) stopAll(wait bool) error {
+// stopContext bounds a stop by the stop policy: once its timeout passes, what is left to stop
+// gets an ended context, which forces it.
+func (c *controller) stopContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if c.stopPolicy.Timeout > 0 {
-		// on timeout the worker keeps stopping in the background and a hung
-		// Stop leaks it - acceptable because the process is expected to
-		// exit right after a timed-out shutdown
-		done := make(chan error, 1)
-		go func() {
-			done <- c.stopAllServices(wait)
-		}()
-		select {
-		case err := <-done:
-			return err
-		case <-time.After(c.stopPolicy.Timeout):
-			c.log.Warnf("shutdown timed out after %s", c.stopPolicy.Timeout)
-			return errors.DeadlineExceeded.Newf("shutdown timed out after %s", c.stopPolicy.Timeout)
-		}
+		return context.WithTimeout(ctx, c.stopPolicy.Timeout)
 	}
-	return c.stopAllServices(wait)
+	return context.WithCancel(ctx)
 }
 
-func (c *controller) stopAllServices(wait bool) error {
+func (c *controller) stopAll(ctx context.Context) error {
+	ctx, cancel := c.stopContext(ctx)
+	defer cancel()
 	c.log.Info("stopping services...")
 	var errs []error
 	var total, failed int
@@ -394,7 +388,7 @@ func (c *controller) stopAllServices(wait bool) error {
 	// stop services in reversed order
 	for i := l - 1; i > -1; i-- {
 		service := c.services[i]
-		ok, err := c.stop(service, wait)
+		ok, err := c.stop(ctx, service)
 		if ok {
 			if err != nil {
 				failed++
@@ -402,6 +396,9 @@ func (c *controller) stopAllServices(wait bool) error {
 			}
 			total++
 		}
+	}
+	if ctx.Err() != nil {
+		c.log.Warnf("shutdown ended before the services did: the stops after it were forced")
 	}
 	c.log.Infof("%d services stopped, %d failed", total, failed)
 	return errors.Combine(errs...)

@@ -76,7 +76,7 @@ func startMeasuredServer(t *testing.T) (baseURL string, m *manager, reader *sdkm
 	waitReady(t, baseURL)
 	t.Cleanup(func() {
 		dropIdleConns()
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 	})
 	return
 }
@@ -214,7 +214,7 @@ func TestMetrics_SurvivesRestart(t *testing.T) {
 	httpDo(t, "GET", base+"/ok")
 
 	dropIdleConns()
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
 	waitReady(t, base)
@@ -246,7 +246,7 @@ func TestMetrics_RecordsCarryTheSpan(t *testing.T) {
 	waitReady(t, base)
 	t.Cleanup(func() {
 		dropIdleConns()
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 	})
 
 	httpDo(t, "GET", base+"/ok")

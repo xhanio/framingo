@@ -45,11 +45,9 @@ func TestQueueTakesTheMoreUrgentThenTheEarlierQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-started
-	// the fetching goroutine takes this one and holds it until a worker is free
 	if err := s.Trigger(held.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the fetching goroutine to hold a task", s.pq.IsEmpty)
 	for _, tk := range []*Task{fresh, newer, older, ran} {
 		if err := s.Trigger(tk.ID(), nil); err != nil {
 			t.Fatal(err)

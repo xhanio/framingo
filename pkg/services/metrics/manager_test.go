@@ -116,7 +116,7 @@ func TestProviderIsStableAndAlwaysReal(t *testing.T) {
 	assert.Same(t, p1, m.Provider())
 	require.NoError(t, m.Alive(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	assert.Same(t, p1, m.Provider())
 }
 
@@ -279,7 +279,7 @@ func TestLoopExportsAtInterval(t *testing.T) {
 	require.NoError(t, m.Start(context.Background()))
 	require.Eventually(t, func() bool { return exp.count() >= 1 },
 		2*time.Second, 10*time.Millisecond, "the loop must export on its own")
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 func TestStopFlushesAndShutsDown(t *testing.T) {
@@ -291,8 +291,8 @@ func TestStopFlushesAndShutsDown(t *testing.T) {
 	require.NoError(t, m.Start(context.Background()))
 	c.Add(context.Background(), 7)
 
-	require.NoError(t, m.Stop(true))
-	require.NoError(t, m.Stop(true)) // idempotent
+	require.NoError(t, m.Stop(context.Background()))
+	require.NoError(t, m.Stop(context.Background())) // idempotent
 
 	// the final flush carried the last window out before shutdown
 	require.Equal(t, 1, exp.count())
@@ -315,7 +315,7 @@ func TestReInitDoesNotLeakGoroutines(t *testing.T) {
 	for range 10 {
 		require.NoError(t, m.Init(enabledCtx()))
 	}
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	time.Sleep(50 * time.Millisecond)
 	runtime.GC()
 	after := runtime.NumGoroutine()
@@ -355,7 +355,7 @@ func TestConcurrentProbesDuringLifecycle(t *testing.T) {
 	for range 10 {
 		require.NoError(t, m.Init(ctx))
 		require.NoError(t, m.Start(context.Background()))
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 		require.NoError(t, m.Init(ctx))
 	}
 }

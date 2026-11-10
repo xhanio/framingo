@@ -30,7 +30,7 @@ func TestDisabledByDefaultServesNoop(t *testing.T) {
 	span.End()
 	require.NoError(t, m.Alive(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 // newTestManager injects exp directly on the concrete manager - the package
@@ -288,8 +288,8 @@ func TestStopFlushesAndDegradesToNoop(t *testing.T) {
 	require.True(t, span.IsRecording())
 	span.End()
 
-	require.NoError(t, m.Stop(true))
-	require.NoError(t, m.Stop(true)) // idempotent
+	require.NoError(t, m.Stop(context.Background()))
+	require.NoError(t, m.Stop(context.Background())) // idempotent
 
 	// after a deliberate stop the handle degrades to noop...
 	_, span = m.Provider().Tracer("test").Start(context.Background(), "op")
@@ -332,7 +332,7 @@ func TestStopIsDeliberateWhileFlushInFlight(t *testing.T) {
 	require.NoError(t, m.Init(enabledCtx()))
 
 	stopped := make(chan error, 1)
-	go func() { stopped <- m.Stop(true) }()
+	go func() { stopped <- m.Stop(context.Background()) }()
 	<-exp.entered // the flush is in flight, the provider already retired
 
 	// a deliberate stop must never fail liveness - not even while the final
@@ -342,6 +342,23 @@ func TestStopIsDeliberateWhileFlushInFlight(t *testing.T) {
 
 	close(exp.release)
 	require.NoError(t, <-stopped)
+}
+
+func TestStopGivesUpOnAStalledFlushOnceItsContextEnds(t *testing.T) {
+	exp := &blockingExporter{entered: make(chan struct{}), release: make(chan struct{})}
+	defer close(exp.release)
+	m := newTestManager(exp)
+	require.NoError(t, m.Init(enabledCtx()))
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- m.Stop(ctx) }()
+	select {
+	case err := <-stopped:
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(3 * time.Second):
+		t.Fatal("Stop waited out the stalled flush past its deadline")
+	}
 }
 
 func TestConcurrentProbesDuringLifecycle(t *testing.T) {
@@ -379,7 +396,7 @@ func TestConcurrentProbesDuringLifecycle(t *testing.T) {
 	}
 	for range 10 {
 		require.NoError(t, m.Init(ctx))
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 		require.NoError(t, m.Init(ctx))
 	}
 }
@@ -393,7 +410,7 @@ func TestReInitDoesNotLeakGoroutines(t *testing.T) {
 	for range 10 {
 		require.NoError(t, m.Init(enabledCtx()))
 	}
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	time.Sleep(50 * time.Millisecond)
 	runtime.GC()
 	after := runtime.NumGoroutine()

@@ -10,9 +10,17 @@ type Service interface {
 	Dependencies() []Service
 }
 
+// Daemon is a service that runs. Start and Stop are called on one instance, and more than once.
+//
+// Stop ends what Start began: it takes no new work, cancels the work going on, and waits for all
+// of it to end, what an earlier Stop left included, until ctx ends. If ctx ends first, it ends
+// the work hard where it can and returns an error wrapping ctx's, leaving the rest to end on its
+// own; an ended ctx makes it a forced stop. Either way it returns only once whatever takes new
+// work has returned. Start works right after any Stop, and what a Stop left must not reach
+// into it.
 type Daemon interface {
 	Start(ctx context.Context) error
-	Stop(wait bool) error
+	Stop(ctx context.Context) error
 }
 
 // Initializable is implemented by services that require initialization.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
@@ -14,7 +16,8 @@ func (m *manager) Start(ctx context.Context) error {
 		m.mu.Unlock()
 		return nil
 	}
-	m.ctx, m.cancel = context.WithCancel(ctx)
+	ctx, m.cancel = context.WithCancel(ctx)
+	m.ctx = ctx
 	m.started = true
 	modules := make([]common.Named, 0, len(m.modules))
 	for _, mod := range m.modules {
@@ -23,17 +26,16 @@ func (m *manager) Start(ctx context.Context) error {
 	m.mu.Unlock()
 
 	for _, mod := range modules {
-		m.subscribe(mod)
+		m.subscribe(ctx, mod)
 	}
 	return nil
 }
 
-func (m *manager) Stop(wait bool) error {
+// Stop waits for the handlers until ctx ends; a handler that ignores its canceled context is
+// left to return on its own.
+func (m *manager) Stop(ctx context.Context) error {
 	m.mu.Lock()
-	if !m.started {
-		m.mu.Unlock()
-		return nil
-	}
+	started := m.started
 	m.started = false
 	cancel := m.cancel
 	modules := make([]string, 0, len(m.modules))
@@ -42,17 +44,17 @@ func (m *manager) Stop(wait bool) error {
 	}
 	m.mu.Unlock()
 
-	// Unsubscribe each module — closes their channels so listen() exits.
-	for _, name := range modules {
-		if err := m.bus.Unsubscribe(name, m.topic); err != nil {
-			m.log.Errorf("failed to unsubscribe %s: %v", name, err)
+	if started {
+		// Unsubscribe each module — closes their channels so listen() exits.
+		for _, name := range modules {
+			if err := m.bus.Unsubscribe(name, m.topic); err != nil {
+				m.log.Errorf("failed to unsubscribe %s: %v", name, err)
+			}
 		}
-	}
-	if cancel != nil {
 		cancel()
 	}
-	if wait {
-		m.wg.Wait()
+	if err := m.wg.Wait(ctx); err != nil {
+		return errors.Wrapf(err, "%s stopped with handlers still going", m.name)
 	}
 	return nil
 }

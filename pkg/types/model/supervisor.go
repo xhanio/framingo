@@ -16,7 +16,7 @@ type Supervisor interface {
 	// Migrate() error
 	InitService(ctx context.Context, name string) error
 	StartService(name string) error
-	StopService(name string, wait bool) error
+	StopService(ctx context.Context, name string) error
 	RestartService(ctx context.Context, name string) error
 	Restart(ctx context.Context) error
 }

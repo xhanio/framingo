@@ -41,8 +41,10 @@ type Task struct {
 	Params   any             `json:"params"`
 	Schedule string          `json:"schedule"`
 	// Manual keeps the task registered without running it on its own: only Trigger does.
-	Manual        bool          `json:"manual,omitempty"`
-	Priority      int           `json:"priority"` // lower runs first; within one, in the order queued
+	Manual   bool `json:"manual,omitempty"`
+	Priority int  `json:"priority"` // lower runs first; within one, in the order queued
+	// Exclusive runs it alone: it takes every slot, so it waits for the executions going on
+	// and nothing else starts until it ends. What a forced stop left running holds no slot.
 	Exclusive     bool          `json:"exclusive"`
 	Timeout       time.Duration `json:"timeout,omitempty"`
 	RetryAttempts int           `json:"retry_attempts,omitempty"`
@@ -52,7 +54,7 @@ type Task struct {
 	// DefaultGracePeriod. A Command has its own Grace for how it stops.
 	GracePeriod time.Duration `json:"grace_period,omitempty"`
 	// RequeueAttempts is how many times a failed execution, its retries used
-	// up, goes back to the queue. Unlike a retry it gives up its worker while
+	// up, goes back to the queue. Unlike a retry it gives up its slot while
 	// it waits, and it counts on top: a task runs up to
 	// (RetryAttempts+1) * (RequeueAttempts+1) times.
 	RequeueAttempts int `json:"requeue_attempts,omitempty"`

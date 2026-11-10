@@ -6,6 +6,9 @@ import (
 	"io"
 	"time"
 
+	"github.com/xhanio/errors"
+
+	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
@@ -14,16 +17,39 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop leaves the task manager running: other tasks may share it.
-func (m *manager) Stop(wait bool) error {
+// Stop forgets the plans and waits for their runs until ctx ends, then sends what still runs
+// SignalKill. It leaves the task manager running: other tasks may share it.
+func (m *manager) Stop(ctx context.Context) error {
 	m.Lock()
 	endings := make([]ending, 0, len(m.todos))
 	for _, todo := range m.todos {
 		endings = append(endings, m.forget(todo))
 	}
 	m.Unlock()
-	m.awaitEnd(!wait, endings...)
+	for _, e := range endings {
+		select {
+		case <-e.ended:
+		case <-ctx.Done():
+			return kill(ctx.Err(), endings)
+		}
+	}
 	return nil
+}
+
+func kill(cause error, endings []ending) error {
+	var left int
+	for _, e := range endings {
+		select {
+		case <-e.ended:
+		default:
+			e.todo.Task.Job.Signal(job.SignalKill)
+			left++
+		}
+	}
+	if left == 0 {
+		return nil
+	}
+	return errors.Wrapf(cause, "planner stopped with %d runs still going", left)
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

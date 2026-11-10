@@ -164,7 +164,7 @@ func TestDeleteReturnsOnlyOnceTheCanceledRunHasEnded(t *testing.T) {
 func TestDeleteOfAQueuedPlanMeansItNeverRuns(t *testing.T) {
 	sender := &recordingSender{}
 	m := newManager(sender, startedTaskManager(t, task.MaxConcurrency(1)), WithLogDir(t.TempDir()))
-	t.Cleanup(func() { _ = m.Stop(true) })
+	t.Cleanup(func() { _ = m.Stop(context.Background()) })
 	if err := m.Add(commandPlan("blocker", &task.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +453,13 @@ func TestCommandEndingOnItsOwnKeepsItsBackgroundChild(t *testing.T) {
 	}
 }
 
-func TestPlannerStopWithoutWaitingUsesForce(t *testing.T) {
+func canceled() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+func TestAForcedPlannerStopKills(t *testing.T) {
 	sender := &recordingSender{}
 	m := newManager(sender, startedTaskManager(t), WithLogDir(t.TempDir()))
 	pids := pidFile(t)
@@ -463,10 +469,32 @@ func TestPlannerStopWithoutWaitingUsesForce(t *testing.T) {
 	triggered(t, m, "stubborn")
 	child := waitPid(t, pids)
 	begin := time.Now()
-	if err := m.Stop(false); err != nil {
+	if err := m.Stop(canceled()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("forced stop = %v, want the context's error for the run it left", err)
+	}
+	assertWithin(t, "a forced stop", time.Second, begin)
+	assertGone(t, child)
+}
+
+func TestPlannerStopKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
+	sender := &recordingSender{}
+	m := newManager(sender, startedTaskManager(t), WithLogDir(t.TempDir()))
+	pids := pidFile(t)
+	if err := m.Add(commandPlan("stubborn", &task.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
-	assertWithin(t, "Stop(false)", time.Second, begin)
+	triggered(t, m, "stubborn")
+	child := waitPid(t, pids)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	begin := time.Now()
+	if err := m.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop = %v, want the deadline's error", err)
+	}
+	if took := time.Since(begin); took < 200*time.Millisecond {
+		t.Fatalf("Stop gave up after %s, before its deadline", took)
+	}
+	assertWithin(t, "Stop past its deadline", 2*time.Second, begin)
 	assertGone(t, child)
 }
 
@@ -486,7 +514,7 @@ func TestPlannerStopWaitsForTheSlowestPlanNotTheSum(t *testing.T) {
 		eventually(t, "the command to get ready", func() bool { _, err := os.Stat(ready); return err == nil })
 	}
 	begin := time.Now()
-	if err := m.Stop(true); err != nil {
+	if err := m.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	took := time.Since(begin)
@@ -527,7 +555,7 @@ func (c *countingSender) counts(id string) (started, finished int) {
 func TestDeleteUnderStress(t *testing.T) {
 	sender := &countingSender{started: map[string]int{}, finished: map[string]int{}}
 	m := newManager(sender, startedTaskManager(t, task.MaxConcurrency(4)), WithLogDir(t.TempDir()))
-	t.Cleanup(func() { _ = m.Stop(true) })
+	t.Cleanup(func() { _ = m.Stop(context.Background()) })
 	tasks := []func() *task.Task{
 		func() *task.Task { return &task.Task{} },
 		func() *task.Task { return &task.Task{RetryAttempts: 2, RetryDelay: time.Millisecond} },

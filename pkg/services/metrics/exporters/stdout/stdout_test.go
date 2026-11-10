@@ -31,7 +31,7 @@ func TestRegistersStdoutExporter(t *testing.T) {
 	m := metrics.New()
 	require.NoError(t, m.Init(enabledCtx(map[string]any{"pretty": false, "timestamps": false})))
 	require.NoError(t, m.Alive(context.Background()))
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 func TestRejectsUnknownConfigKeys(t *testing.T) {

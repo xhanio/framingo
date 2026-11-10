@@ -62,7 +62,7 @@ func newBus(t *testing.T) pubsub.Manager {
 	t.Helper()
 	bus := pubsub.New(driver.NewMemory(log.Default))
 	require.NoError(t, bus.Start(context.Background()))
-	t.Cleanup(func() { _ = bus.Stop(true) })
+	t.Cleanup(func() { _ = bus.Stop(context.Background()) })
 	return bus
 }
 
@@ -70,7 +70,7 @@ func newMessageBus(t *testing.T, opts ...Option) Manager {
 	t.Helper()
 	mb := New(newBus(t), opts...)
 	require.NoError(t, mb.Start(context.Background()))
-	t.Cleanup(func() { _ = mb.Stop(true) })
+	t.Cleanup(func() { _ = mb.Stop(context.Background()) })
 	return mb
 }
 
@@ -130,7 +130,7 @@ func TestWithTopic_IsolatesBuses(t *testing.T) {
 	b := New(bus, WithTopic("/b"), WithName("messagebus_b"))
 	require.NoError(t, a.Start(context.Background()))
 	require.NoError(t, b.Start(context.Background()))
-	t.Cleanup(func() { _ = a.Stop(true); _ = b.Stop(true) })
+	t.Cleanup(func() { _ = a.Stop(context.Background()); _ = b.Stop(context.Background()) })
 
 	ta := &target{}
 	tb := &target{}
@@ -216,4 +216,35 @@ func TestNewMessenger_JSONRoundTrip(t *testing.T) {
 	var decoded entity.PubsubMessage
 	require.NoError(t, json.Unmarshal(data, &decoded))
 	assert.Equal(t, original, decoded)
+}
+
+// hanging takes a message and holds it, whatever its context says, until released.
+type hanging struct {
+	took    chan struct{}
+	release chan struct{}
+}
+
+func (h *hanging) Name() string                   { return "msg_hanging" }
+func (h *hanging) Dependencies() []common.Service { return nil }
+
+func (h *hanging) HandleMessage(ctx context.Context, m common.Message) error {
+	close(h.took)
+	<-h.release
+	return nil
+}
+
+func TestStopGivesUpOnAHandlerThatHangsOnceItsContextEnds(t *testing.T) {
+	mb := New(newBus(t))
+	require.NoError(t, mb.Start(context.Background()))
+	h := &hanging{took: make(chan struct{}), release: make(chan struct{})}
+	defer close(h.release)
+	mb.Register(h)
+	mb.SendMessage(context.Background(), &source{}, &msg{Body: "hold"})
+	<-h.took
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	begin := time.Now()
+	err := mb.Stop(ctx)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(begin), 2*time.Second)
 }

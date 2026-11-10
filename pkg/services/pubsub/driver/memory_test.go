@@ -145,7 +145,7 @@ func TestMemoryNoSubscribers(t *testing.T) {
 func TestMemoryStartStop(t *testing.T) {
 	b := NewMemory(log.Default)
 	assert.NoError(t, b.Start(context.Background()))
-	assert.NoError(t, b.Stop(true))
+	assert.NoError(t, b.Stop(context.Background()))
 }
 
 func TestMemoryUnsubscribeNonexistent(t *testing.T) {
@@ -160,7 +160,7 @@ func TestMemoryStopClosesChannels(t *testing.T) {
 
 	ch, _ := b.Subscribe("svc", "topic")
 
-	err := b.Stop(true)
+	err := b.Stop(context.Background())
 	require.NoError(t, err)
 
 	// channel should be closed
@@ -173,10 +173,10 @@ func TestMemoryDoubleStop(t *testing.T) {
 
 	_, _ = b.Subscribe("svc", "topic")
 
-	err := b.Stop(true)
+	err := b.Stop(context.Background())
 	require.NoError(t, err)
 
 	// Second stop should not panic
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }

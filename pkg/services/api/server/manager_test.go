@@ -71,7 +71,7 @@ func startServer(t *testing.T, routers ...*mockRouter) (baseURL string, cleanup 
 		resp.Body.Close()
 		return true
 	}, 2*time.Second, 10*time.Millisecond)
-	cleanup = func() { require.NoError(t, m.Stop(true)) }
+	cleanup = func() { require.NoError(t, m.Stop(context.Background())) }
 	return
 }
 
@@ -608,7 +608,7 @@ handlers:
 		handlers: map[string]any{"Test": okHandler},
 	}))
 	require.NoError(t, m.Start(context.Background()))
-	defer func() { require.NoError(t, m.Stop(true)) }()
+	defer func() { require.NoError(t, m.Stop(context.Background())) }()
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool {
 		resp, err := http.Get(baseURL + "/")
@@ -638,7 +638,7 @@ handlers:
 	})
 
 	t.Run("survives a restart rebuild", func(t *testing.T) {
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
 		require.Eventually(t, func() bool {
@@ -695,7 +695,7 @@ handlers:
 		handlers: map[string]any{"Guarded": okHandler},
 	}))
 	require.NoError(t, m.Start(context.Background()))
-	defer func() { require.NoError(t, m.Stop(true)) }()
+	defer func() { require.NoError(t, m.Stop(context.Background())) }()
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool {
 		resp, err := http.Get(baseURL + "/api/guarded")
@@ -868,7 +868,7 @@ handlers:
 			handlers: map[string]any{"Test": okHandler},
 		}))
 		require.NoError(t, m.Start(context.Background()))
-		defer func() { require.NoError(t, m.Stop(true)) }()
+		defer func() { require.NoError(t, m.Stop(context.Background())) }()
 		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 		require.Eventually(t, func() bool {
 			resp, err := http.Get(baseURL + "/api/test")
@@ -940,7 +940,7 @@ func TestChain_Order(t *testing.T) {
 			WithMiddlewareConfigs([]byte("panicky:\n")),
 		))
 		require.NoError(t, m.Start(context.Background()))
-		defer func() { require.NoError(t, m.Stop(true)) }()
+		defer func() { require.NoError(t, m.Stop(context.Background())) }()
 		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
 		// The panic must come back as a structured error response, not a
@@ -979,7 +979,7 @@ handlers:
 			handlers: map[string]any{"Test": okHandler},
 		}))
 		require.NoError(t, m.Start(context.Background()))
-		defer func() { require.NoError(t, m.Stop(true)) }()
+		defer func() { require.NoError(t, m.Stop(context.Background())) }()
 		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 		require.Eventually(t, func() bool {
 			resp, err := http.Get(baseURL + "/api/test")
@@ -1046,7 +1046,7 @@ handlers:
 		handlers: map[string]any{"Test": okHandler},
 	}))
 	require.NoError(t, m.Start(context.Background()))
-	defer func() { require.NoError(t, m.Stop(true)) }()
+	defer func() { require.NoError(t, m.Stop(context.Background())) }()
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool {
 		resp, err := http.Get(baseURL + "/api/test")
@@ -1158,4 +1158,54 @@ func TestAdd_RejectsDuplicateName(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, errors.Conflict), "expected Conflict, got %v", err)
 	assert.EqualValues(t, 8080, m.servers["http"].endpoint.Port, "the first instance must survive")
+}
+
+func TestStopClosesWhatStillServesOnceItsContextEnds(t *testing.T) {
+	port := freePort(t)
+	m := testManager()
+	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", port, "/")))
+	entered, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	require.NoError(t, m.RegisterRouters(&mockRouter{
+		name: "slow",
+		config: []byte(`server: http
+prefix: /api
+handlers:
+  - method: GET
+    path: /slow
+    func: Slow`),
+		handlers: map[string]any{"Slow": func(c echo.Context) error {
+			close(entered)
+			<-release
+			return c.String(http.StatusOK, "late")
+		}},
+	}))
+	require.NoError(t, m.Start(context.Background()))
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	require.Eventually(t, func() bool {
+		resp, err := http.Get(baseURL + "/")
+		if err != nil {
+			return false
+		}
+		resp.Body.Close()
+		return true
+	}, 2*time.Second, 10*time.Millisecond)
+	answered := make(chan error, 1)
+	go func() {
+		resp, err := http.Get(baseURL + "/api/slow")
+		if err == nil {
+			resp.Body.Close()
+		}
+		answered <- err
+	}()
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	assert.ErrorIs(t, m.Stop(ctx), context.DeadlineExceeded)
+	select {
+	case err := <-answered:
+		assert.Error(t, err, "the request still going got an answer instead of a closed connection")
+	case <-time.After(3 * time.Second):
+		t.Fatal("the connection still going was left open")
+	}
 }

@@ -33,13 +33,15 @@ func (m *manager) Start(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel
-	m.wg.Add(1)
+	looped := make(chan struct{})
+	m.looped = looped
 	go func() {
-		defer m.wg.Done()
+		defer close(looped)
 		// Deliberately for/select with a single case, not a bare <-ctx.Done():
 		// this is the template's service run loop, and it is shaped so a
 		// ticker, a subscription channel or a work queue can be added as
-		// another case without restructuring anything.
+		// another case without restructuring anything. Work handed to its own
+		// goroutine runs in m.wg.Go, taking ctx as an argument.
 		//
 		//nolint:gosimple // S1000: kept as a loop for the cases that come later
 		for {
@@ -54,16 +56,13 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *manager) Stop(wait bool) error {
-	if m.cancel == nil {
-		return nil
+func (m *manager) Stop(ctx context.Context) error {
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+		<-m.looped
 	}
-	m.cancel()
-	if wait {
-		m.wg.Wait()
-	}
-	m.cancel = nil
-	return nil
+	return m.wg.Wait(ctx)
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

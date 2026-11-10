@@ -2,11 +2,11 @@ package example
 
 import (
 	"context"
-	"sync"
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	fmodel "github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/syncutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
@@ -24,7 +24,8 @@ type manager struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-	wg     *sync.WaitGroup
+	looped chan struct{}      // closed as the run loop of the latest Start returns
+	wg     syncutil.WaitGroup // work the run loop hands off, whichever Start it came from
 
 	inst *instruments
 }
@@ -39,7 +40,6 @@ func newManager(platform platform.Platform, repo repository.Repository, opts ...
 		repository: repo,
 		mb:         platform.MessageBus(),
 		meter:      platform.Meter(),
-		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()

@@ -190,6 +190,6 @@ func TestMemoryEvictThenUnsubscribeDoesNotPanic(t *testing.T) {
 
 	assert.NotPanics(t, func() {
 		_ = b.Unsubscribe("slow", "topic")
-		_ = b.Stop(true)
+		_ = b.Stop(context.Background())
 	})
 }

@@ -2,6 +2,7 @@ package example
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/xhanio/errors"
 	"go.uber.org/zap/zapcore"
@@ -64,6 +65,8 @@ func (m *manager) initServices() error {
 	// supervisor carries into Init
 	m.services = supervisor.New(confutil.New(m.config),
 		supervisor.WithLogger(m.log),
+		// within the platform's own stop timeout, so the shutdown ends here and not in a SIGKILL
+		supervisor.WithStopPolicy(20*time.Second),
 	)
 
 	/* init infra level services */

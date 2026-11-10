@@ -17,7 +17,7 @@ func TestQuickTasksDoNotUnbalanceTheQueue(t *testing.T) {
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = s.Stop(true) }()
+	defer func() { _ = s.Stop(context.Background()) }()
 	for i := range n {
 		tk := &Task{Job: job.New(fmt.Sprintf("quick-%d", i), func(job.Context) error {
 			done.Add(1)

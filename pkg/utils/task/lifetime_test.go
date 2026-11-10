@@ -13,7 +13,7 @@ func startedScheduler(t *testing.T, opts ...Option) *manager {
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.Stop(true) })
+	t.Cleanup(func() { _ = s.Stop(context.Background()) })
 	return s
 }
 
@@ -35,7 +35,7 @@ func TestRemoveAndStopForgetTheTask(t *testing.T) {
 	if err := s.Add(again); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Stop(true); err != nil {
+	if err := s.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if st := s.Stats(again.ID()); st != nil {

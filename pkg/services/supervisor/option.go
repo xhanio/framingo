@@ -37,8 +37,9 @@ func WithName(name string) Option {
 	}
 }
 
-// WithStopPolicy sets how Stop ends: timeout bounds the whole shutdown,
-// 0 (the default) waits indefinitely.
+// WithStopPolicy bounds a whole shutdown, and the stop of each restart, by
+// timeout: once it passes, each service still to stop is forced. 0 (the
+// default) leaves the bound to the context Stop is given.
 func WithStopPolicy(timeout time.Duration) Option {
 	return func(m *manager) {
 		m.c.stopPolicy = entity.SupervisorStopPolicy{

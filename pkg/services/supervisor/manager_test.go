@@ -26,8 +26,9 @@ type mockService struct {
 	stopErr     error
 	aliveErr    error
 	readyErr    error
-	initFn      func() error // takes precedence over initErr when set
-	readyFn     func() error // takes precedence over readyErr when set
+	initFn      func() error                    // takes precedence over initErr when set
+	readyFn     func() error                    // takes precedence over readyErr when set
+	stopFn      func(ctx context.Context) error // takes precedence over stopErr when set
 	initCalled  int
 	startCalled int
 	stopCalled  int
@@ -55,9 +56,24 @@ func (s *mockService) Start(ctx context.Context) error {
 	return s.startErr
 }
 
-func (s *mockService) Stop(wait bool) error {
+func (s *mockService) Stop(ctx context.Context) error {
 	s.stopCalled++
+	if s.stopFn != nil {
+		return s.stopFn(ctx)
+	}
 	return s.stopErr
+}
+
+// stuck stops only once its context ends.
+func stuck(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func canceled() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
 }
 
 func (s *mockService) Alive(ctx context.Context) error {
@@ -197,7 +213,7 @@ func TestInitAndStart(t *testing.T) {
 		assert.Equal(t, 1, a.startCalled)
 		assert.Equal(t, 1, b.startCalled)
 
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 		assert.Equal(t, 1, a.stopCalled)
 		assert.Equal(t, 1, b.stopCalled)
 	})
@@ -234,7 +250,7 @@ func TestInitAndStart(t *testing.T) {
 		assert.False(t, stat.Ready)
 		assert.EqualError(t, stat.StartErr, "start boom")
 
-		_ = m.Stop(false)
+		_ = m.Stop(canceled())
 	})
 
 	t.Run("init-only service does not start", func(t *testing.T) {
@@ -251,7 +267,7 @@ func TestInitAndStart(t *testing.T) {
 
 		require.NoError(t, m.Start(context.Background()))
 		assert.False(t, m.c.stats.snapshot("config").Started)
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 	})
 }
 
@@ -298,7 +314,7 @@ func TestStopOrder(t *testing.T) {
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
 
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 
 		// After topo sort: [db, api]. Stop is reversed: api first, then db
 		// We verify both were stopped
@@ -333,7 +349,7 @@ func TestPerServiceLifecycle(t *testing.T) {
 	})
 
 	t.Run("StopService", func(t *testing.T) {
-		require.NoError(t, m.StopService("svc", true))
+		require.NoError(t, m.StopService(context.Background(), "svc"))
 		assert.Equal(t, 1, svc.stopCalled)
 	})
 
@@ -349,7 +365,7 @@ func TestPerServiceLifecycle(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		assert.Error(t, m.InitService(context.Background(), "nope"))
 		assert.Error(t, m.StartService("nope"))
-		assert.Error(t, m.StopService("nope", true))
+		assert.Error(t, m.StopService(context.Background(), "nope"))
 		assert.Error(t, m.RestartService(context.Background(), "nope"))
 	})
 }
@@ -453,7 +469,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		assert.EqualError(t, stat.LivenessErr, "dead")
 		assert.Equal(t, 1, svc.aliveCalled)
 
-		_ = m.Stop(false)
+		_ = m.Stop(canceled())
 	})
 
 	t.Run("readiness failure sets Ready=false without affecting liveness", func(t *testing.T) {
@@ -472,7 +488,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		assert.EqualError(t, stat.ReadinessErr, "not ready")
 		assert.Equal(t, 1, svc.readyCalled)
 
-		_ = m.Stop(false)
+		_ = m.Stop(canceled())
 	})
 
 	t.Run("readiness success sets Ready=true", func(t *testing.T) {
@@ -489,7 +505,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		assert.True(t, stat.Ready)
 		assert.Nil(t, stat.ReadinessErr)
 
-		_ = m.Stop(false)
+		_ = m.Stop(canceled())
 	})
 }
 
@@ -506,7 +522,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 		require.NoError(t, m.Start(context.Background()))
 
 		time.Sleep(150 * time.Millisecond)
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 
 		stat := m.c.stats.snapshot("svc")
 		assert.GreaterOrEqual(t, stat.Restarts, 1)
@@ -524,7 +540,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 		require.NoError(t, m.Start(context.Background()))
 
 		time.Sleep(150 * time.Millisecond)
-		require.NoError(t, m.Stop(true))
+		require.NoError(t, m.Stop(context.Background()))
 
 		stat := m.c.stats.snapshot("svc")
 		assert.Equal(t, 0, stat.Restarts)
@@ -544,7 +560,7 @@ func TestMonitorMaxRetries(t *testing.T) {
 	require.NoError(t, m.Start(context.Background()))
 
 	time.Sleep(300 * time.Millisecond)
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 
 	stat := m.c.stats.snapshot("svc")
 	assert.Equal(t, 2, stat.Restarts)
@@ -560,7 +576,7 @@ func TestShutdownTimeout(t *testing.T) {
 	require.NoError(t, m.Start(context.Background()))
 
 	// Normal stop should succeed within timeout
-	err := m.Stop(true)
+	err := m.Stop(context.Background())
 	assert.NoError(t, err)
 }
 
@@ -576,9 +592,9 @@ func TestDoubleStartStop(t *testing.T) {
 	require.NoError(t, m.Start(context.Background()))
 	assert.Equal(t, 1, svc.startCalled)
 
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	// second stop is a no-op
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	assert.Equal(t, 1, svc.stopCalled)
 }
 
@@ -615,7 +631,7 @@ func TestReadyStateTransitions(t *testing.T) {
 	assert.True(t, m.c.stats.snapshot("svc").Ready)
 
 	// after stop: not ready
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	assert.False(t, m.c.stats.snapshot("svc").Ready)
 }
 
@@ -665,4 +681,77 @@ func TestHealthcheckDependencyRecursion(t *testing.T) {
 	err := m.monitor.healthcheck(context.Background(), svc)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "dep dead")
+}
+
+func TestShutdownPastItsDeadlineForcesTheServicesLeft(t *testing.T) {
+	m := newTestManager(WithStopPolicy(100 * time.Millisecond))
+	fast := newMockService("fast")
+	var forced bool
+	fast.stopFn = func(ctx context.Context) error {
+		forced = ctx.Err() != nil
+		return nil
+	}
+	slow := newMockService("slow")
+	slow.deps = []common.Service{fast} // so it stops first
+	slow.stopFn = stuck
+	m.Register(slow, fast)
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()))
+	require.NoError(t, m.Start(context.Background()))
+
+	begin := time.Now()
+	err := m.Stop(context.Background())
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(begin), 2*time.Second)
+	assert.Equal(t, 1, fast.stopCalled, "every service is stopped before Stop returns")
+	assert.True(t, forced, "a service left once the deadline passed gets an ended context")
+}
+
+func TestCancelingAShutdownGoingOnForcesIt(t *testing.T) {
+	m := newTestManager()
+	slow := newMockService("slow")
+	slow.stopFn = stuck
+	m.Register(slow)
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()))
+	require.NoError(t, m.Start(context.Background()))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error, 1)
+	go func() { stopped <- m.Stop(ctx) }()
+	select {
+	case err := <-stopped:
+		t.Fatalf("Stop = %v before its context ended", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-stopped:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not return once canceled")
+	}
+}
+
+func TestRestartOfAStuckServiceEndsAtTheStopDeadline(t *testing.T) {
+	m := newTestManager(WithStopPolicy(100 * time.Millisecond))
+	slow := newMockService("slow")
+	slow.stopFn = stuck
+	m.Register(slow)
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()))
+	require.NoError(t, m.Start(context.Background()))
+
+	restarted := make(chan error, 1)
+	go func() { restarted <- m.c.Restart(context.Background(), slow) }()
+	select {
+	case err := <-restarted:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the restart waited on the stuck stop past the deadline")
+	}
+	assert.Equal(t, 2, slow.initCalled)
+	assert.Equal(t, 2, slow.startCalled)
+	slow.stopFn = nil
+	require.NoError(t, m.Stop(context.Background()))
 }

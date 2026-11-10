@@ -17,6 +17,9 @@ func (m *manager) settle(ctx, execCtx context.Context, e *execution, err error) 
 	defer m.el.Unlock()
 	delete(m.running, task)
 	close(e.done)
+	if next := e.next; next != nil && next.queued && m.registered[key] == next {
+		m.pq.Push(next)
+	}
 	current := m.registered[key] == reg
 	// what ended on a cancellation did not fail, and a job already running elsewhere
 	// refused this start without failing

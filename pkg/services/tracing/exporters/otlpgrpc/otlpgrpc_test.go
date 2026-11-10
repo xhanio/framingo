@@ -39,7 +39,7 @@ func TestRegistersOTLPGRPCExporter(t *testing.T) {
 	})))
 	_, span := m.Provider().Tracer("test").Start(context.Background(), "op")
 	assert.True(t, span.IsRecording())
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 func TestRejectsUnknownCompression(t *testing.T) {

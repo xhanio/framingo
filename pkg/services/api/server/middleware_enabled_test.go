@@ -161,7 +161,7 @@ handlers:
 			handlers: map[string]any{"On": okHandler},
 		}))
 		require.NoError(t, m.Start(context.Background()))
-		t.Cleanup(func() { require.NoError(t, m.Stop(true)) })
+		t.Cleanup(func() { require.NoError(t, m.Stop(context.Background())) })
 		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 		require.Eventually(t, func() bool {
 			resp, err := http.Get(baseURL + "/api/test")

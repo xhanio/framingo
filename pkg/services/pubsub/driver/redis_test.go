@@ -42,7 +42,7 @@ func TestRedisSubscribeAndGet(t *testing.T) {
 	b, err := NewRedis(client, log.Default)
 	require.NoError(t, err)
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
-	defer b.Stop(true)
+	defer b.Stop(context.Background())
 
 	ch, err := b.Subscribe("svc1", "test/topic")
 	require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestRedisHierarchicalTopics(t *testing.T) {
 	b, err := NewRedis(client, log.Default)
 	require.NoError(t, err)
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
-	defer b.Stop(true)
+	defer b.Stop(context.Background())
 
 	_, _ = b.Subscribe("root", "app")
 	_, _ = b.Subscribe("child", "app/module")
@@ -81,7 +81,7 @@ func TestRedisUnsubscribe(t *testing.T) {
 	b, err := NewRedis(client, log.Default)
 	require.NoError(t, err)
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
-	defer b.Stop(true)
+	defer b.Stop(context.Background())
 
 	_, _ = b.Subscribe("svc1", "topic")
 	_, _ = b.Subscribe("svc2", "topic")
@@ -112,9 +112,9 @@ func TestRedisCrossInstance(t *testing.T) {
 	require.NoError(t, b2.Start(context.Background()))
 
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
-	defer b1.Stop(true)
+	defer b1.Stop(context.Background())
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
-	defer b2.Stop(true)
+	defer b2.Stop(context.Background())
 
 	// Give Redis time to set up subscriptions
 	time.Sleep(200 * time.Millisecond)
@@ -140,7 +140,7 @@ func TestRedisStartStop(t *testing.T) {
 	err = b.Start(context.Background())
 	require.NoError(t, err)
 
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	require.NoError(t, err)
 }
 
@@ -154,7 +154,7 @@ func TestRedisStopClosesChannels(t *testing.T) {
 
 	ch, _ := b.Subscribe("svc", "topic")
 
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	require.NoError(t, err)
 
 	_, ok := <-ch
@@ -171,11 +171,11 @@ func TestRedisDoubleStop(t *testing.T) {
 
 	_, _ = b.Subscribe("svc", "topic")
 
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	require.NoError(t, err)
 
 	// Second stop should not panic
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }
 
@@ -188,6 +188,6 @@ func TestRedisStopWithoutStart(t *testing.T) {
 	_, _ = b.Subscribe("svc", "topic")
 
 	// Stop without Start should not panic
-	err = b.Stop(true)
+	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }

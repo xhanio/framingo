@@ -241,8 +241,6 @@ func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 		<-block
 		return nil
 	})}
-	// the fetching goroutine holds this one at the handoff, leaving the rerun in the queue
-	held := &Task{Job: job.New("held", func(job.Context) error { return nil }), Priority: -1}
 	var runs atomic.Int32
 	tk := &Task{
 		Job:             alwaysFailingJob("queued", &runs),
@@ -258,10 +256,6 @@ func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the only worker to be busy", func() bool { return busy.Job.IsState(job.StateRunning) })
-	if err := s.Add(held); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "the fetching goroutine to hold a task", func() bool { return s.pq.IsEmpty() })
 	eventually(t, "the rerun to be queued", func() bool { return !s.pq.IsEmpty() })
 	s.Remove(tk)
 	if !s.pq.IsEmpty() {
@@ -287,7 +281,7 @@ func TestStopEndsARequeue(t *testing.T) {
 	eventually(t, "the task to start cooling", requeueing(s, tk))
 	stopped := make(chan struct{})
 	go func() {
-		_ = s.Stop(true)
+		_ = s.Stop(context.Background())
 		close(stopped)
 	}()
 	select {
@@ -457,7 +451,7 @@ func TestTickDuringARunStaysOutOfTheQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-started
-	// with the only worker taken, a first tick is held at the handoff and a second stays queued
+	// every tick during the run finds the task running
 	time.Sleep(2200 * time.Millisecond)
 	if !s.pq.IsEmpty() {
 		t.Fatal("a tick during the run left the task in the queue")
@@ -472,16 +466,16 @@ func TestStartingARunLeavesNoCopyInTheQueue(t *testing.T) {
 		<-block
 		return nil
 	})}
+	// popped, and out of the queue until busy gives up its slot
 	tk := &Task{
 		Job: job.New("copied", func(job.Context) error {
 			<-release
 			return nil
 		}),
-		Manual: true,
+		Manual:    true,
+		Exclusive: true,
 	}
-	// more urgent than the copy, so it is what the fetching goroutine takes once the handoff is done
-	waiting := &Task{Job: job.New("waiting", func(job.Context) error { return nil }), Priority: -1}
-	s := startedScheduler(t, MaxConcurrency(1))
+	s := startedScheduler(t, MaxConcurrency(2))
 	if err := s.Add(busy); err != nil {
 		t.Fatal(err)
 	}
@@ -492,15 +486,13 @@ func TestStartingARunLeavesNoCopyInTheQueue(t *testing.T) {
 	if err := s.Trigger(tk.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the fetching goroutine to hold the task", s.pq.IsEmpty)
-	s.pq.Push(registrationOf(s, tk)) // what a Remove and Add of the same task during the handoff leaves behind
-	if err := s.Add(waiting); err != nil {
-		t.Fatal(err)
-	}
+	eventually(t, "the task to wait for its slots", s.pq.IsEmpty)
+	s.pq.Push(registrationOf(s, tk)) // what a Cancel and a Trigger meanwhile leave behind
 	close(block)
 	eventually(t, "the task to run", func() bool { return tk.Job.IsState(job.StateRunning) })
-	// the fetching goroutine holds waiting at the handoff: nothing else belongs in the queue
-	eventually(t, "the copy to leave the queue", s.pq.IsEmpty)
+	if !s.pq.IsEmpty() {
+		t.Fatal("the copy stayed in the queue")
+	}
 }
 
 func TestStrayPopDuringARequeueDoesNotRunTheTask(t *testing.T) {
@@ -515,7 +507,7 @@ func TestStrayPopDuringARequeueDoesNotRunTheTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the task to start cooling", requeueing(s, tk))
-	// what the fetching goroutine can still be holding from before the run ended
+	// a stray entry of the task, which must not cut its cooldown short
 	s.pq.Push(registrationOf(s, tk))
 	eventually(t, "the stray pop to be taken", s.pq.IsEmpty)
 	time.Sleep(100 * time.Millisecond)
@@ -531,8 +523,6 @@ func TestTaskContextTakesAQueuedRerunOutOfTheQueue(t *testing.T) {
 		<-block
 		return nil
 	})}
-	// the fetching goroutine holds this one at the handoff, leaving the rerun in the queue
-	held := &Task{Job: job.New("held", func(job.Context) error { return nil }), Priority: -1}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var runs atomic.Int32
@@ -551,10 +541,6 @@ func TestTaskContextTakesAQueuedRerunOutOfTheQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the only worker to be busy", func() bool { return busy.Job.IsState(job.StateRunning) })
-	if err := s.Add(held); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "the fetching goroutine to hold a task", s.pq.IsEmpty)
 	eventually(t, "the rerun to be queued", func() bool { return !s.pq.IsEmpty() })
 	cancel()
 	eventually(t, "the task to stop waiting", func() bool { return !requeueing(s, tk)() })

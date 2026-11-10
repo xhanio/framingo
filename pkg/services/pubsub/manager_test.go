@@ -53,7 +53,7 @@ func TestManagerStartStop(t *testing.T) {
 	err := m.Start(context.Background())
 	require.NoError(t, err)
 
-	err = m.Stop(true)
+	err = m.Stop(context.Background())
 	require.NoError(t, err)
 }
 
@@ -215,7 +215,7 @@ func TestManagerGracefulShutdown(t *testing.T) {
 	assert.Len(t, drain(t, ch, 100*time.Millisecond), 1)
 
 	// Stop closes the driver, which closes all subscriber channels.
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	_, ok := <-ch
 	assert.False(t, ok, "channel should be closed after Stop")
 }

@@ -23,7 +23,7 @@ func TestProbesReportListenerFailure(t *testing.T) {
 	m := testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", port, "/")))
 	require.NoError(t, m.Start(context.Background()))
-	defer func() { _ = m.Stop(true) }()
+	defer func() { _ = m.Stop(context.Background()) }()
 
 	require.Eventually(t, func() bool {
 		return m.Alive(context.Background()) != nil
@@ -39,7 +39,7 @@ func TestProbesHealthyListener(t *testing.T) {
 	m := testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", port, "/")))
 	require.NoError(t, m.Start(context.Background()))
-	defer func() { _ = m.Stop(true) }()
+	defer func() { _ = m.Stop(context.Background()) }()
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool {
@@ -72,10 +72,10 @@ func TestRestartClearsListenerFailure(t *testing.T) {
 
 	// The port frees up; the supervisor restarts the service.
 	blocker.Close()
-	require.NoError(t, m.Stop(true))
+	require.NoError(t, m.Stop(context.Background()))
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
-	defer func() { _ = m.Stop(true) }()
+	defer func() { _ = m.Stop(context.Background()) }()
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	require.Eventually(t, func() bool {

@@ -86,7 +86,7 @@ func startedTaskManager(t *testing.T, opts ...task.Option) task.Manager {
 	if err := tm.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = tm.Stop(true) })
+	t.Cleanup(func() { _ = tm.Stop(context.Background()) })
 	return tm
 }
 
@@ -97,7 +97,7 @@ func startedPlanner(t *testing.T, opts ...Option) (*manager, *recordingSender) {
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = m.Stop(true) })
+	t.Cleanup(func() { _ = m.Stop(context.Background()) })
 	return m, sender
 }
 
@@ -651,7 +651,7 @@ func TestPlannerStartDoesNotStartTheManager(t *testing.T) {
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = m.Stop(true) })
+	t.Cleanup(func() { _ = m.Stop(context.Background()) })
 	if err := m.Add(commandPlan("idle", &task.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
@@ -686,7 +686,7 @@ func TestPlannerStopEndsItsPlansAndLeavesTheManagerRunning(t *testing.T) {
 	triggered(t, m, "mine")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
 	time.Sleep(50 * time.Millisecond)
-	if err := m.Stop(true); err != nil {
+	if err := m.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the run to end", func() bool { return len(sender.finished()) == 1 })
@@ -722,7 +722,7 @@ func TestCommandPlanWithoutASenderStillRuns(t *testing.T) {
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = m.Stop(true) })
+	t.Cleanup(func() { _ = m.Stop(context.Background()) })
 	if err := m.Add(commandPlan("silent", &task.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}

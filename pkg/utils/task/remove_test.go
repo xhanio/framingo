@@ -51,7 +51,7 @@ func TestNewWithoutAConcurrencyStillRunsTasks(t *testing.T) {
 			if err := s.Start(context.Background()); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = s.Stop(true) })
+			t.Cleanup(func() { _ = s.Stop(context.Background()) })
 			if s.concurrent != defaultConcurrency {
 				t.Fatalf("concurrency = %d, want %d", s.concurrent, defaultConcurrency)
 			}

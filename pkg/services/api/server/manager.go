@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/coder/websocket"
 	"github.com/go-playground/validator/v10"
@@ -483,14 +482,14 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop gracefully shuts down all servers
-func (m *manager) Stop(wait bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+// Stop shuts the servers down, waiting for the requests going on until ctx ends; then it closes
+// their connections, though a handler that ignores its request's context runs on.
+func (m *manager) Stop(ctx context.Context) error {
+	var errs []error
 	for _, s := range m.servers {
 		if err := s.stop(ctx); err != nil {
-			return errors.Wrap(err)
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Combine(errs...)
 }

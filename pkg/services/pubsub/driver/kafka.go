@@ -219,7 +219,9 @@ func (b *kafkaDriver) Start(ctx context.Context) error {
 	return nil
 }
 
-func (b *kafkaDriver) Stop(wait bool) error {
+// Stop waits for the listener and the pumps whatever ctx says: they end as soon as they are
+// stopped.
+func (b *kafkaDriver) Stop(_ context.Context) error {
 	if b.cancel != nil {
 		b.cancel()
 	}
@@ -236,11 +238,9 @@ func (b *kafkaDriver) Stop(wait bool) error {
 		sub.stop()
 	}
 
-	if wait {
-		b.wg.Wait()
-		for _, sub := range stopped {
-			sub.wait()
-		}
+	b.wg.Wait()
+	for _, sub := range stopped {
+		sub.wait()
 	}
 
 	werr := b.writer.Close()
