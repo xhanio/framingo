@@ -35,7 +35,6 @@ func (m *manager) settle(ctx, execCtx context.Context, e *execution, err error) 
 func (m *manager) startCooldown(reg *registration, failure error) {
 	task := reg.task
 	reg.requeues++
-	reg.requeueing.Store(true) // its execution just ended, so it is out of the queue
 	reg.cooling = time.Now().Add(task.RequeueCooldown)
 	reg.cooldown = time.AfterFunc(task.RequeueCooldown, func() { m.cooledDown(reg) })
 	if task.Ctx != nil {
@@ -51,14 +50,13 @@ func (m *manager) cooledDown(reg *registration) {
 		return // the wait was stopped as the timer fired
 	}
 	reg.cooldown, reg.cooling = nil, time.Time{}
-	reg.queued = true
-	m.pq.Push(reg)
+	m.enqueue(reg)
 }
 
 func (m *manager) contextEnded(reg *registration) {
 	m.el.Lock()
 	defer m.el.Unlock()
-	if !reg.requeueing.Load() {
+	if !reg.requeueing() {
 		return // the rerun started, or the wait was stopped already
 	}
 	m.stopWaiting(reg)
@@ -78,8 +76,7 @@ func (m *manager) stopWaiting(reg *registration) {
 		reg.unwatch = nil
 	}
 	if reg.queued {
-		m.pq.Remove(reg) // first: the queue orders by requeueing
+		m.pq.Remove(reg)
 		reg.queued = false
 	}
-	reg.requeueing.Store(false)
 }

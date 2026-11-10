@@ -43,7 +43,7 @@ type Task struct {
 	Schedule string          `json:"schedule"`
 	// Manual keeps the task registered without running it on its own: only Trigger does.
 	Manual        bool          `json:"manual,omitempty"`
-	Priority      int           `json:"priority"`
+	Priority      int           `json:"priority"` // lower runs first; within one, in the order queued
 	Exclusive     bool          `json:"exclusive"`
 	Timeout       time.Duration `json:"timeout,omitempty"`
 	RetryAttempts int           `json:"retry_attempts,omitempty"`

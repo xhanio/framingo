@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -36,6 +35,7 @@ type manager struct {
 	ew         *sync.WaitGroup // wait group for executing
 	registered map[string]*registration
 	running    map[*Task]*execution
+	arrivals   uint64 // numbers each entry into the queue, for first come first served
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -59,7 +59,7 @@ func newScheduler(opts ...Option) *manager {
 	m.applyOptions(opts...)
 	m.setDefaults()
 	m.pq = staque.NewPriority(
-		staque.WithLessFunc(priorityFunc),
+		staque.WithLessFunc(queueOrder),
 		staque.WithLogger[*registration](m.log),
 		staque.BlockIfEmpty[*registration](),
 	)
@@ -93,9 +93,7 @@ func (m *manager) Add(tasks ...*Task) error {
 		reg := &registration{task: t, exec: newExecutor(t), priority: t.Priority}
 		m.registered[key] = reg
 		if t.isOneShot() {
-			// run directly
-			reg.queued = true
-			m.pq.Push(reg)
+			m.enqueue(reg)
 		}
 		m.el.Unlock()
 		if t.Schedule != "" {
@@ -133,8 +131,7 @@ func (m *manager) Remove(tasks ...*Task) <-chan struct{} {
 		m.el.Lock()
 		reg, ok := m.registered[key]
 		if ok {
-			// the queue holds one entry per ID, so this takes out whatever is queued under
-			// it; first, since ending a requeue changes what the queue orders it by
+			// the queue holds one entry per ID, so this takes out whatever is queued under it
 			m.pq.Remove(reg)
 		}
 		if ok && reg.task == t {
@@ -280,8 +277,8 @@ func (m *manager) Start(ctx context.Context) error {
 						return
 					}
 					reg.queued = false
-					m.pq.Remove(reg) // a copy from a Remove and Add during the handoff; see fire
-					reg.requeueing.Store(false)
+					// queued too if its task was removed and added again while this was handed over
+					m.pq.Remove(reg)
 					if reg.unwatch != nil {
 						reg.unwatch() // the rerun's own context comes from Task.Ctx
 						reg.unwatch = nil
@@ -379,7 +376,7 @@ func (m *manager) Stats(id string) *Stats {
 	if !ok {
 		return nil
 	}
-	st := &Stats{Stats: *reg.exec.Stats(), Requeues: reg.requeues, Requeueing: reg.requeueing.Load()}
+	st := &Stats{Stats: *reg.exec.Stats(), Requeues: reg.requeues, Requeueing: reg.requeueing()}
 	if left := time.Until(reg.cooling); left > 0 {
 		st.Cooldown = left
 	}
@@ -399,9 +396,13 @@ type registration struct {
 	cooldown *time.Timer // set while a failed execution cools down
 	cooling  time.Time   // when the cooldown ends
 	unwatch  func() bool // set while a rerun waits, which Task.Ctx ending stops
+	priority int         // the task's Priority, as the queue orders it
+	seq      uint64      // its latest arrival in the queue
+}
 
-	priority   int         // the task's Priority as the queue orders it
-	requeueing atomic.Bool // read by the queue without el, so it only changes out of the queue
+// requeueing: a failed execution waits to run again, cooling down or back in the queue.
+func (r *registration) requeueing() bool {
+	return r.cooldown != nil || (r.queued && r.requeues > 0)
 }
 
 // execution lasts from admission until it settles, which can be after Remove has forgotten its
@@ -412,9 +413,6 @@ type execution struct {
 	done   chan struct{}      // closed as it settles
 }
 
-// fire queues a registered task unless it is queued, running or being requeued. The queue
-// orders by state, so a task must be out of it while its state changes: a queue out of
-// order cannot find the task again, and removing it panics.
 func (m *manager) fire(reg *registration, params any) error {
 	key := reg.task.ID()
 	m.el.Lock()
@@ -425,11 +423,18 @@ func (m *manager) fire(reg *registration, params any) error {
 	if _, running := m.running[reg.task]; running || reg.queued || reg.cooldown != nil {
 		return errors.Conflict.Newf("task %s is already queued, running or cooling down", key)
 	}
-	reg.queued = true
 	reg.params = params
 	reg.requeues = 0
-	m.pq.Push(reg)
+	m.enqueue(reg)
 	return nil
+}
+
+// The caller holds el.
+func (m *manager) enqueue(reg *registration) {
+	m.arrivals++
+	reg.seq = m.arrivals
+	reg.queued = true
+	m.pq.Push(reg)
 }
 
 func (m *manager) tick(reg *registration) {

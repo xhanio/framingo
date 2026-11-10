@@ -9,7 +9,6 @@ import (
 
 	"github.com/xhanio/errors"
 
-	"github.com/xhanio/framingo/pkg/structs/staque"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -441,46 +440,6 @@ func TestStatsRequeuesStartOverWithANewFiring(t *testing.T) {
 	})
 }
 
-// failedJob returns a job whose one run has failed.
-func failedJob(t *testing.T, id string) job.Job {
-	t.Helper()
-	j := job.New(id, func(job.Context) error { return errors.Newf("run failed") })
-	j.Run(context.Background(), nil)
-	j.Wait()
-	if !j.IsState(job.StateFailed) {
-		t.Fatalf("job %s state = %s, want %s", id, j.State(), job.StateFailed)
-	}
-	return j
-}
-
-func TestQueueOrdersARequeuedTaskLikeANewOne(t *testing.T) {
-	cases := []struct {
-		name       string
-		requeueing bool
-		priority   int // of the task that ran, against a new task of priority 2
-		wantFirst  string
-	}{
-		{name: "requeueing with the more urgent priority", requeueing: true, priority: 1, wantFirst: "ran"},
-		{name: "requeueing with the less urgent priority", requeueing: true, priority: 3, wantFirst: "new"},
-		{name: "requeueing with the same priority is the older", requeueing: true, priority: 2, wantFirst: "ran"},
-		{name: "failed yields to a new task despite its priority", requeueing: false, priority: 1, wantFirst: "new"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ran := &registration{task: &Task{Job: failedJob(t, "ran")}, priority: tc.priority}
-			ran.requeueing.Store(tc.requeueing)
-			pq := staque.NewPriority(staque.WithLessFunc(priorityFunc))
-			pq.Push(ran)
-			pq.Push(&registration{task: &Task{Job: job.New("new", func(job.Context) error { return nil })}, priority: 2})
-			if got := pq.MustPop().Key(); got != tc.wantFirst {
-				t.Fatalf("first popped = %s, want %s", got, tc.wantFirst)
-			}
-		})
-	}
-}
-
-// The queue orders by job state, so a task must not sit in it while its state
-// changes: a queue out of order cannot find the task again, and Remove panics.
 func TestTickDuringARunStaysOutOfTheQueue(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)

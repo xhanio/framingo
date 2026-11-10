@@ -88,7 +88,7 @@ func TestExclusivePlan(t *testing.T) {
 
 func TestPriorityQueue(t *testing.T) {
 	pq := staque.NewPriority(
-		staque.WithLessFunc(priorityFunc),
+		staque.WithLessFunc(queueOrder),
 		staque.BlockIfEmpty[*registration](),
 	)
 	regs := make([]*registration, 20)
