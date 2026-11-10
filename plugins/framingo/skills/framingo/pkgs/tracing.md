@@ -46,7 +46,7 @@ Lifecycle facts that matter:
   handle; with `tracing.enabled: false` (the default) it is a noop provider
   and spans cost nothing. Callers never nil-check.
 - **`Stop` is the flush.** The batch processor exports on its own clock;
-  `Stop(wait)` shuts the provider down synchronously (5s bound) so buffered
+  `Stop(ctx)` shuts the provider down synchronously (until `ctx` ends, 5s at most) so buffered
   spans reach the exporter. Register telemetry at the **end** of the infra
   tier's `Register` call: the topo sort pops dependency-less services in
   reverse registration order, so the services listed last init first and,
@@ -263,7 +263,7 @@ Reach for it only when the real service cannot do the job — usually it can:
   provider, so the component under test traces into nothing and costs nothing.
 - **Asserting on spans?** `tracing.Register` is exported, so a test can
   register an in-memory exporter and run the real service. `Init` builds the
-  provider with `WithBatcher`, so call `Stop(true)` — which flushes
+  provider with `WithBatcher`, so call `Stop(context.Background())` — which flushes
   synchronously — before reading the exporter.
 - **Testing a provider swap?** That is the case that wants a double, since the
   service only swaps its provider through `Init`.

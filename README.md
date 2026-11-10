@@ -345,7 +345,7 @@ func (m *manager) Name() string {
 func (m *manager) Dependencies() []common.Service { return nil }
 func (m *manager) Init(ctx context.Context) error { return nil }
 func (m *manager) Start(ctx context.Context) error { return nil }
-func (m *manager) Stop(wait bool) error            { return nil }
+func (m *manager) Stop(ctx context.Context) error  { return nil }
 
 func (m *manager) SayHello(ctx context.Context, name string) (string, error) {
     m.log.Infof("saying hello to %s", name)
@@ -514,7 +514,7 @@ func (m *manager) Init(ctx context.Context) error {
 }
 
 func (m *manager) Start(ctx context.Context) error { return m.services.Start(ctx) }
-func (m *manager) Stop(wait bool) error            { return m.services.Stop(wait) }
+func (m *manager) Stop(ctx context.Context) error  { return m.services.Stop(ctx) }
 ```
 
 ```go
@@ -669,7 +669,7 @@ type Service interface {
 }
 
 type Initializable interface { Init(ctx context.Context) error }       // setup; called on start AND restart
-type Daemon        interface { Start(ctx context.Context) error; Stop(wait bool) error }
+type Daemon        interface { Start(ctx context.Context) error; Stop(ctx context.Context) error } // Stop waits until ctx ends, then forces
 type Liveness      interface { Alive() error }                         // failure triggers auto-restart
 type Readiness     interface { Ready() error }                         // failure reported but not actioned
 type Debuggable    interface { Info(w io.Writer, debug bool) }

@@ -17,7 +17,7 @@ type Service interface {
 
 // Optional lifecycle interfaces - implement as needed
 type Initializable interface { Init(ctx context.Context) error }       // setup (called on start AND restart)
-type Daemon interface { Start(ctx context.Context) error; Stop(wait bool) error }  // long-running
+type Daemon interface { Start(ctx context.Context) error; Stop(ctx context.Context) error }  // long-running
 type Liveness interface { Alive(ctx context.Context) error }           // health probe (failure = auto-restart)
 type Readiness interface { Ready(ctx context.Context) error }          // readiness probe (failure = reported only)
 // Probes take the caller's context - probes may do I/O (a database ping), and
@@ -25,6 +25,42 @@ type Readiness interface { Ready(ctx context.Context) error }          // readin
 // a tighter timeout on top, never a looser one.
 type Debuggable interface { Info(w io.Writer, debug bool) }            // debug output
 ```
+
+### The `Daemon` contract
+
+`Start` and `Stop` are called on one instance, and more than once: the supervisor's restarts
+run `Stop`, `Init` and `Start` on the same service.
+
+- `Start` on a started service does nothing.
+- `Stop(ctx)` takes no new work, cancels the work going on, and waits for all of it to end,
+  what an earlier `Stop` left included, until `ctx` ends. With `context.Background()` it
+  waits as long as that takes.
+- When `ctx` ends first, `Stop` ends the work hard where it can, and returns an error wrapping
+  `ctx.Err()`, leaving the rest to end on its own. The task manager sends its executions
+  `job.SignalKill`; the API server closes the connections still open. A `ctx` that has
+  already ended makes it a forced stop.
+- Either way, `Stop` returns only after whatever takes new work, a run loop or a consumer, has
+  returned. That takes no longer than the cancel, and keeps two starts from both taking work.
+- `Start` works right after any `Stop`. What a stop left runs on until it ends, and must not
+  reach into the new start.
+- `Stop` on a stopped service waits for what an earlier one left, until `ctx` ends. The
+  supervisor, which leaves that to its services, returns at once.
+
+The bound is the caller's, carried by the context:
+
+- `WithStopPolicy(timeout)` gives the supervisor's whole shutdown, and the stop of each
+  restart, a deadline. Past it, each service still to stop gets an ended context.
+- A signal handler that hears the signal again cancels the context of the stop going on,
+  which forces it ([components-server.md](../app/components-server.md#signalgo--os-signal-handling)).
+- An API that stops on request turns the grace period it was given into the context, with
+  `context.WithTimeout`.
+
+Keep on the manager what lasts across starts: the service's state, and a `syncutil.WaitGroup`
+that counts the work of every start, whose `Wait(ctx)` gives up when `Stop`'s context ends.
+Give a start its own context, and its own of whatever hands out work or capacity, such as a
+semaphore; what a stop leaves holds only those of the start it came from. A goroutine takes
+them as arguments, never reading them back from the manager, where the next start replaces
+them. [services.md](../app/services.md#lifecyclego) shows the shape.
 
 ### Identity interfaces
 
@@ -42,9 +78,9 @@ type Weighted interface { GetPriority() int; SetPriority(priority int) }
   `messagebus.Register(module common.Named)` takes it, and the supervisor's
   dependency graph (`pkg/structs/graph`) is generic over it.
 - `Unique` + `Weighted` together form `staque.PriorityItem` — the contract
-  of the priority stack/queue ([utils.md](utils.md)). `task.Task` implements
-  both, which is how the task manager orders its queue: by priority, then by
-  `Key()` as the tiebreak.
+  of the priority stack/queue ([utils.md](utils.md)). The task manager's queue
+  entries implement both; it orders them by priority, lower first, then by when
+  they were queued.
 
 ## Supervisor
 
@@ -84,7 +120,7 @@ type Manager interface {          // = model.Supervisor + health + Initializable
 
     Init(ctx context.Context) error
     Start(ctx context.Context) error
-    Stop(wait bool) error
+    Stop(ctx context.Context) error
     Info(w io.Writer, debug bool)
 
     Alive(ctx context.Context) error              // health, on Manager not model.Supervisor: fails only when recovery is spent (a service dead with restarts exhausted)
@@ -92,7 +128,7 @@ type Manager interface {          // = model.Supervisor + health + Initializable
 
     InitService(ctx context.Context, name string) error
     StartService(name string) error
-    StopService(name string, wait bool) error
+    StopService(ctx context.Context, name string) error
     RestartService(ctx context.Context, name string) error
     Restart(ctx context.Context) error             // whole graph
 }
@@ -103,7 +139,7 @@ The manager:
 - Calls `Init(ctx)` on `Initializable` services in dependency order — optionally waiting for dependencies, see [Waiting at Init](#waiting-at-init) below
 - Calls `Start(ctx)` on `Daemon` services
 - Monitors `Liveness` and `Readiness` probes — see [Health Probes & Escalation](#health-probes--escalation) below
-- Monitoring and restarts tune via `WithMonitorPolicy(interval, maxRetries, restartDelay)` — sweep cadence (0, the default, disables monitoring), in-process restarts per service, pause before each restart; `WithStopPolicy(timeout)` bounds the whole shutdown (0, the default, waits indefinitely)
+- Monitoring and restarts tune via `WithMonitorPolicy(interval, maxRetries, restartDelay)` — sweep cadence (0, the default, disables monitoring), in-process restarts per service, pause before each restart; `WithStopPolicy(timeout)` bounds the whole shutdown and the stop of each restart, forcing what is left once it passes (0, the default, leaves the bound to the context `Stop` gets)
 
 ## Waiting at Init
 

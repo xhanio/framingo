@@ -98,7 +98,8 @@ type manager struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-	wg     *sync.WaitGroup
+	looped chan struct{}  // closed as the run loop of the latest Start returns
+	wg     syncutil.WaitGroup // work the run loop hands off, whichever Start it came from
 
 	inst *instruments // built once at Init
 }
@@ -113,7 +114,6 @@ func newManager(platform platform.Platform, repo repository.Repository, opts ...
 		repository: repo,
 		mb:         platform.MessageBus(),
 		meter:      platform.Meter(),
-		wg:         &sync.WaitGroup{},
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
@@ -283,12 +283,14 @@ func (m *manager) Start(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel
-	m.wg.Add(1)
+	looped := make(chan struct{})
+	m.looped = looped
 	go func() {
-		defer m.wg.Done()
+		defer close(looped)
 		// for/select with a single case on purpose: a ticker, a subscription
 		// channel or a work queue can be added as another case without
-		// restructuring anything.
+		// restructuring anything. Work handed to its own goroutine runs in
+		// m.wg.Go, taking ctx as an argument.
 		for {
 			select {
 			case <-ctx.Done():
@@ -300,18 +302,21 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *manager) Stop(wait bool) error {
-	if m.cancel == nil {
-		return nil
+func (m *manager) Stop(ctx context.Context) error {
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+		<-m.looped
 	}
-	m.cancel()
-	if wait {
-		m.wg.Wait()
-	}
-	m.cancel = nil
-	return nil
+	return m.wg.Wait(ctx)
 }
 ```
+
+This is the [`Daemon` contract](../pkgs/supervisor.md#the-daemon-contract). `Stop` returns
+only once the run loop has, so the next `Start` never runs beside it, then waits for `m.wg`,
+which counts the work of every start, until its `ctx` ends. Work a stop leaves runs on by
+itself, which is why it takes its start's `ctx` and channels as arguments rather than reading
+them from the manager.
 
 ## Health Probes
 

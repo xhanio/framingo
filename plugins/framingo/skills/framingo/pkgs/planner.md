@@ -10,14 +10,20 @@ and reports the runs of its predefined kinds through the message bus.
 // pkg/types/model
 type Planner interface {
     common.Service
-    Add(todo *entity.Plan) error
+    Add(plan *entity.Plan) error
     // Runs the plan now; returns the run's ID, empty for a plan without a kind.
+    // source goes on the run and on its retries and requeues; empty is an InvalidArgument.
     // A plan already queued, running or being requeued is a Conflict.
-    Trigger(id string) (string, error)
+    Trigger(id string, source entity.PlanRunSource) (string, error)
     // Ends what the plan is doing and keeps the plan; an idle plan is a Conflict.
     Cancel(id string) error
-    Delete(id string, force bool) error
-    // The Job's result; for a plan of a predefined kind, its latest entity.PlanRun.
+    // Ends what the plan is doing, forgets the plan and returns its latest run.
+    Delete(id string, force bool) (*entity.PlanRun, error)
+    // The latest run; nil if there is none yet or the plan has no kind.
+    LastRun(id string) (*entity.PlanRun, error)
+    // Opens a run's log by its PlanRun.LogPath; see "Run logs".
+    OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error)
+    // The result of a plan's own Job.
     GetResult(id string) (any, error)
     Stats(opts entity.PlannerStatsOptions) ([]*entity.PlannerStats, error)
 }
@@ -40,24 +46,35 @@ type PlannerStatsOptions struct {
 The `Task` decides when a plan runs: `Schedule` for cron, `Manual: true` to keep it
 registered until `Trigger` runs it (the two exclude each other), neither to run it
 once on `Add`. `Timeout`, `RetryAttempts`, `RequeueAttempts` and the rest apply as
-they do in `pkg/utils/task`.
+they do in `pkg/utils/task`. `GracePeriod` (default 10 seconds) is how long a stopped
+plan gets to end on its own; see [Stopping a plan](#stopping-a-plan).
 
 ## Construction
 
 ```go
-import "github.com/xhanio/framingo/pkg/services/planner"
+import (
+    "github.com/xhanio/framingo/pkg/services/planner"
+    "github.com/xhanio/framingo/pkg/utils/task"
+)
+
+// tm runs the plans. It is yours: set the concurrency there (10 by default) and share it
+// with tasks of your own if you like.
+tm := task.New(task.WithLogger(logger))
 
 // es: where run events are sent - typically the messagebus manager
-// (any common.MessageSender), or nil. The planner depends on it.
-pl := planner.New(messagebusMgr,
+// (any common.MessageSender), or nil. The planner depends on it and on tm.
+pl := planner.New(messagebusMgr, tm,
     planner.WithLogger(logger),
     planner.WithLogDir("/var/log/myapp/plans"), // empty keeps no log files
     planner.WithOutputTailBytes(4096),          // the default
 )
 ```
 
-Register it with the supervisor like any service; it is a `Daemon`, so the
-supervisor starts and stops it.
+Register both with the supervisor like any service. It starts `tm` before the planner
+and stops it after; `tm.Stop(ctx)` waits for every execution it started until `ctx` ends, then
+sends what still runs `job.SignalKill` and returns. The planner neither starts nor stops `tm`: stopping the planner ends
+and forgets its own plans, and whatever else runs on `tm` carries on. Plan IDs share a
+namespace with the other tasks on `tm`, and a clash is the `Conflict` from `Add`.
 
 ## Command plans
 
@@ -74,18 +91,95 @@ err := pl.Add(&entity.Plan{
         Timeout:  time.Hour,
     },
 })
-runID, err := pl.Trigger("backup") // run it now as well
+runID, err := pl.Trigger("backup", entity.PlanRunManual) // run it now as well
 ```
 
-A command runs in its own process group, so canceling or timing it out reaches its
-children. Its output goes to `<log dir>/<plan ID>/<time>-<run>.log` and the tail of
-it into the run.
+A command plan's job is a command task from `pkg/utils/task` (see below) with the run's
+bookkeeping around it. The command runs in its own process group, so stopping it reaches
+its children, and one that ends on its own keeps any background children it left. Its
+output goes to `<log dir>/<plan ID>/<time>-<run>.log` and the tail of it into the run.
+
+## Command tasks and job signals
+
+A command does not need a planner to run on a task manager:
+
+```go
+backup := task.Command{
+    Argv:  []string{"/usr/bin/pg_dump", "mydb"},
+    Grace: 30 * time.Second, // how long it gets to stop before a SIGKILL; 10s by default
+    Out:   logWriter,        // nil discards the output
+}
+err := tm.Add(&task.Task{Job: job.New("backup", backup.Run), Schedule: "30 2 * * *"})
+```
+
+`Command` defines the task and its `Run` is the job function; `job.New` takes a copy, so
+the definition is fixed there. Run decides how the command stops: the job's context
+ending, by a cancel or a timeout, sends the process group a SIGTERM, then a SIGKILL once
+`Grace` is up; `job.SignalKill` sends the SIGKILL at once. Whatever a stopped command left
+in its group goes with it.
+
+Run returns nil when the command ended on its own with status 0, and otherwise a
+`*task.CommandError` whose `Result` says what actually happened: the exit code, whether it
+was stopped and by what, whether it was killed. It unwraps to what stopped the command, so
+`errors.Is(err, context.Canceled)` works, and `errors.As` finds it through wrapping. A job
+function with bookkeeping of its own around the command calls `Run` on a copy with the
+`Out` it wants for that execution:
+
+```go
+func(jc job.Context) error {
+    c := cmd // a copy; cmd is the shared definition
+    c.Out = openThisRunsLog()
+    err := c.Run(jc)
+    var failed *task.CommandError
+    if errors.As(err, &failed) {
+        // failed.Result.ExitCode, failed.Result.Stopped ...
+    }
+    return err
+}
+```
+
+A command plan builds its `Command` when it is added, with `Grace` from the plan's
+`Task.GracePeriod`, so how long `Delete` waits and when the command gets its SIGKILL come
+from one setting. The task manager itself never reads `Task.GracePeriod`.
+
+`job.SignalKill` is one of a job's signals. `Job.Signal(sig)` sends a signal to the
+execution going on now, and a job's function reads `jc.Signaled(sig)`, a channel closed
+once the signal has arrived; what a signal means is up to the function. A job with its own
+function that wants a forced stop to cut its cleanup short should watch for it.
+
+## Stopping a plan
+
+`Cancel` ends what a plan is doing and keeps the plan. `Delete` also forgets it, removing
+its cron entry first so no new run starts meanwhile, and returns its latest run, waiting as
+the table below says. `Stop(ctx)` on the planner forgets every plan and waits for their runs
+until `ctx` ends, then sends what still runs `SignalKill`.
+
+| | `force` false | `force` true |
+|---|---|---|
+| Command plan | SIGTERM to the process group; SIGKILL once `GracePeriod` is up; waits for the end | SIGKILL to the group at once; waits for the end |
+| Plan with its own job | Cancels the context, waits up to `GracePeriod`, then sends `SignalKill` | Cancels the context and sends `SignalKill`, does not wait |
+
+- Go cannot kill a goroutine, so a job that ignores its context and signals goes on until
+  it returns, whatever `Delete` did. A run `Delete` returns can still be `running` that way.
+- A process that left the group, with `setsid` say, is out of reach. If it holds the
+  command's output, the end is waited for no longer than the grace period.
+- Stopping several plans, `Delete` them concurrently, so every cron entry goes at once and
+  the wait lasts as long as the slowest rather than the sum. `Stop` does the same.
+- `Delete` forgets the plan first, so a second one is a `NotFound`. To be able to escalate,
+  `Cancel` and later `Delete` with `force`, which cuts the grace period short.
+
+Under systemd, set `KillMode=mixed` on the unit. With the default `control-group`,
+systemd's SIGTERM reaches the commands as well as your process: `Setpgid` gives a command
+a process group of its own, not a cgroup. A command that dies of that signal before your
+service stops it ended on its own as far as the planner can tell, so its run is recorded
+as `failed`.
 
 ## Run events
 
 Every run of a command plan is reported through the `MessageSender`, with an
-`entity.PlanRun` carrying its ID, plan ID, source (`schedule` or `manual`), state,
-times, exit code, output tail, log path and error:
+`entity.PlanRun` carrying its ID, plan ID, source, state, times, exit code, output tail,
+log path and error. The source is `schedule` for a cron run and otherwise what `Trigger`
+was given: `entity.PlanRunManual`, `entity.PlanRunSchedule`, or a value of your own.
 
 | Event | `Kind()` | When |
 |---|---|---|
@@ -109,9 +203,18 @@ func (m *manager) HandleMessage(ctx context.Context, msg common.Message) error {
 
 A bus can lose a message: one whose subscriber's queue is full, or one still queued
 as the process stops. When every run must be accounted for, also compare your records
-with `GetResult` from time to time, which holds the plan's latest `PlanRun` while the
-process lives, and make applying a run idempotent, since both paths deliver the end
-of a run.
+with `LastRun` from time to time, which holds the plan's latest `PlanRun` while the
+process lives, and apply the run `Delete` returns as you shut down. Make applying a run
+idempotent, since these paths all deliver the end of a run.
+
+## Run logs
+
+`OpenRunLog(path, tailBytes)` opens a run's log by its `PlanRun.LogPath`. It takes the
+path rather than a run ID because the planner only remembers the latest run, while your
+records go further back. With `tailBytes > 0` it reads from that many bytes before the
+end. The file may still be being written, so polling it follows a live run.
+
+A path not under the log dir is `Forbidden`; no log dir or no such file is `NotFound`.
 
 ## Plans with their own job
 

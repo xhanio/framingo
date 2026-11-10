@@ -26,7 +26,7 @@ The daemon binary constructs this component and runs it — see
 ```go
 type Server interface {
 	common.Named
-	common.Daemon        // Start(ctx) / Stop(wait)
+	common.Daemon        // Start(ctx) / Stop(ctx)
 	common.Initializable // Init(ctx)
 	common.Debuggable    // Info(w, debug)
 }
@@ -352,8 +352,9 @@ func (m *manager) Start(ctx context.Context) error {
 }
 ```
 
-`Stop(wait)` stops the graph and cancels the context; `Info` delegates to
-`m.services.Info`.
+`Stop(ctx)` stops the graph, within `ctx` and the supervisor's stop policy, and cancels the
+context; `Info` delegates to `m.services.Info`. Give the supervisor a `WithStopPolicy` shorter
+than the platform's own stop timeout, so the shutdown ends there rather than in a SIGKILL.
 
 ## `api.go` — Middleware and Router Registration
 
@@ -397,23 +398,48 @@ The supervisor deliberately installs no signal handlers
 
 | Signal | Action |
 |---|---|
-| SIGINT, SIGTERM | `m.Stop(true)` — graceful shutdown |
-| SIGHUP | `m.services.Restart(ctx)` — restart the whole service graph |
+| SIGINT, SIGTERM | first: `m.Stop(stopCtx)` in a goroutine — graceful shutdown; second: cancel `stopCtx`, which forces it; third: `os.Exit(1)` |
+| SIGHUP | `m.services.Restart(ctx)` — restart the whole service graph; ignored while shutting down |
 | SIGUSR1 | `m.Info(os.Stdout, true)` — dump service info |
-| SIGUSR2 | dump a full goroutine stack trace |
+| SIGUSR2 | dump a full goroutine stack trace, a stuck shutdown's included |
+
+The stop runs beside the loop, so the loop keeps hearing signals while it goes on: a stop
+called in the loop itself would leave the next SIGTERM to `signal.Notify`, which swallows it.
 
 ```go
 func (m *manager) listenSignals(ctx context.Context) {
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGUSR1, syscall.SIGUSR2)
 	defer signal.Stop(signalCh)
+	done := ctx.Done()
+	stopCtx, force := context.WithCancel(context.Background())
+	defer force()
+	var stopped chan error
+	var forced bool
 	for {
 		select {
-		case <-ctx.Done():
+		case <-done:
 			m.log.Info("gracefully shutdown manager")
 			return
+		case err := <-stopped:
+			// log err, then
+			return
 		case sig := <-signalCh:
-			switch sig { /* the table above */ }
+			switch sig {
+			case syscall.SIGINT, syscall.SIGTERM:
+				switch {
+				case stopped == nil:
+					stopped = make(chan error, 1)
+					done = nil // the stop ends ctx, and stopped tells how it went
+					go func() { stopped <- m.Stop(stopCtx) }()
+				case !forced:
+					force()
+					forced = true
+				default:
+					os.Exit(1)
+				}
+			/* the rest of the table above */
+			}
 		}
 	}
 }
