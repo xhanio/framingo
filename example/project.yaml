@@ -2,7 +2,7 @@
 # Format: github.com/xhanio/gopro/pkg/types/config.go
 
 product: framingo-example
-version: v0.7.0
+version: v0.8.0
 
 default:
   binary_src: build/binary
