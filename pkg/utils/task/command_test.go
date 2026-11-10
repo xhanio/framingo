@@ -43,8 +43,9 @@ func (s *safeBuffer) String() string {
 func commandRun(ctx context.Context, c Command, grace time.Duration) (job.Job, *safeBuffer, <-chan CommandResult) {
 	out := &safeBuffer{}
 	ended := make(chan CommandResult, 1)
+	c.Grace, c.Out = grace, out
 	j := job.New("command", func(jc job.Context) error {
-		ended <- RunCommand(jc, c, grace, out)
+		ended <- c.exec(jc)
 		return nil
 	})
 	j.Run(ctx, nil)
@@ -109,13 +110,13 @@ func result(t *testing.T, ended <-chan CommandResult) CommandResult {
 
 func TestCommandEndingOnItsOwn(t *testing.T) {
 	cases := []struct {
-		name    string
-		script  string
-		code    int
-		failure string
+		name      string
+		script    string
+		code      int
+		succeeded bool
 	}{
-		{name: "successfully", script: "echo hi", code: 0},
-		{name: "with a failing status", script: "echo hi; exit 3", code: 3, failure: "exit status 3"},
+		{name: "successfully", script: "echo hi", code: 0, succeeded: true},
+		{name: "with a failing status", script: "echo hi; exit 3", code: 3},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -127,8 +128,8 @@ func TestCommandEndingOnItsOwn(t *testing.T) {
 			if out.String() != "hi\n" {
 				t.Fatalf("output = %q", out.String())
 			}
-			if f := r.Failure(); (f == nil) != (tc.failure == "") || (f != nil && !strings.Contains(f.Error(), tc.failure)) {
-				t.Fatalf("failure = %v, want %q", f, tc.failure)
+			if r.succeeded() != tc.succeeded {
+				t.Fatalf("succeeded = %v, want %v", r.succeeded(), tc.succeeded)
 			}
 		})
 	}
@@ -153,7 +154,7 @@ func TestCommandTakesItsDirAndEnv(t *testing.T) {
 func TestCommandThatCannotStart(t *testing.T) {
 	_, _, ended := commandRun(context.Background(), Command{Argv: []string{"/no/such/binary"}}, time.Second)
 	r := result(t, ended)
-	if r.ExitCode != -1 || r.Err == nil || r.Stopped != nil || r.Failure() == nil {
+	if r.ExitCode != -1 || r.Err == nil || r.Stopped != nil || r.succeeded() {
 		t.Fatalf("result = %+v", r)
 	}
 }
@@ -281,7 +282,7 @@ func TestCommandEndingOnItsOwnKeepsItsBackgroundChild(t *testing.T) {
 	pids := pidPath(t)
 	_, _, ended := commandRun(context.Background(), sh(`sleep 60 >/dev/null 2>&1 & echo $! > "$0"`, pids), time.Second)
 	r := result(t, ended)
-	if r.Failure() != nil {
+	if !r.succeeded() {
 		t.Fatalf("result = %+v", r)
 	}
 	child := readPid(t, pids)
@@ -300,16 +301,17 @@ func TestChildHoldingTheOutputDoesNotFailACommandThatEndedOnItsOwn(t *testing.T)
 	if took := time.Since(begin); took > 3*time.Second {
 		t.Fatalf("the command took %s to end", took)
 	}
-	if r.ExitCode != 0 || r.Failure() != nil {
-		t.Fatalf("result = %+v, failure %v", r, r.Failure())
+	if r.ExitCode != 0 || !r.succeeded() {
+		t.Fatalf("result = %+v", r)
 	}
 }
 
-func TestNewCommandRunsOnTheManagerAndHonorsItsGracePeriod(t *testing.T) {
+func TestCommandRunIsATaskJobThatHonorsItsGracePeriod(t *testing.T) {
 	s := startedScheduler(t)
 	pids := pidPath(t)
-	tk := NewCommand("stubborn", sh(stubbornCommand, pids), nil)
-	tk.Manual, tk.GracePeriod = true, 200*time.Millisecond
+	c := sh(stubbornCommand, pids)
+	c.Grace = 200 * time.Millisecond
+	tk := &Task{Job: job.New("stubborn", c.Run), Manual: true}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -325,14 +327,116 @@ func TestNewCommandRunsOnTheManagerAndHonorsItsGracePeriod(t *testing.T) {
 	assertGone(t, child)
 }
 
-func TestNewCommandFailsTheJobAsTheCommandFails(t *testing.T) {
+func TestCommandRunFailsTheJobAsTheCommandFails(t *testing.T) {
 	s := startedScheduler(t)
-	tk := NewCommand("failing", sh("exit 4"), nil)
+	tk := &Task{Job: job.New("failing", sh("exit 4").Run)}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the job to fail", func() bool { return tk.Job.IsState(job.StateFailed) })
-	if err := tk.Job.Err(); err == nil || !strings.Contains(err.Error(), "exit status 4") {
+	err := tk.Job.Err()
+	var failed *CommandError
+	if !errors.As(err, &failed) || failed.Result.ExitCode != 4 || err.Error() != "exit status 4" {
 		t.Fatalf("job error = %v", err)
+	}
+}
+
+// runOnce runs c's Run as a job and returns its error.
+func runOnce(ctx context.Context, c Command) error {
+	j := job.New("once", c.Run)
+	j.Run(ctx, nil)
+	j.Wait()
+	return j.Err()
+}
+
+func TestRunErrorCarriesTheResult(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	timedOut, cancelTimeout := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancelTimeout()
+	cases := []struct {
+		name    string
+		ctx     context.Context
+		command Command
+		message string
+		is      error
+		check   func(CommandResult) bool
+	}{
+		{
+			name: "a failing status", ctx: context.Background(), command: sh("exit 3"), message: "exit status 3",
+			check: func(r CommandResult) bool { return r.ExitCode == 3 && r.Stopped == nil },
+		},
+		{
+			name: "a cancel", ctx: canceled, command: sh("true"), message: "context canceled", is: context.Canceled,
+			check: func(r CommandResult) bool { return errors.Is(r.Stopped, context.Canceled) && r.ExitCode == -1 },
+		},
+		{
+			name: "a timeout", ctx: timedOut, command: sh("sleep 30"), message: "context deadline exceeded", is: context.DeadlineExceeded,
+			check: func(r CommandResult) bool { return errors.Is(r.Stopped, context.DeadlineExceeded) },
+		},
+		{
+			name: "a command that cannot start", ctx: context.Background(), command: Command{Argv: []string{"/no/such/binary"}}, message: "/no/such/binary",
+			check: func(r CommandResult) bool { return r.ExitCode == -1 && r.Err != nil },
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runOnce(tc.ctx, tc.command)
+			var failed *CommandError
+			if !errors.As(err, &failed) {
+				t.Fatalf("error = %v (%T), want a *CommandError", err, err)
+			}
+			if !tc.check(failed.Result) {
+				t.Fatalf("result = %+v", failed.Result)
+			}
+			if !strings.Contains(err.Error(), tc.message) || strings.Contains(err.Error(), "\n") {
+				t.Fatalf("message = %q, want one line with %q", err.Error(), tc.message)
+			}
+			if tc.is != nil && !errors.Is(err, tc.is) {
+				t.Fatalf("errors.Is(%v, %v) = false", err, tc.is)
+			}
+		})
+	}
+}
+
+func TestRunErrorSurvivesWrapping(t *testing.T) {
+	err := errors.Wrapf(errors.Wrap(runOnce(context.Background(), sh("exit 5"))), "plan %s run %s", "p", "r")
+	var failed *CommandError
+	if !errors.As(err, &failed) || failed.Result.ExitCode != 5 {
+		t.Fatalf("errors.As through the wrapping = %v, %+v", failed != nil, failed)
+	}
+}
+
+func TestRunOfASuccessIsNil(t *testing.T) {
+	if err := runOnce(context.Background(), sh("true")); err != nil {
+		t.Fatalf("Run = %v", err)
+	}
+}
+
+func TestCommandRunWritesToItsOut(t *testing.T) {
+	out := &safeBuffer{}
+	c := sh("echo hi")
+	c.Out = out
+	j := job.New("out", c.Run)
+	j.Run(context.Background(), nil)
+	j.Wait()
+	if err := j.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "hi\n" {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+func TestCommandIsFixedOnceItsRunIsTaken(t *testing.T) {
+	first, later := &safeBuffer{}, &safeBuffer{}
+	c := sh("echo hi")
+	c.Out = first
+	j := job.New("fixed", c.Run)
+	c.Argv, c.Out = []string{"false"}, later
+	j.Run(context.Background(), nil)
+	j.Wait()
+	if err := j.Err(); err != nil || first.String() != "hi\n" || later.String() != "" {
+		t.Fatalf("err %v, first %q, later %q: a change after the job was made reached it", err, first.String(), later.String())
 	}
 }

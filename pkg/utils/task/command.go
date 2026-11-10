@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -13,11 +14,14 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
-// Command is what a command task runs.
+// Command defines a command task: what it runs, how it stops and where its output goes. Its
+// Run is the task's job function, as in job.New(id, cmd.Run), which fixes the definition there.
 type Command struct {
-	Argv []string          `json:"argv"` // the executable first
-	Dir  string            `json:"dir,omitempty"`
-	Env  map[string]string `json:"env,omitempty"` // on top of the process environment
+	Argv  []string          `json:"argv"` // the executable first
+	Dir   string            `json:"dir,omitempty"`
+	Env   map[string]string `json:"env,omitempty"`   // on top of the process environment
+	Grace time.Duration     `json:"grace,omitempty"` // how long a stopped command gets before a SIGKILL; zero is DefaultGracePeriod
+	Out   io.Writer         `json:"-"`               // where Run writes the output; nil discards it
 }
 
 // CommandResult is how a command's execution ended.
@@ -28,22 +32,43 @@ type CommandResult struct {
 	Err      error // why it could not start, or what waiting on it reported
 }
 
-// Failure is nil for a command that ended on its own with status 0.
-func (r CommandResult) Failure() error {
+func (r CommandResult) succeeded() bool {
+	return r.Stopped == nil && r.ExitCode == 0
+}
+
+// CommandError is what Run returns when the command did not end on its own with status 0. It
+// carries the whole result, and unwraps to what stopped the command or what kept it from
+// starting, so errors.Is(err, context.Canceled) still answers.
+type CommandError struct {
+	Result CommandResult
+}
+
+func (e *CommandError) Error() string {
+	r := e.Result
 	switch {
 	case r.Stopped != nil:
-		return errors.Wrap(r.Stopped)
-	case r.ExitCode == 0:
-		return nil
+		return r.Stopped.Error()
 	case r.ExitCode > 0:
-		return errors.Newf("exit status %d", r.ExitCode)
+		return fmt.Sprintf("exit status %d", r.ExitCode)
+	case r.Err != nil:
+		return r.Err.Error()
 	default:
-		return errors.Wrap(r.Err)
+		return fmt.Sprintf("exit status %d", r.ExitCode)
 	}
 }
 
-// RunCommand is the body of a command task's job: it runs c in a process group of its own,
-// writes its output to out, and returns once it has ended. How the command is stopped:
+func (e *CommandError) Unwrap() error {
+	if e.Result.Stopped != nil {
+		return e.Result.Stopped
+	}
+	return e.Result.Err
+}
+
+// Run is the command task's job function. It runs the command once, its output to Out, and
+// returns nil when the command ended on its own with status 0, a *CommandError otherwise. A
+// job function with bookkeeping of its own calls it on a copy with the Out it wants.
+//
+// How the command is stopped:
 //
 //   - the job's context ends, by a cancel or a timeout: a SIGTERM to the group, then a
 //     SIGKILL once the grace period is up;
@@ -53,7 +78,14 @@ func (r CommandResult) Failure() error {
 //
 // Once the command has exited, its output is waited for up to the grace period, so a child
 // still holding it open does not hold up the end.
-func RunCommand(jc job.Context, c Command, grace time.Duration, out io.Writer) CommandResult {
+func (c Command) Run(jc job.Context) error {
+	if res := c.exec(jc); !res.succeeded() {
+		return &CommandError{Result: res}
+	}
+	return nil
+}
+
+func (c Command) exec(jc job.Context) CommandResult {
 	ctx := jc.Context()
 	if len(c.Argv) == 0 {
 		return CommandResult{ExitCode: -1, Err: errors.InvalidArgument.Newf("no command to run")}
@@ -61,13 +93,14 @@ func RunCommand(jc job.Context, c Command, grace time.Duration, out io.Writer) C
 	if err := ctx.Err(); err != nil {
 		return CommandResult{ExitCode: -1, Stopped: err}
 	}
+	grace := c.Grace
 	if grace <= 0 {
 		grace = DefaultGracePeriod
 	}
 	p := exec.Command(c.Argv[0], c.Argv[1:]...)
 	p.Dir = c.Dir
 	p.Env = append(os.Environ(), commandEnv(c.Env)...)
-	p.Stdout, p.Stderr = out, out
+	p.Stdout, p.Stderr = c.Out, c.Out
 	p.WaitDelay = grace
 	cmdutil.SetProcessGroup(p)
 	if err := p.Start(); err != nil {
@@ -107,17 +140,6 @@ func RunCommand(jc job.Context, c Command, grace time.Duration, out io.Writer) C
 			_ = cmdutil.KillProcessGroup(p)
 		}
 	}
-}
-
-// NewCommand makes a task whose job runs c, stopped within the task's own GracePeriod. Its
-// output goes to out, or nowhere when out is nil. Set the task's schedule and other rules
-// before adding it.
-func NewCommand(id string, c Command, out io.Writer) *Task {
-	t := &Task{}
-	t.Job = job.New(id, func(jc job.Context) error {
-		return RunCommand(jc, c, t.Grace(), out).Failure()
-	})
-	return t
 }
 
 func commandEnv(env map[string]string) []string {

@@ -50,8 +50,9 @@ func (m *manager) buildJob(plan *entity.Plan) error {
 		if len(params.Command) == 0 {
 			return errors.InvalidArgument.Newf("plan %s has no command", plan.ID)
 		}
+		cmd := task.Command{Argv: params.Command, Dir: params.Dir, Env: params.Env, Grace: plan.Task.Grace()}
 		plan.Task.Job = job.New(plan.ID, func(jc job.Context) error {
-			return m.runCommand(jc, plan, params)
+			return m.runCommand(jc, plan, cmd)
 		}, job.WithLabels(plan.Metadata), job.WithLogger(m.log))
 		return nil
 	default:
@@ -59,7 +60,8 @@ func (m *manager) buildJob(plan *entity.Plan) error {
 	}
 }
 
-func (m *manager) runCommand(jc job.Context, plan *entity.Plan, params entity.CommandParams) error {
+// runCommand is a command plan's job function: the run's bookkeeping around the command task.
+func (m *manager) runCommand(jc job.Context, plan *entity.Plan, cmd task.Command) error {
 	run := entity.PlanRun{
 		ID:        uuid.NewString(),
 		PlanID:    plan.ID,
@@ -75,15 +77,20 @@ func (m *manager) runCommand(jc job.Context, plan *entity.Plan, params entity.Co
 	}
 	tail := ioutil.NewTailWriter(m.tailBytes)
 	var out io.Writer = tail
-	if f := m.createRunLog(&run, params); f != nil {
+	if f := m.createRunLog(&run, cmd.Argv); f != nil {
 		defer f.Close()
 		out = io.MultiWriter(f, tail)
 	}
 	jc.SetResult(run)
 	m.report(entity.PlanRunStarted{PlanRun: run})
 
-	command := task.Command{Argv: params.Command, Dir: params.Dir, Env: params.Env}
-	res := task.RunCommand(jc, command, plan.Task.Grace(), out)
+	cmd.Out = out // cmd is this run's copy
+	err := cmd.Run(jc)
+	var res task.CommandResult // a success: status 0, not stopped
+	var failed *task.CommandError
+	if errors.As(err, &failed) {
+		res = failed.Result
+	}
 
 	run.EndedAt = time.Now()
 	run.ExitCode = res.ExitCode
@@ -91,7 +98,7 @@ func (m *manager) runCommand(jc job.Context, plan *entity.Plan, params entity.Co
 	run.State, run.Error = runOutcome(res, plan.Task.Timeout)
 	jc.SetResult(run)
 	m.report(entity.PlanRunFinished{PlanRun: run})
-	if err := res.Failure(); err != nil {
+	if err != nil {
 		return errors.Wrapf(err, "plan %s run %s", plan.ID, run.ID)
 	}
 	return nil
@@ -114,7 +121,7 @@ func runOutcome(res task.CommandResult, timeout time.Duration) (entity.PlanRunSt
 }
 
 // createRunLog opens the run's log file and records its path; a run without one still runs.
-func (m *manager) createRunLog(run *entity.PlanRun, params entity.CommandParams) *os.File {
+func (m *manager) createRunLog(run *entity.PlanRun, argv []string) *os.File {
 	if m.logDir == "" {
 		return nil
 	}
@@ -129,7 +136,7 @@ func (m *manager) createRunLog(run *entity.PlanRun, params entity.CommandParams)
 		return nil
 	}
 	fmt.Fprintf(f, "# plan %s run %s (%s) at %s\n# %s\n\n", run.PlanID, run.ID, run.Source,
-		run.StartedAt.Format(time.RFC3339), strings.Join(params.Command, " "))
+		run.StartedAt.Format(time.RFC3339), strings.Join(argv, " "))
 	run.LogPath = path
 	return f
 }
