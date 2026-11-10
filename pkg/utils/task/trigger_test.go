@@ -142,7 +142,7 @@ func TestTriggerOfAQueuedTaskConflicts(t *testing.T) {
 	if err := s.Add(other, tk); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to be busy", func() bool { return busyRuns.Load() == 1 })
+	eventually(t, "the only slot to be taken", func() bool { return busyRuns.Load() == 1 })
 	if err := s.Trigger(tk.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestCancelTakesAQueuedTaskOutOfTheQueue(t *testing.T) {
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to be busy", func() bool { return busyRuns.Load() == 1 })
+	eventually(t, "the only slot to be taken", func() bool { return busyRuns.Load() == 1 })
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestCancelTakesAQueuedTaskOutOfTheQueue(t *testing.T) {
 		t.Fatal("a canceled task stayed in the queue")
 	}
 	close(release)
-	eventually(t, "the worker to be free", func() bool { return other.Job.IsDone() })
+	eventually(t, "the slot to be free", func() bool { return other.Job.IsDone() })
 	time.Sleep(50 * time.Millisecond)
 	if n := runs.Load(); n != 0 {
 		t.Fatalf("runs = %d, want 0", n)
@@ -364,7 +364,7 @@ func TestCancelOfAQueuedOneShotTaskEndsIt(t *testing.T) {
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to be busy", func() bool { return busyRuns.Load() == 1 })
+	eventually(t, "the only slot to be taken", func() bool { return busyRuns.Load() == 1 })
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ func TestRemoveInterruptsARetryWait(t *testing.T) {
 	if err := s.Add(&Task{Job: countingJob("next", &otherRuns)}); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to be free", func() bool { return otherRuns.Load() == 1 })
+	eventually(t, "the only slot to be free", func() bool { return otherRuns.Load() == 1 })
 }
 
 func TestStopInterruptsARetryWait(t *testing.T) {
@@ -451,7 +451,7 @@ func TestTickWhileQueuedIsSkipped(t *testing.T) {
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to be busy", func() bool { return busyRuns.Load() == 1 })
+	eventually(t, "the only slot to be taken", func() bool { return busyRuns.Load() == 1 })
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,7 @@ import (
 )
 
 // settle closes an admitted execution. A failure with requeues left cools down without
-// holding a worker, then goes back to the queue as a rerun of the same firing.
+// holding a slot, then goes back to the queue as a rerun of the same firing.
 func (m *manager) settle(ctx, execCtx context.Context, e *execution, err error) {
 	reg := e.reg
 	task := reg.task

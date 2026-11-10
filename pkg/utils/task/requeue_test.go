@@ -151,7 +151,7 @@ func TestRequeueWaitsOutTheCooldown(t *testing.T) {
 	}
 }
 
-func TestRequeueCooldownFreesTheWorker(t *testing.T) {
+func TestRequeueCooldownFreesTheSlot(t *testing.T) {
 	var failed atomic.Int32
 	cooling := &Task{
 		Job:             alwaysFailingJob("cooling", &failed),
@@ -171,7 +171,7 @@ func TestRequeueCooldownFreesTheWorker(t *testing.T) {
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to take another task", ran.Load)
+	eventually(t, "the only slot to take another task", ran.Load)
 }
 
 func TestRequeueKeepsTheTaskRegisteredWhileCooling(t *testing.T) {
@@ -257,7 +257,7 @@ func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 	if err := s.Add(busy); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to be busy", func() bool { return busy.Job.IsState(job.StateRunning) })
+	eventually(t, "the only slot to be taken", func() bool { return busy.Job.IsState(job.StateRunning) })
 	eventually(t, "the rerun to be queued", func() bool { return !s.pq.IsEmpty() })
 	if err := s.Remove(context.Background(), tk); err != nil {
 		t.Fatal(err)
@@ -483,7 +483,7 @@ func TestStartingARunLeavesNoCopyInTheQueue(t *testing.T) {
 	if err := s.Add(busy); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to be busy", func() bool { return busy.Job.IsState(job.StateRunning) })
+	eventually(t, "the only slot to be taken", func() bool { return busy.Job.IsState(job.StateRunning) })
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -544,7 +544,7 @@ func TestTaskContextTakesAQueuedRerunOutOfTheQueue(t *testing.T) {
 	if err := s.Add(busy); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the only worker to be busy", func() bool { return busy.Job.IsState(job.StateRunning) })
+	eventually(t, "the only slot to be taken", func() bool { return busy.Job.IsState(job.StateRunning) })
 	eventually(t, "the rerun to be queued", func() bool { return !s.pq.IsEmpty() })
 	cancel()
 	eventually(t, "the task to stop waiting", func() bool { return !requeueing(s, tk)() })

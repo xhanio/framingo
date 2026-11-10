@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/xhanio/errors"
+	"golang.org/x/sync/semaphore"
 )
 
 // Start can come right after any Stop, while what that Stop left still runs.
@@ -18,54 +19,37 @@ func (m *manager) Start(ctx context.Context) error {
 	m.cm.Start()
 	go func() {
 		defer close(looped)
-		m.loop(ctx, make(chan struct{}, m.concurrent))
+		m.loop(ctx, semaphore.NewWeighted(int64(m.concurrent)))
 	}()
 	return nil
 }
 
 // loop runs the queue in slots of its own Start, so that what a forced stop leaves running
 // takes none from the next.
-func (m *manager) loop(ctx context.Context, slots chan struct{}) {
+func (m *manager) loop(ctx context.Context, slots *semaphore.Weighted) {
 	defer m.log.Infof("stopped executing tasks")
-	for take(ctx, slots, 1) {
+	for slots.Acquire(ctx, 1) == nil {
 		reg := m.pop(ctx)
 		if reg == nil {
 			return
 		}
-		held := 1
+		held := int64(1)
 		if reg.exclusive() {
 			// every slot, so that it runs alone
-			if !take(ctx, slots, m.concurrent-1) {
+			if slots.Acquire(ctx, int64(m.concurrent)-1) != nil {
 				return
 			}
-			held = m.concurrent
+			held = int64(m.concurrent)
 		}
 		run := m.admit(ctx, reg)
 		if run == nil {
-			give(slots, held)
+			slots.Release(held)
 			continue
 		}
 		m.executions.Go(func() {
-			defer give(slots, held)
+			defer slots.Release(held)
 			run()
 		})
-	}
-}
-
-func take(ctx context.Context, slots chan<- struct{}, n int) bool {
-	for range n {
-		select {
-		case <-ctx.Done():
-			return false
-		case slots <- struct{}{}:
-		}
-	}
-	return true
-}
-
-func give(slots <-chan struct{}, n int) {
-	for range n {
-		<-slots
 	}
 }
 
