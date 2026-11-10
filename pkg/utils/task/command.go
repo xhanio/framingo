@@ -40,17 +40,10 @@ type CommandError struct {
 }
 
 func (e *CommandError) Error() string {
-	r := e.Result
-	switch {
-	case r.Stopped != nil:
-		return r.Stopped.Error()
-	case r.ExitCode > 0:
-		return fmt.Sprintf("exit status %d", r.ExitCode)
-	case r.Err != nil:
-		return r.Err.Error()
-	default:
-		return fmt.Sprintf("exit status %d", r.ExitCode)
+	if err := e.Unwrap(); err != nil {
+		return err.Error()
 	}
+	return fmt.Sprintf("exit status %d", e.Result.ExitCode)
 }
 
 func (e *CommandError) Unwrap() error {
@@ -63,13 +56,13 @@ func (e *CommandError) Unwrap() error {
 // Run returns nil when the command ended on its own with status 0, a *CommandError otherwise.
 // A job function with bookkeeping of its own calls it on a copy with the Out it wants.
 func (c Command) Run(jc job.Context) error {
-	if res := c.exec(jc); !res.succeeded() {
+	if res := c.execute(jc); !res.succeeded() {
 		return &CommandError{Result: res}
 	}
 	return nil
 }
 
-func (c Command) exec(jc job.Context) CommandResult {
+func (c Command) execute(jc job.Context) CommandResult {
 	ctx := jc.Context()
 	if len(c.Argv) == 0 {
 		return CommandResult{ExitCode: -1, Err: errors.InvalidArgument.Newf("no command to run")}

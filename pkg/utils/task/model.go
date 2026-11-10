@@ -26,7 +26,7 @@ type Manager interface {
 // Stats is what the task's executor reports, plus what the manager adds on top of it.
 type Stats struct {
 	executor.Stats
-	Requeues uint          `json:"requeues"` // times the latest execution went back to the queue
+	Requeues uint          `json:"requeues"` // times the current firing went back to the queue
 	Cooldown time.Duration `json:"cooldown"` // what is left of the current RequeueCooldown
 	// Requeueing says the latest execution failed and the task waits to run again, cooling
 	// down or back in the queue. Its job stays failed meanwhile: that run did fail.
@@ -35,7 +35,6 @@ type Stats struct {
 
 // Task is configuration; the manager keeps its state of a task elsewhere, so a Task copies like
 // any value.
-
 type Task struct {
 	Job      job.Job         `json:"-"`
 	Ctx      context.Context `json:"-"`

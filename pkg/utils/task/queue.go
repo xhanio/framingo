@@ -7,9 +7,6 @@ var (
 	_ common.Weighted = (*registration)(nil)
 )
 
-// exiting unblocks the fetching goroutine as the manager stops; it leaves the queue first.
-var exiting = &registration{}
-
 // Key is the task's ID: the queue holds one entry per ID.
 func (r *registration) Key() string {
 	return r.task.ID()
@@ -34,7 +31,7 @@ func (r *registration) exclusive() bool {
 // before reads only what is fixed while a task is queued, which keeps the queue in order.
 func before(a, b *registration) bool {
 	switch {
-	case !a.valid():
+	case !a.valid(): // a wake-up, which goes first
 		return b.valid()
 	case !b.valid():
 		return false

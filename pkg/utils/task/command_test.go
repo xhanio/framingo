@@ -44,7 +44,7 @@ func commandRun(ctx context.Context, c Command, grace time.Duration) (job.Job, *
 	ended := make(chan CommandResult, 1)
 	c.Grace, c.Out = grace, out
 	j := job.New("command", func(jc job.Context) error {
-		ended <- c.exec(jc)
+		ended <- c.execute(jc)
 		return nil
 	})
 	j.Run(ctx, nil)

@@ -98,9 +98,10 @@ func TestPriorityQueue(t *testing.T) {
 			priority: i,
 		}
 	}
-	pq.Push(exiting)
+	wake := &registration{}
+	pq.Push(wake)
 	pq.Push(regs...)
-	pq.Push(exiting)
+	pq.Push(wake)
 	table := printutil.NewTable(os.Stdout)
 	for range 21 {
 		item := pq.MustPop()
