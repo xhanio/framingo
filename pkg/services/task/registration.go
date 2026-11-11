@@ -52,10 +52,6 @@ func (r *registration) SetPriority(priority int) {
 	r.priority = priority
 }
 
-func (r *registration) valid() bool {
-	return r != nil && r.task.IsValid()
-}
-
 func (r *registration) exclusive() bool {
 	return r.task != nil && r.task.Exclusive
 }
@@ -63,10 +59,6 @@ func (r *registration) exclusive() bool {
 // before reads only what is fixed while a task is queued, which keeps the queue in order.
 func before(a, b *registration) bool {
 	switch {
-	case !a.valid(): // a wake-up, which goes first
-		return b.valid()
-	case !b.valid():
-		return false
 	case a.priority != b.priority:
 		return a.priority < b.priority
 	case a.seq != b.seq:

@@ -79,15 +79,11 @@ func (m *manager) acquireRest(ctx context.Context, slots *semaphore.Weighted, re
 
 // pop waits for a registration in the queue, and returns nil once ctx ends.
 func (m *manager) pop(ctx context.Context) *registration {
-	for {
-		reg, _ := m.pq.Pop() // nil when woken on an empty queue
-		if ctx.Err() != nil {
-			return nil
-		}
-		if reg.valid() {
-			return reg
-		}
+	reg, err := m.pq.WaitPop(ctx)
+	if err != nil {
+		return nil
 	}
+	return reg
 }
 
 // admit returns what runs reg, or nil if it was removed or canceled since it was queued, or if
@@ -143,9 +139,7 @@ func (m *manager) Stop(ctx context.Context) error {
 	if m.cancel != nil {
 		m.cancel()
 		m.cancel = nil
-		m.pq.Push(m.wake)
 		<-m.looped
-		m.pq.Remove(m.wake) // left if the loop returned without popping it
 		m.halt()
 	}
 	err := m.executions.Wait(ctx)

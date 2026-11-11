@@ -36,9 +36,3 @@ func WithLogger[T PriorityItem](logger log.Logger) Option[T] {
 		p.log = logger
 	}
 }
-
-func BlockIfEmpty[T PriorityItem]() Option[T] {
-	return func(p *priority[T]) {
-		p.blocking = true
-	}
-}

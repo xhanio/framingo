@@ -48,7 +48,7 @@ Available in `pkg/structs/`:
 - `graph/` - Generic directed graph with topological sort
 - `buffer/` - Ring buffer with pooling
 - `queue/` - FIFO queue
-- `staque/` - Hybrid stack/queue with priority; items implement `staque.PriorityItem` = `common.Unique` + `common.Weighted` (ordered by priority, `Key()` as tiebreak)
+- `staque/` - Hybrid stack/queue with priority; items implement `staque.PriorityItem` = `common.Unique` + `common.Weighted` (ordered by priority, `Key()` as tiebreak). `Pop`/`Shift` never wait; `WaitPop(ctx)`/`WaitShift(ctx)` wait while it is empty and, once `ctx` ends, return its error and take nothing
 - `trie/` - Prefix tree for string matching
 - `lease/` - Time-based lease management
 

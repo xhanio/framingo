@@ -1,9 +1,12 @@
 package staque
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 )
 
 type testPriorityItem struct {
@@ -278,5 +281,119 @@ func TestWithLessFuncOption(t *testing.T) {
 	}
 	if popped.Priority() != 10 { // Should still use default (higher priority first)
 		t.Errorf("Expected priority 10, got %d", popped.Priority())
+	}
+}
+
+func TestWaitTakesFromEitherEndAtOnce(t *testing.T) {
+	pq := NewPriority[*testPriorityItem]()
+	pq.Push(&testPriorityItem{key: "low", priority: 1}, &testPriorityItem{key: "mid", priority: 5}, &testPriorityItem{key: "high", priority: 10})
+	if item, err := pq.WaitPop(context.Background()); err != nil || item.Key() != "high" {
+		t.Fatalf("WaitPop = %v, %v, want high", item, err)
+	}
+	if item, err := pq.WaitShift(context.Background()); err != nil || item.Key() != "low" {
+		t.Fatalf("WaitShift = %v, %v, want low", item, err)
+	}
+	if n := pq.Length(); n != 1 {
+		t.Fatalf("length = %d, want 1", n)
+	}
+}
+
+func TestWaitWaitsForAPush(t *testing.T) {
+	for name, wait := range map[string]func(Priority[*testPriorityItem], context.Context) (*testPriorityItem, error){
+		"WaitPop":   Priority[*testPriorityItem].WaitPop,
+		"WaitShift": Priority[*testPriorityItem].WaitShift,
+	} {
+		t.Run(name, func(t *testing.T) {
+			pq := NewPriority[*testPriorityItem]()
+			got := make(chan *testPriorityItem, 1)
+			go func() {
+				item, _ := wait(pq, context.Background())
+				got <- item
+			}()
+			select {
+			case item := <-got:
+				t.Fatalf("returned %v from an empty queue", item)
+			case <-time.After(50 * time.Millisecond):
+			}
+			pq.Push(&testPriorityItem{key: "pushed"})
+			select {
+			case item := <-got:
+				if item == nil || item.Key() != "pushed" {
+					t.Fatalf("returned %v, want pushed", item)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("did not return once an element was pushed")
+			}
+		})
+	}
+}
+
+func TestWaitReturnsTheContextsErrorOnceItEnds(t *testing.T) {
+	pq := NewPriority[*testPriorityItem]()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	begin := time.Now()
+	if _, err := pq.WaitShift(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitShift = %v, want the deadline's error", err)
+	}
+	if took := time.Since(begin); took < 50*time.Millisecond || took > time.Second {
+		t.Fatalf("WaitShift returned after %s, want as its 50ms deadline passed", took)
+	}
+}
+
+func TestWaitWithAnEndedContextTakesNothing(t *testing.T) {
+	pq := NewPriority[*testPriorityItem]()
+	pq.Push(&testPriorityItem{key: "kept"})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := pq.WaitPop(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("WaitPop = %v, want the context's error", err)
+	}
+	if n := pq.Length(); n != 1 {
+		t.Fatalf("length = %d, want 1: an ended wait took an element", n)
+	}
+}
+
+func TestWaitersTakeEachElementOnce(t *testing.T) {
+	const waiters = 8
+	pq := NewPriority[*testPriorityItem]()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var (
+		mu   sync.Mutex
+		seen = map[string]int{}
+		wg   sync.WaitGroup
+	)
+	for range waiters {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			item, err := pq.WaitShift(ctx)
+			if err != nil {
+				t.Errorf("WaitShift = %v", err)
+				return
+			}
+			mu.Lock()
+			seen[item.Key()]++
+			mu.Unlock()
+		}()
+	}
+	time.Sleep(50 * time.Millisecond) // the waiters wait on an empty queue
+	var items []*testPriorityItem
+	for i := range waiters {
+		items = append(items, &testPriorityItem{key: string(rune('a' + i)), priority: i})
+	}
+	pq.Push(items[:waiters/2]...) // several at once, then one at a time
+	for _, item := range items[waiters/2:] {
+		pq.Push(item)
+	}
+	wg.Wait()
+	if len(seen) != waiters {
+		t.Fatalf("seen = %v, want %d elements", seen, waiters)
+	}
+	for key, n := range seen {
+		if n != 1 {
+			t.Fatalf("%s was taken %d times", key, n)
+		}
 	}
 }

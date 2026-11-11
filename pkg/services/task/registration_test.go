@@ -20,7 +20,6 @@ func TestQueueOrder(t *testing.T) {
 		queued("later", 1, 3),
 		queued("b", 1, 2),
 		queued("urgent", 0, 4),
-		&registration{}, // a wake-up
 		queued("a", 1, 2),
 	)
 	var order []string
@@ -31,8 +30,8 @@ func TestQueueOrder(t *testing.T) {
 		}
 		order = append(order, reg.Key())
 	}
-	// a wake-up, then the more urgent, then the earlier queued, then by ID
-	if want := []string{"", "urgent", "a", "b", "later"}; !slices.Equal(order, want) {
+	// the more urgent, then the earlier queued, then by ID
+	if want := []string{"urgent", "a", "b", "later"}; !slices.Equal(order, want) {
 		t.Fatalf("order = %q, want %q", order, want)
 	}
 }

@@ -1,6 +1,8 @@
 package staque
 
 import (
+	"context"
+
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
@@ -38,6 +40,10 @@ type Queue[T any] interface {
 type Priority[T PriorityItem] interface {
 	Queue[T]
 	Stack[T]
+	// WaitPop and WaitShift take an element like Pop and Shift, waiting while the queue is
+	// empty. Once ctx ends they return its error and take nothing.
+	WaitPop(ctx context.Context) (T, error)
+	WaitShift(ctx context.Context) (T, error)
 	Update(item T) error
 	Remove(item T) (T, bool)
 	Items() []T

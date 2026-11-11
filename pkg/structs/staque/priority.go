@@ -1,6 +1,7 @@
 package staque
 
 import (
+	"context"
 	"sync"
 
 	"github.com/google/btree"
@@ -13,11 +14,10 @@ type priority[T PriorityItem] struct {
 	log log.Logger
 
 	sync.RWMutex
-	items    map[string]T
-	lf       btree.LessFunc[T]
-	tree     *btree.BTreeG[T]
-	empty    *sync.Cond
-	blocking bool
+	items  map[string]T
+	lf     btree.LessFunc[T]
+	tree   *btree.BTreeG[T]
+	pushed *sync.Cond // broadcast as elements are pushed, for those waiting on an empty queue
 }
 
 // New initializes an empty priority queue.
@@ -27,7 +27,7 @@ func NewPriority[T PriorityItem](opts ...Option[T]) Priority[T] {
 	}
 	p.applyOptions(opts...)
 	p.setDefaults()
-	p.empty = sync.NewCond(&p.RWMutex)
+	p.pushed = sync.NewCond(&p.RWMutex)
 	p.tree = btree.NewG(2, p.lf)
 	return p
 }
@@ -57,7 +57,7 @@ func (p *priority[T]) Push(items ...T) {
 		}
 	}
 	if len(p.items) > 0 {
-		p.empty.Signal()
+		p.pushed.Broadcast()
 	}
 }
 
@@ -95,9 +95,6 @@ func (p *priority[T]) Pop() (T, error) {
 	defer p.Unlock()
 	item, ok := p.tree.DeleteMax()
 	if !ok {
-		if p.blocking {
-			p.empty.Wait()
-		}
 		return *new(T), errors.Newf("failed to pop element: the queue is empty")
 	}
 	delete(p.items, item.Key())
@@ -117,9 +114,6 @@ func (p *priority[T]) Shift() (T, error) {
 	defer p.Unlock()
 	item, ok := p.tree.DeleteMin()
 	if !ok {
-		if p.blocking {
-			p.empty.Wait()
-		}
 		return *new(T), errors.Newf("failed to pop element: the queue is empty")
 	}
 	delete(p.items, item.Key())
@@ -132,6 +126,39 @@ func (p *priority[T]) MustShift() T {
 		return *new(T)
 	}
 	return element
+}
+
+// WaitPop is Pop that waits while the queue is empty, until ctx ends.
+func (p *priority[T]) WaitPop(ctx context.Context) (T, error) {
+	return p.wait(ctx, p.tree.DeleteMax)
+}
+
+// WaitShift is Shift that waits while the queue is empty, until ctx ends.
+func (p *priority[T]) WaitShift(ctx context.Context) (T, error) {
+	return p.wait(ctx, p.tree.DeleteMin)
+}
+
+// wait takes an element with take once there is one. Once ctx ends it returns ctx's error and
+// takes nothing.
+func (p *priority[T]) wait(ctx context.Context, take func() (T, bool)) (T, error) {
+	stop := context.AfterFunc(ctx, func() {
+		p.Lock()
+		defer p.Unlock()
+		p.pushed.Broadcast()
+	})
+	defer stop()
+	p.Lock()
+	defer p.Unlock()
+	for {
+		if err := ctx.Err(); err != nil {
+			return *new(T), err
+		}
+		if item, ok := take(); ok {
+			delete(p.items, item.Key())
+			return item, nil
+		}
+		p.pushed.Wait()
+	}
 }
 
 // !! the order of items is not guaranteed

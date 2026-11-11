@@ -20,9 +20,8 @@ type manager struct {
 
 	name string
 
-	cm   *cron.Cron
-	pq   staque.Priority[*registration]
-	wake *registration // what Stop pushes for the loop waiting on an empty queue
+	cm *cron.Cron
+	pq staque.Priority[*registration]
 
 	concurrent int
 	el         *sync.RWMutex // lock for registered and running
@@ -41,7 +40,6 @@ func New(opts ...Option) Manager {
 
 func newManager(opts ...Option) *manager {
 	m := &manager{
-		wake:       &registration{},
 		el:         &sync.RWMutex{},
 		registered: make(map[string]*registration),
 		running:    make(map[job.Job]*execution),
@@ -51,7 +49,6 @@ func newManager(opts ...Option) *manager {
 	m.pq = staque.NewPriority(
 		staque.WithLessFunc(queueOrder),
 		staque.WithLogger[*registration](m.log),
-		staque.BlockIfEmpty[*registration](),
 	)
 	return m
 }
