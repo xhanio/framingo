@@ -261,8 +261,8 @@ func TestDeleteOfARunningPlanEndsItCanceled(t *testing.T) {
 	triggered(t, m, "deleted")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
 	time.Sleep(50 * time.Millisecond)
-	if _, err := m.Delete("deleted", true); err != nil {
-		t.Fatal(err)
+	if _, err := m.Delete(canceled(), "deleted"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("forced Delete = %v, want the context's error for the run it left", err)
 	}
 	eventually(t, "the run to end", func() bool { return len(sender.finished()) == 1 })
 	if st := sender.finished()[0].State; st != entity.PlanRunCanceled {

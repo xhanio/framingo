@@ -94,7 +94,7 @@ func ownJobPlan(id string, tk *task.Task, fn job.Func) *entity.Plan {
 
 func TestDeleteOfAnUnknownPlanIsNotFound(t *testing.T) {
 	m, _ := startedPlanner(t)
-	if _, err := m.Delete("nobody", false); !errors.Is(err, errors.NotFound) {
+	if _, err := m.Delete(context.Background(), "nobody"); !errors.Is(err, errors.NotFound) {
 		t.Fatalf("Delete = %v, want NotFound", err)
 	}
 }
@@ -108,7 +108,7 @@ func TestDeleteOfAnIdlePlanReturnsItsLastRunAtOnce(t *testing.T) {
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	eventually(t, "the run to settle", func() bool { return !m.plans["idle"].Task.Job.IsExecuting() })
 	begin := time.Now()
-	run, err := m.Delete("idle", false)
+	run, err := m.Delete(context.Background(), "idle")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestDeleteWithoutARunReturnsNil(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"never", "own"} {
-		if run, err := m.Delete(id, false); err != nil || run != nil {
+		if run, err := m.Delete(context.Background(), id); err != nil || run != nil {
 			t.Fatalf("Delete(%s) = %+v, %v", id, run, err)
 		}
 	}
@@ -146,7 +146,7 @@ func TestDeleteReturnsOnlyOnceTheCanceledRunHasEnded(t *testing.T) {
 	runID := triggered(t, m, "slow")
 	eventually(t, "the command to get ready", func() bool { _, err := os.Stat(ready); return err == nil })
 	begin := time.Now()
-	run, err := m.Delete("slow", false)
+	run, err := m.Delete(context.Background(), "slow")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestDeleteOfAQueuedPlanMeansItNeverRuns(t *testing.T) {
 	triggered(t, m, "blocker")
 	eventually(t, "the blocker to start", func() bool { return len(sender.started()) == 1 })
 	triggered(t, m, "queued")
-	if run, err := m.Delete("queued", false); err != nil || run != nil {
+	if run, err := m.Delete(context.Background(), "queued"); err != nil || run != nil {
 		t.Fatalf("Delete = %+v, %v", run, err)
 	}
 	if err := m.Cancel("blocker"); err != nil {
@@ -197,7 +197,7 @@ func TestDeleteDuringARequeueEndsIt(t *testing.T) {
 	}
 	triggered(t, m, "requeued")
 	eventually(t, "a requeue", func() bool { return len(sender.finished()) >= 2 })
-	run, err := m.Delete("requeued", false)
+	run, err := m.Delete(context.Background(), "requeued")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestNoCronRunStartsAfterDeleteBegan(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "a scheduled run", func() bool { _, err := os.Stat(ready); return err == nil })
-	if _, err := m.Delete("cron", false); err != nil {
+	if _, err := m.Delete(context.Background(), "cron"); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(1200 * time.Millisecond)
@@ -232,30 +232,40 @@ func TestNoCronRunStartsAfterDeleteBegan(t *testing.T) {
 	}
 }
 
-func TestDeleteWithForceEndsACommandIgnoringTheSignalAtOnce(t *testing.T) {
-	m, _ := startedPlanner(t)
-	pids := pidFile(t)
-	if err := m.Add(commandPlan("stubborn", &task.Task{}, "sh", "-c", stubbornCommand, pids)); err != nil {
-		t.Fatal(err)
-	}
-	triggered(t, m, "stubborn")
-	child := waitPid(t, pids)
+// forcedDelete deletes with an ended context, which leaves the run to end as the kill lands.
+func forcedDelete(t *testing.T, m *manager, id string) *entity.PlanRun {
+	t.Helper()
 	begin := time.Now()
-	run, err := m.Delete("stubborn", true)
-	if err != nil {
+	run, err := m.Delete(canceled(), id)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("forced Delete = %v, want the context's error for the run it left", err)
+	}
+	assertWithin(t, "a forced Delete", time.Second, begin)
+	return run
+}
+
+func TestAForcedDeleteKillsACommandIgnoringTheSignalAtOnce(t *testing.T) {
+	m, sender := startedPlanner(t)
+	pids := pidFile(t)
+	if err := m.Add(commandPlan("stubborn", &task.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
-	assertWithin(t, "Delete with force", time.Second, begin)
-	if run == nil || run.State != entity.PlanRunCanceled {
+	runID := triggered(t, m, "stubborn")
+	child := waitPid(t, pids)
+	if run := forcedDelete(t, m, "stubborn"); run == nil || run.ID != runID {
 		t.Fatalf("run = %+v", run)
 	}
 	assertGone(t, child)
+	eventually(t, "the run to end", func() bool { return len(sender.finished()) == 1 })
+	if st := sender.finished()[0].State; st != entity.PlanRunCanceled {
+		t.Fatalf("state = %s", st)
+	}
 }
 
-func TestDeleteWithForceCutsTheGracePeriodOfACanceledRunShort(t *testing.T) {
+func TestAForcedDeleteCutsTheGracePeriodOfACanceledRunShort(t *testing.T) {
 	m, _ := startedPlanner(t)
 	pids := pidFile(t)
-	if err := m.Add(commandPlan("stubborn", &task.Task{}, "sh", "-c", stubbornCommand, pids)); err != nil {
+	if err := m.Add(commandPlan("stubborn", &task.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "stubborn")
@@ -263,28 +273,45 @@ func TestDeleteWithForceCutsTheGracePeriodOfACanceledRunShort(t *testing.T) {
 	if err := m.Cancel("stubborn"); err != nil {
 		t.Fatal(err)
 	}
-	begin := time.Now()
-	run, err := m.Delete("stubborn", true)
-	if err != nil {
+	forcedDelete(t, m, "stubborn")
+	assertGone(t, child)
+}
+
+func TestDeleteReturnsTheRunStillGoingOnceItsContextEnds(t *testing.T) {
+	m, _ := startedPlanner(t)
+	pids := pidFile(t)
+	if err := m.Add(commandPlan("stubborn", &task.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
-	assertWithin(t, "Delete with force", time.Second, begin)
-	if run == nil || run.State != entity.PlanRunCanceled {
+	runID := triggered(t, m, "stubborn")
+	child := waitPid(t, pids)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	begin := time.Now()
+	run, err := m.Delete(ctx, "stubborn")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Delete = %v, want the deadline's error", err)
+	}
+	if took := time.Since(begin); took < 200*time.Millisecond {
+		t.Fatalf("Delete gave up after %s, before its deadline", took)
+	}
+	if run == nil || run.ID != runID {
 		t.Fatalf("run = %+v", run)
 	}
 	assertGone(t, child)
 }
 
-func TestDeleteOfAnOwnJobIgnoringTheCancel(t *testing.T) {
+func TestDeleteOfAnOwnJobIgnoringTheCancelReturnsOnceItsContextEnds(t *testing.T) {
 	cases := []struct {
 		name  string
-		force bool
-		grace time.Duration
+		ctx   func() (context.Context, context.CancelFunc)
 		least time.Duration
 		most  time.Duration
 	}{
-		{name: "with force returns at once", force: true, grace: time.Minute, most: time.Second},
-		{name: "without force returns as the grace period ends", grace: 200 * time.Millisecond, least: 200 * time.Millisecond, most: 2 * time.Second},
+		{name: "an ended context returns at once", ctx: func() (context.Context, context.CancelFunc) { return canceled(), func() {} }, most: time.Second},
+		{name: "a deadline returns as it passes", ctx: func() (context.Context, context.CancelFunc) {
+			return context.WithTimeout(context.Background(), 200*time.Millisecond)
+		}, least: 200 * time.Millisecond, most: 2 * time.Second},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -292,7 +319,7 @@ func TestDeleteOfAnOwnJobIgnoringTheCancel(t *testing.T) {
 			release := make(chan struct{})
 			defer close(release)
 			var started atomic.Bool
-			plan := ownJobPlan("own", &task.Task{GracePeriod: tc.grace}, func(job.Context) error {
+			plan := ownJobPlan("own", &task.Task{GracePeriod: time.Minute}, func(job.Context) error {
 				started.Store(true)
 				<-release
 				return nil
@@ -304,10 +331,12 @@ func TestDeleteOfAnOwnJobIgnoringTheCancel(t *testing.T) {
 				t.Fatal(err)
 			}
 			eventually(t, "the job to start", started.Load)
+			ctx, cancel := tc.ctx()
+			defer cancel()
 			begin := time.Now()
-			run, err := m.Delete("own", tc.force)
-			if err != nil {
-				t.Fatal(err)
+			run, err := m.Delete(ctx, "own")
+			if !errors.Is(err, ctx.Err()) {
+				t.Fatalf("Delete = %v, want the context's error", err)
 			}
 			if took := time.Since(begin); took < tc.least || took > tc.most {
 				t.Fatalf("Delete took %s, want %s to %s", took, tc.least, tc.most)
@@ -319,7 +348,7 @@ func TestDeleteOfAnOwnJobIgnoringTheCancel(t *testing.T) {
 	}
 }
 
-func TestDeleteOfAnOwnJobHonoringTheCancelDoesNotWaitOutTheGracePeriod(t *testing.T) {
+func TestDeleteOfAnOwnJobHonoringTheCancelReturnsAsItEnds(t *testing.T) {
 	m, _ := startedPlanner(t)
 	var started atomic.Bool
 	plan := ownJobPlan("own", &task.Task{}, func(jc job.Context) error {
@@ -335,7 +364,7 @@ func TestDeleteOfAnOwnJobHonoringTheCancelDoesNotWaitOutTheGracePeriod(t *testin
 	}
 	eventually(t, "the job to start", started.Load)
 	begin := time.Now()
-	if _, err := m.Delete("own", false); err != nil {
+	if _, err := m.Delete(context.Background(), "own"); err != nil {
 		t.Fatal(err)
 	}
 	assertWithin(t, "Delete", time.Second, begin)
@@ -360,7 +389,7 @@ func TestNoProcessOutlivesAStoppedRun(t *testing.T) {
 		{
 			name: "Delete", task: func() *task.Task { return &task.Task{GracePeriod: grace} }, state: entity.PlanRunCanceled,
 			stop: func(t *testing.T, m *manager) {
-				if _, err := m.Delete("stubborn", false); err != nil {
+				if _, err := m.Delete(context.Background(), "stubborn"); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -588,12 +617,20 @@ func TestDeleteUnderStress(t *testing.T) {
 				if r.Intn(3) == 0 {
 					_ = m.Cancel(id)
 				}
-				if _, err := m.Delete(id, r.Intn(2) == 0); err != nil {
+				ctx, forced := context.Background(), r.Intn(2) == 0
+				if forced {
+					ctx = canceled()
+				}
+				if _, err := m.Delete(ctx, id); err != nil && !(forced && errors.Is(err, context.Canceled)) {
 					t.Errorf("Delete = %v", err)
 					return
 				}
+				if forced {
+					// a forced Delete returns before its run ends, maybe before it reports its start
+					_ = m.tm.Remove(context.Background(), plan.Task)
+				}
 				if started, finished := sender.counts(id); started != finished {
-					t.Errorf("%d runs started and %d finished when Delete returned", started, finished)
+					t.Errorf("%d runs started and %d finished after Delete", started, finished)
 					return
 				}
 			}
@@ -602,7 +639,7 @@ func TestDeleteUnderStress(t *testing.T) {
 	wg.Wait()
 }
 
-func TestDeleteWithForceSendsTheKillToAnOwnJob(t *testing.T) {
+func TestAForcedDeleteSendsTheKillToAnOwnJob(t *testing.T) {
 	m, _ := startedPlanner(t)
 	var started, killed atomic.Bool
 	plan := ownJobPlan("own", &task.Task{GracePeriod: time.Minute}, func(jc job.Context) error {
@@ -618,17 +655,15 @@ func TestDeleteWithForceSendsTheKillToAnOwnJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the job to start", started.Load)
-	if _, err := m.Delete("own", true); err != nil {
-		t.Fatal(err)
-	}
+	forcedDelete(t, m, "own")
 	eventually(t, "the job to see the kill", killed.Load)
 }
 
-func TestDeleteSendsTheKillToAnOwnJobOnceTheGracePeriodIsUp(t *testing.T) {
+func TestDeleteSendsTheKillToAnOwnJobOnceItsContextEnds(t *testing.T) {
 	m, _ := startedPlanner(t)
 	var started atomic.Bool
 	killed := make(chan time.Time, 1)
-	plan := ownJobPlan("own", &task.Task{GracePeriod: 200 * time.Millisecond}, func(jc job.Context) error {
+	plan := ownJobPlan("own", &task.Task{GracePeriod: time.Minute}, func(jc job.Context) error {
 		started.Store(true)
 		<-jc.Signaled(job.SignalKill)
 		killed <- time.Now()
@@ -641,16 +676,18 @@ func TestDeleteSendsTheKillToAnOwnJobOnceTheGracePeriodIsUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the job to start", started.Load)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
 	begin := time.Now()
-	if _, err := m.Delete("own", false); err != nil {
-		t.Fatal(err)
+	if _, err := m.Delete(ctx, "own"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Delete = %v, want the deadline's error", err)
 	}
 	select {
 	case at := <-killed:
 		if took := at.Sub(begin); took < 200*time.Millisecond || took > 2*time.Second {
-			t.Fatalf("the kill came %s after Delete, want as the 200ms grace period ends", took)
+			t.Fatalf("the kill came %s after Delete, want as its 200ms deadline passes", took)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("the grace period passed without a kill")
+		t.Fatal("the deadline passed without a kill")
 	}
 }

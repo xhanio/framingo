@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"io"
 
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -14,12 +15,12 @@ type Planner interface {
 	// source goes on the run and on its retries and requeues; empty is an InvalidArgument.
 	Trigger(id string, source entity.PlanRunSource) (string, error)
 	Cancel(id string) error
-	// Delete ends what the plan is doing, forgets the plan and returns its latest run, nil if
-	// it has none or has no kind. Its cron entry goes first, so no new run starts meanwhile.
-	// A plan's job gets the GracePeriod of its task to end, and SignalKill once it is up;
-	// force sends SignalKill at once, and does not wait for a plan without a kind, whose
-	// goroutine Go cannot kill.
-	Delete(id string, force bool) (*entity.PlanRun, error)
+	// Delete ends what the plan is doing, forgets the plan, waits for its run to end until ctx
+	// ends, and returns its latest run, nil if it has none or has no kind. Its cron entry goes
+	// first, so no new run starts meanwhile. Once ctx ends, what still runs is sent SignalKill,
+	// and the error wraps ctx's: the run returned may then still be running, and its end comes
+	// as PlanRunFinished. An ended ctx makes it a forced delete.
+	Delete(ctx context.Context, id string) (*entity.PlanRun, error)
 	// LastRun returns the plan's latest run, nil if it has none yet or has no kind.
 	LastRun(id string) (*entity.PlanRun, error)
 	// OpenRunLog opens the log file of a run, by its PlanRun.LogPath, which may still be

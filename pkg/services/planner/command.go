@@ -14,8 +14,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
-const commandKillWait = 2 * time.Second
-
 // commandJob is the job of a command plan: each run is a command task built from the plan's
 // CommandParams, with the plan's grace period, and its log is headed by the command line.
 func (m *manager) commandJob(plan *entity.Plan) (job.Func, error) {

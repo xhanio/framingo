@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/xhanio/errors"
@@ -89,7 +88,7 @@ func (m *manager) Cancel(id string) error {
 	return errors.Wrap(err)
 }
 
-func (m *manager) Delete(id string, force bool) (*entity.PlanRun, error) {
+func (m *manager) Delete(ctx context.Context, id string) (*entity.PlanRun, error) {
 	m.Lock()
 	plan, ok := m.plans[id]
 	if !ok {
@@ -98,34 +97,10 @@ func (m *manager) Delete(id string, force bool) (*entity.PlanRun, error) {
 	}
 	delete(m.plans, id)
 	m.Unlock()
-	if force {
-		// an ended context cancels and then kills at once; the wait below lets the kill land
-		ended, end := context.WithCancel(context.Background())
-		end()
-		_ = m.tm.Remove(ended, plan.Task)
-	}
-	limit := endLimit(plan, force)
-	ctx, cancel := context.WithTimeout(context.Background(), limit)
-	defer cancel()
-	if err := m.tm.Remove(ctx, plan.Task); err != nil && limit > 0 {
-		m.log.Warnf("plan %s is still running %s after it was deleted", id, limit)
+	if err := m.tm.Remove(ctx, plan.Task); err != nil {
+		return lastRun(plan), errors.Wrapf(err, "plan %s deleted with its run still going", id)
 	}
 	return lastRun(plan), nil
-}
-
-// A command is killed once its grace period is up, so waiting longer only helps one stuck in the
-// kernel. Go cannot kill a goroutine, so a forced plan with a job of its own is not waited for.
-func endLimit(plan *entity.Plan, force bool) time.Duration {
-	switch {
-	case plan.Kind == "" && force:
-		return 0
-	case plan.Kind == "":
-		return plan.Task.Grace()
-	case force:
-		return commandKillWait
-	default:
-		return plan.Task.Grace() + commandKillWait
-	}
 }
 
 func (m *manager) GetResult(id string) (any, error) {

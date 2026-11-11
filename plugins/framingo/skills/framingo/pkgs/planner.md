@@ -18,7 +18,7 @@ type Planner interface {
     // Ends what the plan is doing and keeps the plan; an idle plan is a Conflict.
     Cancel(id string) error
     // Ends what the plan is doing, forgets the plan and returns its latest run.
-    Delete(id string, force bool) (*entity.PlanRun, error)
+    Delete(ctx context.Context, id string) (*entity.PlanRun, error)
     // The latest run; nil if there is none yet or the plan has no kind.
     LastRun(id string) (*entity.PlanRun, error)
     // Opens a run's log by its PlanRun.LogPath; see "Run logs".
@@ -140,8 +140,8 @@ func(jc job.Context) error {
 ```
 
 A command plan builds its `Command` when it is added, with `Grace` from the plan's
-`Task.GracePeriod`, so how long `Delete` waits and when the command gets its SIGKILL come
-from one setting. The task manager itself never reads `Task.GracePeriod`.
+`Task.GracePeriod`, which says when the command gets its SIGKILL. Neither the planner nor
+the task manager waits by it: how long a stop waits is the caller's context.
 
 `job.SignalKill` is one of a job's signals. `Job.Signal(sig)` sends a signal to the
 execution going on now, and a job's function reads `jc.Signaled(sig)`, a channel closed
@@ -150,24 +150,24 @@ function that wants a forced stop to cut its cleanup short should watch for it.
 
 ## Stopping a plan
 
-`Cancel` ends what a plan is doing and keeps the plan. `Delete` also forgets it, removing
-its cron entry first so no new run starts meanwhile, and returns its latest run, waiting as
-the table below says. `Stop(ctx)` on the planner forgets every plan and waits for their runs
-until `ctx` ends, then sends what still runs `SignalKill`.
+`Cancel` ends what a plan is doing and keeps the plan. `Delete(ctx, id)` also forgets it,
+removing its cron entry first so no new run starts meanwhile, waits for its run until `ctx`
+ends, and returns its latest run. `Stop(ctx)` does that to every plan at once.
 
-| | `force` false | `force` true |
-|---|---|---|
-| Command plan | SIGTERM to the process group; SIGKILL once `GracePeriod` is up; waits for the end | SIGKILL to the group at once; waits for the end |
-| Plan with its own job | Cancels the context, waits up to `GracePeriod`, then sends `SignalKill` | Cancels the context and sends `SignalKill`, does not wait |
-
+- Canceling a command SIGTERMs its process group, and the command SIGKILLs the group once
+  its `GracePeriod` is up, so a command plan ends within its grace period whatever `ctx`
+  allows. A plan with its own job ends when its function returns.
+- Once `ctx` ends, what still runs is sent `SignalKill` and the error wraps `ctx.Err()`:
+  the run returned may then still be `running`, and its end comes as `PlanRunFinished`. An
+  ended `ctx` makes it a forced delete; to wait as the grace period says, give `Delete`
+  `context.WithTimeout(ctx, plan.Task.Grace())`.
 - Go cannot kill a goroutine, so a job that ignores its context and signals goes on until
-  it returns, whatever `Delete` did. A run `Delete` returns can still be `running` that way.
+  it returns, whatever `Delete` did.
 - A process that left the group, with `setsid` say, is out of reach. If it holds the
   command's output, the end is waited for no longer than the grace period.
 - Stopping several plans, `Delete` them concurrently, so every cron entry goes at once and
   the wait lasts as long as the slowest rather than the sum. `Stop` does the same.
-- `Delete` forgets the plan first, so a second one is a `NotFound`. To be able to escalate,
-  `Cancel` and later `Delete` with `force`, which cuts the grace period short.
+- To escalate while a `Delete` waits, cancel its `ctx`: that forces it.
 
 Under systemd, set `KillMode=mixed` on the unit. With the default `control-group`,
 systemd's SIGTERM reaches the commands as well as your process: `Setpgid` gives a command
