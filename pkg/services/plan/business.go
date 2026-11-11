@@ -172,6 +172,7 @@ func (m *manager) stats(all bool) []*entity.PlanStats {
 			ExecutionTime: js.ExecutionTime,
 			Labels:        plan.Metadata,
 			Error:         js.Error,
+			LastRun:       reg.lastRun(),
 		}
 		if ts := m.tm.Stats(j.ID()); ts != nil {
 			st.Cooldown = ts.Cooldown

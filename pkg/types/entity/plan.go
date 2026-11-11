@@ -88,4 +88,5 @@ type PlanStats struct {
 	Retries       uint          `json:"retries"`
 	Labels        labels.Set    `json:"labels"`
 	Error         string        `json:"error"`
+	LastRun       *PlanRun      `json:"last_run,omitempty"` // as LastRun returns it, nil if it has not run
 }

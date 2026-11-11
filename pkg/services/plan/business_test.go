@@ -525,6 +525,37 @@ func TestStatsSelectsThePlansByTheirMetadata(t *testing.T) {
 	}
 }
 
+func TestStatsCarryEachPlansLastRun(t *testing.T) {
+	m, sender := startedManager(t)
+	for id, command := range map[string]string{"ok": "true", "bad": "false", "idle": "true"} {
+		if err := m.Add(commandPlan(id, &entity.Task{}, command)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ok, bad := trigger(t, m, "ok"), trigger(t, m, "bad")
+	eventually(t, "both runs to finish", func() bool { return len(sender.finished()) == 2 })
+	stats, err := m.Stats(entity.PlanStatsOptions{All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]struct {
+		id    string
+		state entity.PlanRunState
+	}{"ok": {ok, entity.PlanRunSucceeded}, "bad": {bad, entity.PlanRunFailed}}
+	for _, st := range stats {
+		w, ran := want[st.ID]
+		switch {
+		case !ran && st.LastRun != nil:
+			t.Fatalf("%s never ran, but its last run is %+v", st.ID, st.LastRun)
+		case ran && (st.LastRun == nil || st.LastRun.ID != w.id || st.LastRun.State != w.state):
+			t.Fatalf("%s's last run = %+v, want %s %s", st.ID, st.LastRun, w.id, w.state)
+		}
+	}
+	if len(stats) != 3 {
+		t.Fatalf("stats = %+v, want all three plans", stats)
+	}
+}
+
 func writeLogFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)

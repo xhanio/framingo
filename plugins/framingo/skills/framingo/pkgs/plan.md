@@ -229,4 +229,5 @@ A path not under the log dir is `Forbidden`; no log dir or no such file is `NotF
 ## Stats
 
 `Stats` lists the plans by their `ID`, filtered by a label selector over their `Metadata`, so
-operational tooling can group and inspect them.
+operational tooling can group and inspect them. Each carries its latest run as `LastRun`, nil
+if it has not run; a plan whose job succeeded is left out unless `All` is set.
