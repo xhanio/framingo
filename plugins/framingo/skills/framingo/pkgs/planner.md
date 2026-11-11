@@ -83,10 +83,10 @@ so the caller writes none:
 
 ```go
 err := pl.Add(&entity.Plan{
-    ID:   "backup",
-    Kind: entity.PlanKindCommand,
+    ID:     "backup",
+    Kind:   entity.PlanKindCommand,
+    Params: entity.CommandParams{Command: []string{"/usr/bin/pg_dump", "mydb"}, Dir: "/tmp"},
     Task: &task.Task{
-        Params:   entity.CommandParams{Command: []string{"/usr/bin/pg_dump", "mydb"}, Dir: "/tmp"},
         Schedule: "30 2 * * *",
         Timeout:  time.Hour,
     },
@@ -94,8 +94,9 @@ err := pl.Add(&entity.Plan{
 runID, err := pl.Trigger("backup", entity.PlanRunManual) // run it now as well
 ```
 
-A command plan's job is a command task from `pkg/utils/task` (see below) with the run's
-bookkeeping around it. The command runs in its own process group, so stopping it reaches
+A plan of a kind takes what the kind needs in `Plan.Params` and leaves `Task.Params` empty:
+the planner passes each firing's run ID and source there. A command plan's job is a command
+task from `pkg/utils/task` (see below) with the run's bookkeeping around it. The command runs in its own process group, so stopping it reaches
 its children, and one that ends on its own keeps any background children it left. Its
 output goes to `<log dir>/<plan ID>/<time>-<run>.log` and the tail of it into the run.
 

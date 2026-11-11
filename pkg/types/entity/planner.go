@@ -8,7 +8,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
-// PlanKindCommand runs a command: its Task.Params is a CommandParams, the planner builds
+// PlanKindCommand runs a command: its Params is a CommandParams, the planner builds
 // its Task.Job, and every run of it is reported with PlanRunStarted and PlanRunFinished.
 const PlanKindCommand = "command"
 
@@ -16,7 +16,8 @@ type Plan struct {
 	ID          string     `json:"id"`
 	Metadata    labels.Set `json:"metadata"`
 	Description string     `json:"description"`
-	Kind        string     `json:"kind,omitempty"` // a predefined kind, or empty for a Task with its own Job
+	Kind        string     `json:"kind,omitempty"`   // a predefined kind, or empty for a Task with its own Job
+	Params      any        `json:"params,omitempty"` // what the kind takes, as its constant says
 	Task        *task.Task `json:"task"`
 }
 

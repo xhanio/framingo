@@ -21,9 +21,21 @@ func (m *manager) Add(plan *entity.Plan) error {
 		plan.ID = uuid.NewString()
 	}
 	if plan.Kind != "" {
-		if err := m.buildJob(plan); err != nil {
+		if plan.Task == nil {
+			return errors.InvalidArgument.Newf("plan %s has no task", plan.ID)
+		}
+		if plan.Kind != entity.PlanKindCommand {
+			return errors.InvalidArgument.Newf("plan %s has an unknown kind %q", plan.ID, plan.Kind)
+		}
+		// the planner passes each firing's run ID and source in Task.Params
+		if plan.Task.Params != nil {
+			return errors.InvalidArgument.Newf("plan %s: a %s plan takes its params in Plan.Params, and leaves Task.Params empty", plan.ID, plan.Kind)
+		}
+		fn, err := m.commandJob(plan)
+		if err != nil {
 			return err
 		}
+		plan.Task.Job = job.New(plan.ID, fn, job.WithLabels(plan.Metadata), job.WithLogger(m.log))
 	}
 	m.Lock()
 	defer m.Unlock()

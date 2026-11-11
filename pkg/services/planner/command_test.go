@@ -105,8 +105,7 @@ func commandPlan(id string, tk *task.Task, command ...string) *entity.Plan {
 	if tk.Schedule == "" {
 		tk.Manual = true
 	}
-	tk.Params = entity.CommandParams{Command: command}
-	return &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Task: tk}
+	return &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Params: entity.CommandParams{Command: command}, Task: tk}
 }
 
 func triggered(t *testing.T, m *manager, id string) string {
@@ -280,8 +279,8 @@ func TestCommandPlanAppliesDirAndEnv(t *testing.T) {
 	t.Setenv("PLANNER_TEST_INHERITED", "kept")
 	t.Setenv("PLANNER_TEST_OVERRIDDEN", "old")
 	plan := commandPlan("env", &task.Task{}, "sh", "-c", `pwd; echo "$PLANNER_TEST_INHERITED $PLANNER_TEST_OVERRIDDEN"`)
-	plan.Task.Params = entity.CommandParams{
-		Command: plan.Task.Params.(entity.CommandParams).Command,
+	plan.Params = entity.CommandParams{
+		Command: plan.Params.(entity.CommandParams).Command,
 		Dir:     dir,
 		Env:     map[string]string{"PLANNER_TEST_OVERRIDDEN": "new"},
 	}
@@ -531,10 +530,12 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 		name string
 		plan *entity.Plan
 	}{
-		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Task: &task.Task{}}},
+		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Params: entity.CommandParams{Command: []string{"true"}}, Task: &task.Task{}}},
 		{name: "a kind without a task", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand}},
-		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &task.Task{Params: "true"}}},
-		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &task.Task{Params: entity.CommandParams{}}}},
+		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: "true", Task: &task.Task{}}},
+		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: entity.CommandParams{}, Task: &task.Task{}}},
+		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &task.Task{Params: entity.CommandParams{Command: []string{"true"}}}}},
+		{name: "params on the task as well", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: entity.CommandParams{Command: []string{"true"}}, Task: &task.Task{Params: "extra"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

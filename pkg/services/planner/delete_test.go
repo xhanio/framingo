@@ -573,11 +573,10 @@ func TestDeleteUnderStress(t *testing.T) {
 			id := fmt.Sprintf("plan-%d", worker)
 			for range 40 {
 				tk := tasks[r.Intn(len(tasks))]()
-				tk.Params = entity.CommandParams{Command: commands[r.Intn(len(commands))]}
 				if tk.Schedule == "" {
 					tk.Manual = true
 				}
-				plan := &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Task: tk}
+				plan := &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Params: entity.CommandParams{Command: commands[r.Intn(len(commands))]}, Task: tk}
 				if err := m.Add(plan); err != nil {
 					t.Errorf("Add = %v", err)
 					return
