@@ -157,7 +157,7 @@ func TestJobResultAndParams(t *testing.T) {
 	testResult := "test result"
 
 	j := New("", func(ctx Context) error {
-		params := ctx.GetParams()
+		params := ctx.Params()
 		if params == nil {
 			return errors.New("params should not be nil")
 		}

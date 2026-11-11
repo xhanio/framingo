@@ -1,4 +1,4 @@
-package planner
+package plan
 
 import (
 	"context"
@@ -27,7 +27,7 @@ func (m *manager) Add(plan *entity.Plan) error {
 		if plan.Kind != entity.PlanKindCommand {
 			return errors.InvalidArgument.Newf("plan %s has an unknown kind %q", plan.ID, plan.Kind)
 		}
-		// the planner passes each firing's run ID and source in Task.Params
+		// the plan manager passes each firing's run ID and source in Task.Params
 		if plan.Task.Params != nil {
 			return errors.InvalidArgument.Newf("plan %s: a %s plan takes its params in Plan.Params, and leaves Task.Params empty", plan.ID, plan.Kind)
 		}
@@ -104,7 +104,7 @@ func (m *manager) Delete(ctx context.Context, id string) (*entity.PlanRun, error
 	return lastRun(plan), nil
 }
 
-func (m *manager) GetResult(id string) (any, error) {
+func (m *manager) Result(id string) (any, error) {
 	m.RLock()
 	defer m.RUnlock()
 	if plan, ok := m.plans[id]; ok {
@@ -134,8 +134,8 @@ func lastRun(plan *entity.Plan) *entity.PlanRun {
 	return &run
 }
 
-// By path, not run ID, since the planner only remembers the latest run. The check is lexical:
-// the planner made these files.
+// By path, not run ID, since the plan manager only remembers the latest run. The check is lexical:
+// the plan manager made these files.
 func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error) {
 	if m.logDir == "" {
 		return nil, errors.NotFound.Newf("failed to open run log %s: no log dir is configured", path)
@@ -169,48 +169,49 @@ func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error
 	return f, nil
 }
 
-func (m *manager) stats(all bool) []*entity.PlannerStats {
-	result := make([]*entity.PlannerStats, 0)
+// stats are the plans' stats, from their jobs and their tasks, in the order they started; a plan
+// whose job succeeded is left out unless all.
+func (m *manager) stats(all bool) []*entity.PlanStats {
+	result := make([]*entity.PlanStats, 0)
 	for _, plan := range m.plans {
-		t := plan.Task.Job
-		if !all && t.State() == job.StateSucceeded {
+		j := plan.Task.Job
+		if !all && j.State() == job.StateSucceeded {
 			continue
 		}
-		ts := t.Stats()
-		stats := &entity.PlannerStats{
-			ID:            ts.ID,
-			State:         ts.State,
-			Progress:      ts.Progress,
-			StartedAt:     ts.StartedAt,
-			ExecutionTime: ts.ExecutionTime,
-			Labels:        ts.Labels,
-			Error:         ts.Error,
+		js := j.Stats()
+		st := &entity.PlanStats{
+			ID:            js.ID,
+			Schedule:      plan.Task.Schedule,
+			State:         js.State,
+			Progress:      js.Progress,
+			StartedAt:     js.StartedAt,
+			ExecutionTime: js.ExecutionTime,
+			Labels:        js.Labels,
+			Error:         js.Error,
 		}
-		stats.Schedule = plan.Task.Schedule
-		ss := m.tm.Stats(t.ID())
-		if ss != nil {
-			stats.Cooldown = ss.Cooldown
-			stats.Retries = ss.Retries
+		if ts := m.tm.Stats(j.ID()); ts != nil {
+			st.Cooldown = ts.Cooldown
+			st.Retries = ts.Retries
 		}
-		result = append(result, stats)
+		result = append(result, st)
 	}
-	sort.Slice(result, func(i, t int) bool {
-		return result[i].StartedAt.Before(result[t].StartedAt)
+	sort.Slice(result, func(a, b int) bool {
+		return result[a].StartedAt.Before(result[b].StartedAt)
 	})
 	return result
 }
 
-func (m *manager) Stats(opts entity.PlannerStatsOptions) ([]*entity.PlannerStats, error) {
+func (m *manager) Stats(opts entity.PlanStatsOptions) ([]*entity.PlanStats, error) {
 	selector, err := labels.Parse(opts.Selector)
 	if err != nil {
 		return nil, errors.InvalidArgument.Wrap(err)
 	}
 	m.RLock()
 	defer m.RUnlock()
-	var result []*entity.PlannerStats
-	for _, plan := range m.stats(opts.All) {
-		if selector.Empty() || selector.Matches(plan.Labels) {
-			result = append(result, plan)
+	var result []*entity.PlanStats
+	for _, st := range m.stats(opts.All) {
+		if selector.Empty() || selector.Matches(st.Labels) {
+			result = append(result, st)
 		}
 	}
 	return result, nil

@@ -7,7 +7,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
-type TaskManager interface {
+type Task interface {
 	common.Service
 	Add(tasks ...*entity.Task) error
 	// Remove forgets the tasks and ends what they are doing, then waits for their executions

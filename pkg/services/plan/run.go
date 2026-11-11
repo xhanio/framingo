@@ -1,4 +1,4 @@
-package planner
+package plan
 
 import (
 	"context"
@@ -61,7 +61,7 @@ func newRun(jc job.Context, plan *entity.Plan) entity.PlanRun {
 		State:     entity.PlanRunRunning,
 		StartedAt: time.Now(),
 	}
-	if triggered, ok := jc.GetParams().(*triggeredRun); ok {
+	if triggered, ok := jc.Params().(*triggeredRun); ok {
 		run.Source = triggered.source
 		if triggered.claimed.CompareAndSwap(false, true) {
 			run.ID = triggered.id

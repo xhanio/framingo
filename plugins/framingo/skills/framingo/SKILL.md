@@ -41,7 +41,7 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [pkgs/client.md](pkgs/client.md) | The framework HTTP client (`api/client`): requests, encoding, global headers |
 | [pkgs/db.md](pkgs/db.md) | `db.Manager`: drivers, options, transactions, dynamic pool config |
 | [pkgs/pubsub.md](pkgs/pubsub.md) | Pub/sub primitive, message bus, message interfaces, slow subscribers |
-| [pkgs/planner.md](pkgs/planner.md) | Scheduled/ad-hoc task execution: plans, jobs, stats selectors |
+| [pkgs/plan.md](pkgs/plan.md) | Scheduled/ad-hoc task execution: plans, the task manager, commands, stats selectors |
 | [pkgs/tracing.md](pkgs/tracing.md) | OpenTelemetry tracing: the `model.Tracer` handle, exporter registry, the server's Trace middleware |
 | [pkgs/metrics.md](pkgs/metrics.md) | OpenTelemetry metrics: the stable `model.Meter` provider, exporter registry, the export loop, instruments in services |
 | [pkgs/types.md](pkgs/types.md) | Framework types: `common` interfaces, the `fapi` surface, ORM base types, context keys |
@@ -130,7 +130,8 @@ Either route, the reference map above is the per-concept guide for the work insi
 | HTTP client | `pkg/services/api/client` | `client.Client` | [pkgs/client.md](pkgs/client.md) |
 | Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers | [pkgs/pubsub.md](pkgs/pubsub.md) |
 | Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` | [pkgs/pubsub.md](pkgs/pubsub.md) |
-| Task planner | `pkg/services/planner` | `planner.Manager`, `model.Planner` | [pkgs/planner.md](pkgs/planner.md) |
+| Plan manager | `pkg/services/plan` (+ `pkg/utils/plans`) | `plan.Manager`, `model.Plan` | [pkgs/plan.md](pkgs/plan.md) |
+| Task manager | `pkg/services/task` (+ `pkg/utils/jobs`) | `task.Manager`, `model.Task`, `entity.Task`, `jobs.Command` | [pkgs/plan.md](pkgs/plan.md) |
 | Tracing (OpenTelemetry) | `pkg/services/tracing` (+ `tracing/exporters/`) and the `trace` middleware in `pkg/middlewares/trace` | `tracing.Manager`, `model.Tracer`; blank-import an exporter subpackage (otlpgrpc/otlphttp/stdout); attach the middleware via `WithMiddlewares`, activate with `trace: true` per server; db spans via `pkg/services/db/plugins/otelgorm` | [pkgs/tracing.md](pkgs/tracing.md) |
 | Metrics (OpenTelemetry) | `pkg/services/metrics` (+ `metrics/exporters/`) | `metrics.Manager`, `model.Meter`; blank-import an exporter subpackage (otlpgrpc/otlphttp/stdout); the provider's identity never changes — build instruments once at `Init` and cache them | [pkgs/metrics.md](pkgs/metrics.md) |
 | Message interfaces | `pkg/types/common` | `Message`, `MessageSender`, `MessageHandler`, `RawMessageHandler` | [pkgs/pubsub.md](pkgs/pubsub.md) |

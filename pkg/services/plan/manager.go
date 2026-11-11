@@ -1,4 +1,4 @@
-package planner
+package plan
 
 import (
 	"sync"
@@ -22,7 +22,7 @@ type manager struct {
 
 	ms common.MessageSender
 
-	tm model.TaskManager
+	tm model.Task
 
 	logDir    string
 	tailBytes int
@@ -31,11 +31,11 @@ type manager struct {
 	plans map[string]*entity.Plan
 }
 
-func New(ms common.MessageSender, tm model.TaskManager, opts ...Option) Manager {
+func New(ms common.MessageSender, tm model.Task, opts ...Option) Manager {
 	return newManager(ms, tm, opts...)
 }
 
-func newManager(ms common.MessageSender, tm model.TaskManager, opts ...Option) *manager {
+func newManager(ms common.MessageSender, tm model.Task, opts ...Option) *manager {
 	m := &manager{
 		ms:    ms,
 		tm:    tm,

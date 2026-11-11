@@ -30,7 +30,7 @@ set of copy-ready templates:
   new backend.
 - **pkgs/** — how to *use framingo's packages*: supervisor & service
   lifecycle, the API server and HTTP client, db, pubsub & messagebus,
-  planner, framework types, config, errors, and utilities.
+  plan and task managers, framework types, config, errors, and utilities.
 - **app/** — how to *write an application* shaped like `example/`: package
   layout, authoring services, routers, and middlewares, the project
   `types/` categories, and the components family (server daemon, cobra

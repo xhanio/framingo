@@ -1,4 +1,4 @@
-package planner
+package plan
 
 import (
 	"context"
@@ -148,7 +148,7 @@ func TestCommandPlanReportsASuccessfulRun(t *testing.T) {
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 
 	kinds := sender.kinds()
-	if len(kinds) != 2 || kinds[0] != "planner.run.started" || kinds[1] != "planner.run.finished" {
+	if len(kinds) != 2 || kinds[0] != "plan.run.started" || kinds[1] != "plan.run.finished" {
 		t.Fatalf("event kinds = %v", kinds)
 	}
 	started, finished := sender.started()[0], sender.finished()[0]
@@ -440,37 +440,37 @@ func TestEveryRerunIsANewRun(t *testing.T) {
 	}
 }
 
-func TestGetResultFollowsTheLatestRun(t *testing.T) {
+func TestResultFollowsTheLatestRun(t *testing.T) {
 	m, sender := startedPlanner(t)
 	release := filepath.Join(t.TempDir(), "release")
 	script := "while [ ! -e " + release + " ]; do sleep 0.01; done"
 	if err := m.Add(commandPlan("latest", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := m.GetResult("latest"); err != nil || res != nil {
-		t.Fatalf("GetResult before any run = %v, %v", res, err)
+	if res, err := m.Result("latest"); err != nil || res != nil {
+		t.Fatalf("Result before any run = %v, %v", res, err)
 	}
 	runID := triggered(t, m, "latest")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
-	res, err := m.GetResult("latest")
+	res, err := m.Result("latest")
 	if err != nil {
 		t.Fatal(err)
 	}
 	run, ok := res.(entity.PlanRun)
 	if !ok || run.ID != runID || run.State != entity.PlanRunRunning {
-		t.Fatalf("GetResult during the run = %+v", res)
+		t.Fatalf("Result during the run = %+v", res)
 	}
 	if err := os.WriteFile(release, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
-	res, err = m.GetResult("latest")
+	res, err = m.Result("latest")
 	if err != nil {
 		t.Fatal(err)
 	}
 	run, ok = res.(entity.PlanRun)
 	if !ok || run.ID != runID || run.State != entity.PlanRunSucceeded {
-		t.Fatalf("GetResult after the run = %+v", res)
+		t.Fatalf("Result after the run = %+v", res)
 	}
 }
 
@@ -515,7 +515,7 @@ func TestLastRunOfAPlanWithoutAKindIsNil(t *testing.T) {
 	var runs atomic.Int32
 	plan := &entity.Plan{ID: "own", Task: &entity.Task{
 		Job: job.New("own-job", func(jc job.Context) error {
-			jc.SetResult(entity.PlanRun{ID: "not a run of the planner's"})
+			jc.SetResult(entity.PlanRun{ID: "not a run of the plan manager's"})
 			runs.Add(1)
 			return nil
 		}),
@@ -598,7 +598,7 @@ func TestPlanWithItsOwnJobStillWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if runID != "" {
-		t.Fatalf("run ID = %q: a job the planner did not build has no run of its own", runID)
+		t.Fatalf("run ID = %q: a job the plan manager did not build has no run of its own", runID)
 	}
 	eventually(t, "the run", func() bool { return runs.Load() == 1 })
 	if kinds := sender.kinds(); len(kinds) != 0 {
@@ -707,7 +707,7 @@ func TestPlannerStopEndsItsPlansAndLeavesTheManagerRunning(t *testing.T) {
 		t.Fatalf("Trigger after Stop = %v, want NotFound", err)
 	}
 	if !other.Job.IsExecuting() {
-		t.Fatalf("the other task's state = %s after the planner stopped", other.Job.State())
+		t.Fatalf("the other task's state = %s after the plan manager stopped", other.Job.State())
 	}
 	var runs atomic.Int32
 	if err := tm.Add(&entity.Task{Job: job.New("later", func(job.Context) error { runs.Add(1); return nil })}); err != nil {
@@ -738,7 +738,7 @@ func TestCommandPlanWithoutASenderStillRuns(t *testing.T) {
 	}
 	runID := triggered(t, m, "silent")
 	eventually(t, "the run to finish", func() bool {
-		res, _ := m.GetResult("silent")
+		res, _ := m.Result("silent")
 		run, ok := res.(entity.PlanRun)
 		return ok && run.ID == runID && run.State == entity.PlanRunSucceeded
 	})

@@ -6,7 +6,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-// PlanKindCommand runs a command: its Params is a jobs.Command, the planner builds
+// PlanKindCommand runs a command: its Params is a jobs.Command, the plan manager builds
 // its Task.Job, and every run of it is reported with PlanRunStarted and PlanRunFinished.
 const PlanKindCommand = "command"
 
@@ -51,30 +51,31 @@ type PlanRun struct {
 	Error      string        `json:"error,omitempty"`
 }
 
-// PlanRunStarted is sent through the planner's MessageSender as a run starts.
+// PlanRunStarted is sent through the plan manager's MessageSender as a run starts.
 type PlanRunStarted struct {
 	PlanRun
 }
 
 func (PlanRunStarted) Kind() string {
-	return "planner.run.started"
+	return "plan.run.started"
 }
 
-// PlanRunFinished is sent through the planner's MessageSender as a run ends.
+// PlanRunFinished is sent through the plan manager's MessageSender as a run ends.
 type PlanRunFinished struct {
 	PlanRun
 }
 
 func (PlanRunFinished) Kind() string {
-	return "planner.run.finished"
+	return "plan.run.finished"
 }
 
-type PlannerStatsOptions struct {
-	Selector string `json:"selector,omitempty"`
-	All      bool   `json:"all"`
+// PlanStatsOptions says which plans' stats the plan manager's Stats lists.
+type PlanStatsOptions struct {
+	Selector string `json:"selector,omitempty"` // a label selector over the plans' job labels; empty is every plan
+	All      bool   `json:"all"`                // also the plans whose job succeeded
 }
 
-type PlannerStats struct {
+type PlanStats struct {
 	ID            string        `json:"id"`
 	Schedule      string        `json:"schedule"`
 	State         string        `json:"state"`

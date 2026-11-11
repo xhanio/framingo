@@ -1,4 +1,4 @@
-package planner
+package plan
 
 import (
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -7,7 +7,7 @@ import (
 
 type Manager interface {
 	// business
-	model.Planner
+	model.Plan
 	// lifecycle
 	common.Debuggable
 	common.Daemon

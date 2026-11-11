@@ -25,7 +25,7 @@ type Context interface {
 	Labels() labels.Set
 	SetProgress(progress float64)
 	SetResult(result any)
-	GetParams() any
+	Params() any
 	Signaled(sig Signal) <-chan struct{}
 }
 

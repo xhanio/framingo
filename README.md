@@ -191,13 +191,13 @@ Production-ready service implementations:
   - Typed (`common.Message`) and raw (`kind`, payload) handlers
   - `NewMessenger(name)` for direct channel access, `AttachWebSocket(messenger, ws)` to bridge a connection (with server-side pings, tunable via `WithPing`)
 
-- **[task](pkg/services/task/)** — Task manager (`model.TaskManager` + `Daemon`)
+- **[task](pkg/services/task/)** — Task manager (`model.Task` + `Daemon`)
   - Runs `entity.Task`s by schedule, by `Trigger` or once, in priority then arrival order, within a concurrency limit
   - Retries, requeues on failure, exclusive tasks
 
-- **[planner](pkg/services/planner/)** — Task scheduling
-  - Concurrent execution with priority, cancel, and result lookup
-  - Emits task lifecycle events through a `MessageSender`
+- **[plan](pkg/services/plan/)** — Plan manager (`model.Plan` + `Daemon`)
+  - Plans with labels, schedules and a source for every run, on a task manager of your own
+  - A command plan records each run (`PlanRun`, its log file and output tail) and reports it through a `MessageSender`
 
 - **[tracing](pkg/services/tracing/)** — OpenTelemetry tracing
   - Owns the SDK `TracerProvider`: built from `tracing.*` config keys in `Init` (so restarts re-point or re-sample it), flushed in `Stop`; disabled serves a noop provider, so spans are always safe to start
@@ -218,7 +218,7 @@ Interface contracts and shared types:
 
 - **[model](pkg/types/model/)** — Behavioral contracts for framework services: `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Messenger`, `Planner`, `Tracer`
 
-- **[entity](pkg/types/entity/)** — Data carriers (POJOs) emitted by framework services: `SupervisorStats`, `Plan`, `PlannerStats`, `PubsubMessage`
+- **[entity](pkg/types/entity/)** — Data carriers (POJOs) emitted by framework services: `SupervisorStats`, `Plan`, `PlanStats`, `PubsubMessage`
 
 - **[orm](pkg/types/orm/)** — Generic ORM base types: `Record[T]`, `Referenced[T]`, `Reference[T]`
 
@@ -252,7 +252,7 @@ Interface contracts and shared types:
 | **[netutil](pkg/utils/netutil/)** | MAC/CIDR/IP helpers |
 | **[pageutil](pkg/utils/pageutil/)** | Pagination wrapper (items, total, params) |
 | **[pathutil](pkg/utils/pathutil/)** | Path shortening |
-| **[plans](pkg/utils/plans/)** | Predefined kinds of plan for the planner: `plans.Command` turns a command plan into what each of its runs does |
+| **[plans](pkg/utils/plans/)** | Predefined kinds of plan for the plan manager: `plans.Command` turns a command plan into what each of its runs does |
 | **[printutil](pkg/utils/printutil/)** | Console table formatting |
 | **[reflectutil](pkg/utils/reflectutil/)** | Type location, byte conversion, field scan/apply |
 | **[sliceutil](pkg/utils/sliceutil/)** | Membership, dedupe, diff, copy, change tracking |
@@ -586,7 +586,7 @@ curl 'http://localhost:8080/api/v1/hello?name=Framingo'
 - **[example/QUICKSTART.md](example/QUICKSTART.md)** — Fork the template, plus build/run with GoPro
 - **[example/](example/)** — The starter template: fork it to begin a new service (supervisor, db, pubsub, messagebus, RBAC, CLI client)
 - **Framework packages**:
-  - **[pkg/services/](pkg/services/)** — supervisor, api server/client, db, pubsub, messagebus, planner, tracing
+  - **[pkg/services/](pkg/services/)** — supervisor, api server/client, db, pubsub, messagebus, plan, task, tracing
   - **[pkg/middlewares/](pkg/middlewares/)** — framework-shipped `api.Middleware`s: trace
   - **[pkg/types/](pkg/types/)** — common, api, model, entity, orm, info
   - **[pkg/utils/](pkg/utils/)** — log, infra, and the utility packages listed above

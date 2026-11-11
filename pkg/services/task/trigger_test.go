@@ -185,7 +185,7 @@ func TestTriggerParamsLastForThatFiring(t *testing.T) {
 	tk := &entity.Task{
 		Job: job.New("params", func(jc job.Context) error {
 			mu.Lock()
-			seen = append(seen, jc.GetParams())
+			seen = append(seen, jc.Params())
 			mu.Unlock()
 			if runs.Add(1) == 1 {
 				return errors.Newf("run failed")

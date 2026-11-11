@@ -1,5 +1,5 @@
 // Package plans holds the predefined kinds of plan: for each, what one run of such a plan does,
-// for the planner to run inside a run's bookkeeping.
+// for the plan manager to run inside a run's bookkeeping.
 package plans
 
 import (
@@ -22,7 +22,7 @@ type Command struct {
 	timeout time.Duration
 }
 
-// NewCommand reads a command plan, whose Params is a jobs.Command; its Out is the planner's,
+// NewCommand reads a command plan, whose Params is a jobs.Command; its Out is the plan manager's,
 // set for each run.
 func NewCommand(plan *entity.Plan) (Command, error) {
 	cmd, ok := plan.Params.(jobs.Command)
@@ -33,7 +33,7 @@ func NewCommand(plan *entity.Plan) (Command, error) {
 		return Command{}, errors.InvalidArgument.Newf("plan %s has no command", plan.ID)
 	}
 	if cmd.Out != nil {
-		return Command{}, errors.InvalidArgument.Newf("plan %s: a command plan's Out is the planner's, set for each run", plan.ID)
+		return Command{}, errors.InvalidArgument.Newf("plan %s: a command plan's Out is the plan manager's, set for each run", plan.ID)
 	}
 	return Command{cmd: cmd, timeout: plan.Task.Timeout}, nil
 }

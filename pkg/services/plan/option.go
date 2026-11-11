@@ -1,4 +1,4 @@
-package planner
+package plan
 
 import (
 	"github.com/xhanio/framingo/pkg/utils/log"

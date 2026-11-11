@@ -7,7 +7,7 @@ import (
 
 type Manager interface {
 	// business
-	model.TaskManager
+	model.Task
 	// lifecycle
 	common.Daemon
 }

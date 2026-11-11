@@ -1,4 +1,4 @@
-package planner
+package plan
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
-// The task manager is the caller's, a dependency started before the planner.
+// The task manager is the caller's, a dependency started before the plan manager.
 func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
@@ -28,7 +28,7 @@ func (m *manager) Stop(ctx context.Context) error {
 	clear(m.plans)
 	m.Unlock()
 	if err := m.tm.Remove(ctx, tasks...); err != nil {
-		return errors.Wrapf(err, "planner stopped with runs still going")
+		return errors.Wrapf(err, "plan manager stopped with runs still going")
 	}
 	return nil
 }

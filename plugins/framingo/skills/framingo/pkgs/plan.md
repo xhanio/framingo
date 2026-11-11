@@ -1,14 +1,14 @@
-# Planner — Scheduled and Ad-Hoc Task Execution
+# Plan manager — Scheduled and Ad-Hoc Task Execution
 
-`pkg/services/planner` runs plans — described tasks with optional schedules —
+`pkg/services/plan` runs plans — described tasks with optional schedules —
 and reports the runs of its predefined kinds through the message bus.
-`planner.Manager` = `model.Planner` + `Daemon` + `Debuggable`.
+`plan.Manager` = `model.Plan` + `Daemon` + `Debuggable`.
 
 ## Interfaces
 
 ```go
 // pkg/types/model
-type Planner interface {
+type Plan interface {
     common.Service
     Add(plan *entity.Plan) error
     // Runs the plan now; returns the run's ID, empty for a plan without a kind.
@@ -24,8 +24,8 @@ type Planner interface {
     // Opens a run's log by its PlanRun.LogPath; see "Run logs".
     OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error)
     // The result of a plan's own Job.
-    GetResult(id string) (any, error)
-    Stats(opts entity.PlannerStatsOptions) ([]*entity.PlannerStats, error)
+    Result(id string) (any, error)
+    Stats(opts entity.PlanStatsOptions) ([]*entity.PlanStats, error)
 }
 
 // pkg/types/entity
@@ -38,9 +38,9 @@ type Plan struct {
     Task        *Task      // entity.Task - what actually runs
 }
 
-type PlannerStatsOptions struct {
-    Selector string // label selector over the Job's labels
-    All      bool
+type PlanStatsOptions struct {
+    Selector string // label selector over the plans' job labels; empty is every plan
+    All      bool   // also the plans whose job succeeded
 }
 ```
 
@@ -54,33 +54,33 @@ a command plan's `Command.Grace`, see [Stopping a plan](#stopping-a-plan).
 
 ```go
 import (
-    "github.com/xhanio/framingo/pkg/services/planner"
+    "github.com/xhanio/framingo/pkg/services/plan"
     "github.com/xhanio/framingo/pkg/services/task"
 )
 
 // tm runs the plans. It is yours: set the concurrency there (10 by default) and share it
-// with tasks of your own if you like. The planner takes it as a model.TaskManager.
+// with tasks of your own if you like. The plan manager takes it as a model.Task.
 tm := task.New(task.WithLogger(logger))
 
 // the message sender: where run events are sent - typically the messagebus manager
-// (any common.MessageSender), or nil. The planner depends on it and on tm.
-pl := planner.New(messagebusMgr, tm,
-    planner.WithLogger(logger),
-    planner.WithLogDir("/var/log/myapp/plans"), // empty keeps no log files
-    planner.WithOutputTailBytes(4096),          // the default
+// (any common.MessageSender), or nil. The plan manager depends on it and on tm.
+pm := plan.New(messagebusMgr, tm,
+    plan.WithLogger(logger),
+    plan.WithLogDir("/var/log/myapp/plans"), // empty keeps no log files
+    plan.WithOutputTailBytes(4096),          // the default
 )
 ```
 
-Register both with the supervisor like any service. It starts `tm` before the planner
+Register both with the supervisor like any service. It starts `tm` before the plan manager
 and stops it after; `tm.Stop(ctx)` waits for every execution it started until `ctx` ends, then
-sends what still runs `job.SignalKill` and returns. The planner neither starts nor stops `tm`: stopping the planner ends
+sends what still runs `job.SignalKill` and returns. The plan manager neither starts nor stops `tm`: stopping the plan manager ends
 and forgets its own plans, and whatever else runs on `tm` carries on. Plan IDs share a
 namespace with the other tasks on `tm`, and a clash is the `Conflict` from `Add`.
 
 ## Command plans
 
 `entity.PlanKindCommand` is the one predefined kind, defined in `pkg/utils/plans`. The
-planner builds the `Job`, so the caller writes none:
+plan manager builds the `Job`, so the caller writes none:
 
 ```go
 err := pl.Add(&entity.Plan{
@@ -96,16 +96,16 @@ runID, err := pl.Trigger("backup", entity.PlanRunManual) // run it now as well
 ```
 
 A plan of a kind takes what the kind needs in `Plan.Params` and leaves `Task.Params` empty:
-the planner passes each firing's run ID and source there. A command plan's job is its
+the plan manager passes each firing's run ID and source there. A command plan's job is its
 `jobs.Command` (see below) with the run's bookkeeping around it. Leave the command's `Out`
-unset: the planner sets it for each run. The command runs in its own process group, so stopping it reaches
+unset: the plan manager sets it for each run. The command runs in its own process group, so stopping it reaches
 its children, and one that ends on its own keeps any background children it left. Its
 output goes to `<log dir>/<plan ID>/<time>-<run>.log` and the tail of it into the run.
 
 ## Commands and job signals
 
 `jobs.Command` is a predefined job function in `pkg/utils/jobs`, and a command does not need
-a planner to run on a task manager:
+a plan manager to run on a task manager:
 
 ```go
 backup := jobs.Command{
@@ -143,7 +143,7 @@ func(jc job.Context) error {
 ```
 
 A command plan takes its `Command` from `Plan.Params` when it is added, and its `Grace` says
-when the command gets its SIGKILL. Neither the planner nor the task manager waits by it: how
+when the command gets its SIGKILL. Neither the plan manager nor the task manager waits by it: how
 long a stop waits is the caller's context.
 
 `job.SignalKill` is one of a job's signals. `Job.Signal(sig)` sends a signal to the
@@ -175,7 +175,7 @@ ends, and returns its latest run. `Stop(ctx)` does that to every plan at once.
 Under systemd, set `KillMode=mixed` on the unit. With the default `control-group`,
 systemd's SIGTERM reaches the commands as well as your process: `Setpgid` gives a command
 a process group of its own, not a cgroup. A command that dies of that signal before your
-service stops it ended on its own as far as the planner can tell, so its run is recorded
+service stops it ended on its own as far as the plan manager can tell, so its run is recorded
 as `failed`.
 
 ## Run events
@@ -187,8 +187,8 @@ was given: `entity.PlanRunManual`, `entity.PlanRunSchedule`, or a value of your 
 
 | Event | `Kind()` | When |
 |---|---|---|
-| `entity.PlanRunStarted` | `planner.run.started` | before the command starts |
-| `entity.PlanRunFinished` | `planner.run.finished` | after it ends: `succeeded`, `failed` or `canceled` |
+| `entity.PlanRunStarted` | `plan.run.started` | before the command starts |
+| `entity.PlanRunFinished` | `plan.run.finished` | after it ends: `succeeded`, `failed` or `canceled` |
 
 A retry or a requeue is a new run with a new ID. Consume the events with a
 `MessageHandler` on the bus ([pubsub.md](pubsub.md)):
@@ -214,7 +214,7 @@ idempotent, since these paths all deliver the end of a run.
 ## Run logs
 
 `OpenRunLog(path, tailBytes)` opens a run's log by its `PlanRun.LogPath`. It takes the
-path rather than a run ID because the planner only remembers the latest run, while your
+path rather than a run ID because the plan manager only remembers the latest run, while your
 records go further back. With `tailBytes > 0` it reads from that many bytes before the
 end. The file may still be being written, so polling it follows a live run.
 
@@ -222,12 +222,15 @@ A path not under the log dir is `Forbidden`; no log dir or no such file is `NotF
 
 ## Plans with their own job
 
-Without a `Kind`, the `Task` carries its own `Job`, and the planner sends no events for
-it. For shelling out from one, the package ships job constructors:
+Without a `Kind`, the `Task` carries its own `Job`, and the plan manager keeps no runs and
+sends no events for it. To shell out from one, run a `jobs.Command` as its job:
 
 ```go
-job := planner.NewBashJob(caller, labels.Set{"kind": "backup"}, "/usr/bin/pg_dump", []string{"mydb"})
-// NewAsyncBashJob - same, detached from the caller's wait
+backup := jobs.Command{Argv: []string{"/usr/bin/pg_dump", "mydb"}}
+err := pm.Add(&entity.Plan{
+    ID:   "backup",
+    Task: &entity.Task{Job: job.New("backup", backup.Run, job.WithLabels(labels.Set{"kind": "backup"})), Schedule: "30 2 * * *"},
+})
 ```
 
 `Stats` filters by label selector over each job's labels, so operational tooling can

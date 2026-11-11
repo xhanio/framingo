@@ -297,7 +297,7 @@ func (j *job) SetResult(result any) {
 	j.Unlock()
 }
 
-func (j *job) GetParams() any {
+func (j *job) Params() any {
 	return j.params
 }
 
