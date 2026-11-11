@@ -14,7 +14,7 @@ type Plan struct {
 	ID          string     `json:"id"`
 	Metadata    labels.Set `json:"metadata"`
 	Description string     `json:"description"`
-	Kind        string     `json:"kind,omitempty"`   // a predefined kind, or empty for a Task with its own Job
+	Kind        string     `json:"kind"`             // a predefined kind, from which the plan manager builds the Task's Job
 	Params      any        `json:"params,omitempty"` // what the kind takes, as its constant says
 	Task        *Task      `json:"task"`
 }
@@ -36,7 +36,7 @@ const (
 	PlanRunCanceled  PlanRunState = "canceled"
 )
 
-// PlanRun is one run of a plan of a predefined kind, as of when it was reported. A retry or
+// PlanRun is one run of a plan, as of when it was reported. A retry or
 // a requeue is a new run. LastRun returns the plan's latest one. A run of Trigger that a
 // Cancel, Delete or Stop drops before it starts ends canceled, with the time of its Trigger as
 // StartedAt and no log.
@@ -73,7 +73,7 @@ func (PlanRunFinished) Kind() string {
 
 // PlanStatsOptions says which plans' stats the plan manager's Stats lists.
 type PlanStatsOptions struct {
-	Selector string `json:"selector,omitempty"` // a label selector over the plans' job labels; empty is every plan
+	Selector string `json:"selector,omitempty"` // a label selector over the plans' Metadata; empty is every plan
 	All      bool   `json:"all"`                // also the plans whose job succeeded
 }
 

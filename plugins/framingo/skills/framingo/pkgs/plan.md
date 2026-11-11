@@ -12,7 +12,7 @@ type Plan interface {
     common.Service
     // Keeps a copy of the plan; an ID already added is a Conflict.
     Add(plan *entity.Plan) error
-    // Runs the plan now; returns the run's ID, empty for a plan without a kind.
+    // Runs the plan now; returns the run's ID.
     // source goes on the run and on its retries and requeues; empty is an InvalidArgument.
     // A plan already queued, running or being requeued is a Conflict.
     // The run always ends with PlanRunFinished; see "Run events".
@@ -22,12 +22,10 @@ type Plan interface {
     Cancel(id string) error
     // Ends what the plan is doing, forgets the plan and returns its latest run.
     Delete(ctx context.Context, id string) (*entity.PlanRun, error)
-    // The latest run; nil if there is none yet or the plan has no kind.
+    // The latest run; nil if there is none yet.
     LastRun(id string) (*entity.PlanRun, error)
     // Opens a run's log by its PlanRun.LogPath; see "Run logs".
     OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error)
-    // The result of a plan's own Job; nil for a plan of a kind, whose runs are LastRun's.
-    Result(id string) (any, error)
     Stats(opts entity.PlanStatsOptions) ([]*entity.PlanStats, error)
 }
 
@@ -36,13 +34,13 @@ type Plan struct {
     ID          string
     Metadata    labels.Set // k8s.io label set
     Description string
-    Kind        string     // a predefined kind, or empty for a Task with its own Job
+    Kind        string     // a predefined kind, from which the plan manager builds the Task's Job
     Params      any        // what the kind takes: a jobs.Command for a command plan
     Task        *Task      // entity.Task - what actually runs
 }
 
 type PlanStatsOptions struct {
-    Selector string // label selector over the plans' job labels; empty is every plan
+    Selector string // label selector over the plans' Metadata; empty is every plan
     All      bool   // also the plans whose job succeeded
 }
 ```
@@ -83,8 +81,10 @@ namespace with the other tasks on `tm`, and a clash is the `Conflict` from `Add`
 
 ## Command plans
 
-`entity.PlanKindCommand` is the one predefined kind, defined in `pkg/utils/plans`. The
-plan manager builds the `Job`, so the caller writes none:
+Every plan has a kind, and the plan manager builds its task's `Job` from it, under the plan's
+ID: a `Task` with a `Job` of its own is an `InvalidArgument`. A job of your own goes on the
+task manager itself, as in [Commands and job signals](#commands-and-job-signals).
+`entity.PlanKindCommand` is the one predefined kind, defined in `pkg/utils/plans`:
 
 ```go
 err := pl.Add(&entity.Plan{
@@ -164,7 +164,6 @@ that to every plan at once.
 
 - Canceling a command SIGTERMs its process group, and the command SIGKILLs the group once
   its `Grace` is up, so a command plan ends within its grace period whatever `ctx` allows.
-  A plan with its own job ends when its function returns.
 - Once `ctx` ends, what still runs is sent `SignalKill` and the error wraps `ctx.Err()`:
   the run returned may then still be `running`, and its end comes as `PlanRunFinished`. An
   ended `ctx` makes it a forced delete; to bound the wait, give `Delete` a `ctx` with a
@@ -227,19 +226,7 @@ end. The file may still be being written, so polling it follows a live run.
 
 A path not under the log dir is `Forbidden`; no log dir or no such file is `NotFound`.
 
-## Plans with their own job
+## Stats
 
-Without a `Kind`, the `Task` carries its own `Job`, and the plan manager keeps no runs and
-sends no events for it. To shell out from one, run a `jobs.Command` as its job:
-
-```go
-backup := jobs.Command{Argv: []string{"/usr/bin/pg_dump", "mydb"}}
-err := pm.Add(&entity.Plan{
-    ID:   "backup",
-    Task: &entity.Task{Job: job.New("backup", backup.Run, job.WithLabels(labels.Set{"kind": "backup"})), Schedule: "30 2 * * *"},
-})
-```
-
-`Stats` filters by label selector over each job's labels, so operational tooling can
-group and inspect running plans; a command plan's job takes its labels from the plan's
-`Metadata`.
+`Stats` lists the plans by their `ID`, filtered by a label selector over their `Metadata`, so
+operational tooling can group and inspect them.

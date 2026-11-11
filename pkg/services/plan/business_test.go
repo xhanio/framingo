@@ -8,11 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/xhanio/errors"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/xhanio/framingo/pkg/services/task"
 	"github.com/xhanio/framingo/pkg/types/entity"
@@ -28,12 +28,12 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 		plan *entity.Plan
 	}{
 		{name: "no ID", plan: &entity.Plan{Kind: entity.PlanKindCommand, Params: command, Task: manual()}},
-		{name: "no task", plan: &entity.Plan{ID: "x"}},
-		{name: "a task without a job", plan: &entity.Plan{ID: "x", Task: manual()}},
-		{name: "a one-shot plan of a kind", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: command, Task: &entity.Task{}}},
-		{name: "a one-shot plan with its own job", plan: &entity.Plan{ID: "x", Task: &entity.Task{Job: job.New("x", func(job.Context) error { return nil })}}},
+		{name: "no task", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: command}},
+		{name: "a one-shot plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: command, Task: &entity.Task{}}},
+		{name: "no kind", plan: &entity.Plan{ID: "x", Params: command, Task: manual()}},
+		{name: "no kind but a job of its own", plan: &entity.Plan{ID: "x", Task: &entity.Task{Job: job.New("x", func(job.Context) error { return nil }), Manual: true}}},
+		{name: "a job of its own besides a kind", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: command, Task: &entity.Task{Job: job.New("x", func(job.Context) error { return nil }), Manual: true}}},
 		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Params: command, Task: manual()}},
-		{name: "a kind without a task", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand}},
 		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: "true", Task: manual()}},
 		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{}, Task: manual()}},
 		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &entity.Task{Manual: true, Params: command}}},
@@ -50,20 +50,6 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 				t.Fatalf("a rejected plan stayed: Trigger = %v", err)
 			}
 		})
-	}
-}
-
-func TestAddOfAPlanIDAlreadyAddedConflicts(t *testing.T) {
-	m, _ := startedManager(t)
-	if err := m.Add(ownJobPlan("same", &entity.Task{}, func(job.Context) error { return nil })); err != nil {
-		t.Fatal(err)
-	}
-	other := &entity.Plan{ID: "same", Task: &entity.Task{Job: job.New("other-job", func(job.Context) error { return nil }), Manual: true}}
-	if err := m.Add(other); !errors.Is(err, errors.Conflict) {
-		t.Fatalf("Add = %v, want Conflict", err)
-	}
-	if st := m.tm.Stats("other-job"); st != nil {
-		t.Fatalf("the rejected plan's task stayed on the task manager: %+v", st)
 	}
 }
 
@@ -88,29 +74,6 @@ func TestAddOfAnIDTakenOnTheTaskManagerConflicts(t *testing.T) {
 	}
 	if err := m.Add(commandPlan("taken", &entity.Task{}, "true")); !errors.Is(err, errors.Conflict) {
 		t.Fatalf("Add = %v, want Conflict", err)
-	}
-}
-
-func TestPlanWithItsOwnJobStillWorks(t *testing.T) {
-	m, sender := startedManager(t)
-	var runs atomic.Int32
-	plan := &entity.Plan{ID: "own", Task: &entity.Task{
-		Job:    job.New("own-job", func(job.Context) error { runs.Add(1); return nil }),
-		Manual: true,
-	}}
-	if err := m.Add(plan); err != nil {
-		t.Fatal(err)
-	}
-	runID, err := m.Trigger("own", entity.PlanRunManual)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if runID != "" {
-		t.Fatalf("run ID = %q: a job the plan manager did not build has no run of its own", runID)
-	}
-	eventually(t, "the run", func() bool { return runs.Load() == 1 })
-	if kinds := sender.kinds(); len(kinds) != 0 {
-		t.Fatalf("events for a plan without a kind: %v", kinds)
 	}
 }
 
@@ -250,13 +213,8 @@ func TestDeleteWithoutARunReturnsNil(t *testing.T) {
 	if err := m.Add(commandPlan("never", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Add(ownJobPlan("own", &entity.Task{}, func(job.Context) error { return nil })); err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{"never", "own"} {
-		if run, err := m.Delete(context.Background(), id); err != nil || run != nil {
-			t.Fatalf("Delete(%s) = %+v, %v", id, run, err)
-		}
+	if run, err := m.Delete(context.Background(), "never"); err != nil || run != nil {
+		t.Fatalf("Delete = %+v, %v", run, err)
 	}
 }
 
@@ -425,128 +383,6 @@ func TestAForcedDeleteCutsTheGracePeriodOfACanceledRunShort(t *testing.T) {
 	assertGone(t, child)
 }
 
-func TestDeleteOfAnOwnJobHonoringTheCancelReturnsAsItEnds(t *testing.T) {
-	m, _ := startedManager(t)
-	var started atomic.Bool
-	plan := ownJobPlan("own", &entity.Task{}, func(jc job.Context) error {
-		started.Store(true)
-		<-jc.Context().Done()
-		return nil
-	})
-	if err := m.Add(plan); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.Trigger("own", entity.PlanRunManual); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "the job to start", started.Load)
-	begin := time.Now()
-	if _, err := m.Delete(context.Background(), "own"); err != nil {
-		t.Fatal(err)
-	}
-	assertWithin(t, "Delete", time.Second, begin)
-}
-
-func TestDeleteOfAnOwnJobIgnoringTheCancelReturnsOnceItsContextEnds(t *testing.T) {
-	cases := []struct {
-		name  string
-		ctx   func() (context.Context, context.CancelFunc)
-		least time.Duration
-		most  time.Duration
-	}{
-		{name: "an ended context returns at once", ctx: func() (context.Context, context.CancelFunc) { return canceled(), func() {} }, most: time.Second},
-		{name: "a deadline returns as it passes", ctx: func() (context.Context, context.CancelFunc) {
-			return context.WithTimeout(context.Background(), 200*time.Millisecond)
-		}, least: 200 * time.Millisecond, most: 2 * time.Second},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m, _ := startedManager(t)
-			release := make(chan struct{})
-			defer close(release)
-			var started atomic.Bool
-			plan := ownJobPlan("own", &entity.Task{}, func(job.Context) error {
-				started.Store(true)
-				<-release
-				return nil
-			})
-			if err := m.Add(plan); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := m.Trigger("own", entity.PlanRunManual); err != nil {
-				t.Fatal(err)
-			}
-			eventually(t, "the job to start", started.Load)
-			ctx, cancel := tc.ctx()
-			defer cancel()
-			begin := time.Now()
-			run, err := m.Delete(ctx, "own")
-			if !errors.Is(err, ctx.Err()) {
-				t.Fatalf("Delete = %v, want the context's error", err)
-			}
-			if took := time.Since(begin); took < tc.least || took > tc.most {
-				t.Fatalf("Delete took %s, want %s to %s", took, tc.least, tc.most)
-			}
-			if run != nil {
-				t.Fatalf("run = %+v: a plan without a kind has none", run)
-			}
-		})
-	}
-}
-
-func TestDeleteSendsTheKillToAnOwnJobOnceItsContextEnds(t *testing.T) {
-	m, _ := startedManager(t)
-	var started atomic.Bool
-	killed := make(chan time.Time, 1)
-	plan := ownJobPlan("own", &entity.Task{}, func(jc job.Context) error {
-		started.Store(true)
-		<-jc.Signaled(job.SignalKill)
-		killed <- time.Now()
-		return nil
-	})
-	if err := m.Add(plan); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.Trigger("own", entity.PlanRunManual); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "the job to start", started.Load)
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	begin := time.Now()
-	if _, err := m.Delete(ctx, "own"); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Delete = %v, want the deadline's error", err)
-	}
-	select {
-	case at := <-killed:
-		if took := at.Sub(begin); took < 200*time.Millisecond || took > 2*time.Second {
-			t.Fatalf("the kill came %s after Delete, want as its 200ms deadline passes", took)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("the deadline passed without a kill")
-	}
-}
-
-func TestAForcedDeleteSendsTheKillToAnOwnJob(t *testing.T) {
-	m, _ := startedManager(t)
-	var started, killed atomic.Bool
-	plan := ownJobPlan("own", &entity.Task{}, func(jc job.Context) error {
-		started.Store(true)
-		<-jc.Signaled(job.SignalKill)
-		killed.Store(true)
-		return nil
-	})
-	if err := m.Add(plan); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.Trigger("own", entity.PlanRunManual); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "the job to start", started.Load)
-	forcedDelete(t, m, "own")
-	eventually(t, "the job to see the kill", killed.Load)
-}
-
 func TestARunLeftByADeleteStaysOffThePlanAddedAgain(t *testing.T) {
 	m, sender := startedManager(t)
 	pids := pidFile(t)
@@ -629,18 +465,6 @@ func TestDeleteUnderStress(t *testing.T) {
 	wg.Wait()
 }
 
-func TestResultOfACommandPlanIsNil(t *testing.T) {
-	m, sender := startedManager(t)
-	if err := m.Add(commandPlan("ran", &entity.Task{}, "true")); err != nil {
-		t.Fatal(err)
-	}
-	trigger(t, m, "ran")
-	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
-	if res, err := m.Result("ran"); err != nil || res != nil {
-		t.Fatalf("Result = %+v, %v: a command plan's job keeps no result, its runs are LastRun's", res, err)
-	}
-}
-
 func TestLastRunOfAnUnknownPlanIsNotFound(t *testing.T) {
 	m, _ := startedManager(t)
 	if _, err := m.LastRun("nobody"); !errors.Is(err, errors.NotFound) {
@@ -677,26 +501,27 @@ func TestLastRunFollowsTheLatestRun(t *testing.T) {
 	})
 }
 
-func TestLastRunOfAPlanWithoutAKindIsNil(t *testing.T) {
+func TestStatsSelectsThePlansByTheirMetadata(t *testing.T) {
 	m, _ := startedManager(t)
-	var runs atomic.Int32
-	plan := &entity.Plan{ID: "own", Task: &entity.Task{
-		Job: job.New("own-job", func(jc job.Context) error {
-			jc.SetResult(entity.PlanRun{ID: "not a run of the plan manager's"})
-			runs.Add(1)
-			return nil
-		}),
-		Manual: true,
-	}}
-	if err := m.Add(plan); err != nil {
+	for id, team := range map[string]string{"backup": "ops", "report": "finance"} {
+		plan := commandPlan(id, &entity.Task{}, "true")
+		plan.Metadata = labels.Set{"team": team}
+		if err := m.Add(plan); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stats, err := m.Stats(entity.PlanStatsOptions{Selector: "team=ops"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Trigger("own", entity.PlanRunManual); err != nil {
-		t.Fatal(err)
+	if len(stats) != 1 || stats[0].ID != "backup" || stats[0].Labels.Get("team") != "ops" {
+		t.Fatalf("stats = %+v, want the backup plan's", stats)
 	}
-	eventually(t, "the job", func() bool { return runs.Load() == 1 })
-	if run, err := m.LastRun("own"); err != nil || run != nil {
-		t.Fatalf("LastRun = %+v, %v", run, err)
+	if all, err := m.Stats(entity.PlanStatsOptions{}); err != nil || len(all) != 2 {
+		t.Fatalf("Stats without a selector = %+v, %v, want both plans", all, err)
+	}
+	if _, err := m.Stats(entity.PlanStatsOptions{Selector: "team in ("}); !errors.Is(err, errors.InvalidArgument) {
+		t.Fatalf("Stats with a bad selector = %v, want InvalidArgument", err)
 	}
 }
 

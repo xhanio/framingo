@@ -33,26 +33,23 @@ func (m *manager) Add(plan *entity.Plan) error {
 	reg := &registration{plan: &p}
 	switch {
 	case p.Kind == "":
-		if !task.IsValid() {
-			return errors.InvalidArgument.Newf("plan %s has neither a kind nor a job", p.ID)
-		}
+		return errors.InvalidArgument.Newf("plan %s has no kind", p.ID)
 	case p.Kind != entity.PlanKindCommand:
 		return errors.InvalidArgument.Newf("plan %s has an unknown kind %q", p.ID, p.Kind)
+	case task.Job != nil:
+		return errors.InvalidArgument.Newf("plan %s: the plan manager builds its task's job, from its kind", p.ID)
 	case task.Params != nil:
 		// Task.Params is where each firing of Trigger passes its run
 		return errors.InvalidArgument.Newf("plan %s: a %s plan takes its params in Plan.Params, and leaves Task.Params empty", p.ID, p.Kind)
-	default:
-		cmd, err := plans.NewCommand(&p)
-		if err != nil {
-			return err
-		}
-		task.Job = job.New(p.ID, m.runJob(reg, cmd.Header(), cmd.Run), job.WithLabels(p.Metadata), job.WithLogger(m.log))
 	}
+	cmd, err := plans.NewCommand(&p)
+	if err != nil {
+		return err
+	}
+	// under the plan's ID, which the task manager knows it by
+	task.Job = job.New(p.ID, m.runJob(reg, cmd.Header(), cmd.Run), job.WithLabels(p.Metadata), job.WithLogger(m.log))
 	m.Lock()
 	defer m.Unlock()
-	if _, ok := m.plans[p.ID]; ok {
-		return errors.Conflict.Newf("plan %s already added", p.ID)
-	}
 	if err := m.tm.Add(&task); err != nil {
 		return errors.Wrap(err)
 	}
@@ -71,12 +68,8 @@ func (m *manager) Trigger(id string, source entity.PlanRunSource) (string, error
 	if !ok {
 		return "", errors.NotFound.Newf("failed to trigger plan %s: plan not found", id)
 	}
-	plan := reg.plan
-	if plan.Kind == "" {
-		return "", errors.Wrap(m.tm.Trigger(plan.Task.ID(), nil))
-	}
 	tr := &triggered{id: uuid.NewString(), source: source, at: time.Now()}
-	if err := m.tm.Trigger(plan.Task.ID(), tr); err != nil {
+	if err := m.tm.Trigger(reg.plan.Task.ID(), tr); err != nil {
 		return "", errors.Wrap(err)
 	}
 	reg.setPending(tr)
@@ -112,15 +105,6 @@ func (m *manager) Delete(ctx context.Context, id string) (*entity.PlanRun, error
 		return reg.lastRun(), errors.Wrapf(err, "plan %s deleted with its run still going", id)
 	}
 	return reg.lastRun(), nil
-}
-
-func (m *manager) Result(id string) (any, error) {
-	m.RLock()
-	defer m.RUnlock()
-	if reg, ok := m.plans[id]; ok {
-		return reg.plan.Task.Job.Result(), nil
-	}
-	return nil, errors.NotFound.Newf("failed to get result of plan %s: plan not found", id)
 }
 
 func (m *manager) LastRun(id string) (*entity.PlanRun, error) {
@@ -180,13 +164,13 @@ func (m *manager) stats(all bool) []*entity.PlanStats {
 		}
 		js := j.Stats()
 		st := &entity.PlanStats{
-			ID:            js.ID,
+			ID:            plan.ID,
 			Schedule:      plan.Task.Schedule,
 			State:         js.State,
 			Progress:      js.Progress,
 			StartedAt:     js.StartedAt,
 			ExecutionTime: js.ExecutionTime,
-			Labels:        js.Labels,
+			Labels:        plan.Metadata,
 			Error:         js.Error,
 		}
 		if ts := m.tm.Stats(j.ID()); ts != nil {

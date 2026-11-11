@@ -17,7 +17,6 @@ import (
 	"github.com/xhanio/framingo/pkg/services/task"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
-	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/jobs"
 )
 
@@ -162,12 +161,6 @@ func withGrace(plan *entity.Plan, grace time.Duration) *entity.Plan {
 	cmd.Grace = grace
 	plan.Params = cmd
 	return plan
-}
-
-func ownJobPlan(id string, tk *entity.Task, fn job.Func) *entity.Plan {
-	tk.Job = job.New(id+"-job", fn)
-	tk.Manual = true
-	return &entity.Plan{ID: id, Task: tk}
 }
 
 func trigger(t *testing.T, m *manager, id string) string {

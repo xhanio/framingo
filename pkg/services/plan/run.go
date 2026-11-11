@@ -23,7 +23,7 @@ var (
 	_ common.Message = entity.PlanRunFinished{}
 )
 
-// run is one run of a plan of a kind, from its start to its end: its record, its log file and
+// run is one run of a plan, from its start to its end: its record, its log file and
 // the tail of its output.
 type run struct {
 	entity.PlanRun
@@ -32,7 +32,7 @@ type run struct {
 	tail ioutil.TailWriter
 }
 
-// runJob is the job of a plan of a kind: every execution of it is a run doing body.
+// runJob is a plan's job: every execution of it is a run doing body.
 func (m *manager) runJob(reg *registration, header string, body func(job.Context, io.Writer) (plans.Outcome, error)) job.Func {
 	return func(jc job.Context) error {
 		r := m.startRun(reg, jc, header)
