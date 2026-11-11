@@ -79,8 +79,8 @@ namespace with the other tasks on `tm`, and a clash is the `Conflict` from `Add`
 
 ## Command plans
 
-`entity.PlanKindCommand` is the one predefined kind. The planner builds the `Job`,
-so the caller writes none:
+`entity.PlanKindCommand` is the one predefined kind, defined in `pkg/utils/plans`. The
+planner builds the `Job`, so the caller writes none:
 
 ```go
 err := pl.Add(&entity.Plan{

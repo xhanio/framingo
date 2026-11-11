@@ -15,6 +15,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/ioutil"
 	"github.com/xhanio/framingo/pkg/utils/job"
+	"github.com/xhanio/framingo/pkg/utils/plans"
 )
 
 var (
@@ -22,20 +23,9 @@ var (
 	_ common.Message = entity.PlanRunFinished{}
 )
 
-// runFunc is the work of one run, between runJob's bookkeeping: it writes its output to out
-// and says how the run ended. Its error is the job's.
-type runFunc func(jc job.Context, out io.Writer) (outcome, error)
-
-// outcome is how a run ended, as its PlanRun records it.
-type outcome struct {
-	State    entity.PlanRunState
-	Error    string
-	ExitCode int
-}
-
 // runJob makes a job whose every run does body inside the run's bookkeeping: its PlanRun, a log
 // file headed by header, the tail of its output, and reports as it starts and as it ends.
-func (m *manager) runJob(plan *entity.Plan, header string, body runFunc) job.Func {
+func (m *manager) runJob(plan *entity.Plan, header string, body func(jc job.Context, out io.Writer) (plans.Outcome, error)) job.Func {
 	return func(jc job.Context) error {
 		run := newRun(jc, plan)
 		tail := ioutil.NewTailWriter(m.tailBytes)

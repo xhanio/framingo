@@ -13,6 +13,7 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
+	"github.com/xhanio/framingo/pkg/utils/plans"
 )
 
 func (m *manager) Add(plan *entity.Plan) error {
@@ -30,11 +31,11 @@ func (m *manager) Add(plan *entity.Plan) error {
 		if plan.Task.Params != nil {
 			return errors.InvalidArgument.Newf("plan %s: a %s plan takes its params in Plan.Params, and leaves Task.Params empty", plan.ID, plan.Kind)
 		}
-		fn, err := m.commandJob(plan)
+		cmd, err := plans.NewCommand(plan)
 		if err != nil {
 			return err
 		}
-		plan.Task.Job = job.New(plan.ID, fn, job.WithLabels(plan.Metadata), job.WithLogger(m.log))
+		plan.Task.Job = job.New(plan.ID, m.runJob(plan, cmd.Header(), cmd.Run), job.WithLabels(plan.Metadata), job.WithLogger(m.log))
 	}
 	m.Lock()
 	defer m.Unlock()

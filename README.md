@@ -252,6 +252,7 @@ Interface contracts and shared types:
 | **[netutil](pkg/utils/netutil/)** | MAC/CIDR/IP helpers |
 | **[pageutil](pkg/utils/pageutil/)** | Pagination wrapper (items, total, params) |
 | **[pathutil](pkg/utils/pathutil/)** | Path shortening |
+| **[plans](pkg/utils/plans/)** | Predefined kinds of plan for the planner: `plans.Command` turns a command plan into what each of its runs does |
 | **[printutil](pkg/utils/printutil/)** | Console table formatting |
 | **[reflectutil](pkg/utils/reflectutil/)** | Type location, byte conversion, field scan/apply |
 | **[sliceutil](pkg/utils/sliceutil/)** | Membership, dedupe, diff, copy, change tracking |

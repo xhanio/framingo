@@ -45,7 +45,7 @@ type PlanRun struct {
 	State      PlanRunState  `json:"state"`
 	StartedAt  time.Time     `json:"started_at"`
 	EndedAt    time.Time     `json:"ended_at,omitzero"`
-	ExitCode   int           `json:"exit_code"`
+	ExitCode   int           `json:"exit_code"` // for a kind with an exit status, like a command
 	OutputTail string        `json:"output_tail,omitempty"`
 	LogPath    string        `json:"log_path,omitempty"`
 	Error      string        `json:"error,omitempty"`
