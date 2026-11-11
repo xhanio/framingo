@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	"github.com/xhanio/errors"
@@ -20,6 +21,7 @@ func (m *manager) Add(plan *entity.Plan) error {
 	if plan.ID == "" {
 		plan.ID = uuid.NewString()
 	}
+	reg := &registration{plan: plan}
 	if plan.Kind != "" {
 		if plan.Task == nil {
 			return errors.InvalidArgument.Newf("plan %s has no task", plan.ID)
@@ -35,7 +37,7 @@ func (m *manager) Add(plan *entity.Plan) error {
 		if err != nil {
 			return err
 		}
-		plan.Task.Job = job.New(plan.ID, m.runJob(plan, cmd.Header(), cmd.Run), job.WithLabels(plan.Metadata), job.WithLogger(m.log))
+		plan.Task.Job = job.New(plan.ID, m.runJob(reg, cmd.Header(), cmd.Run), job.WithLabels(plan.Metadata), job.WithLogger(m.log))
 	}
 	m.Lock()
 	defer m.Unlock()
@@ -46,7 +48,7 @@ func (m *manager) Add(plan *entity.Plan) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	m.plans[plan.ID] = plan
+	m.plans[plan.ID] = reg
 	return nil
 }
 
@@ -56,10 +58,11 @@ func (m *manager) Trigger(id string, source entity.PlanRunSource) (string, error
 	}
 	m.RLock()
 	defer m.RUnlock()
-	plan, ok := m.plans[id]
+	reg, ok := m.plans[id]
 	if !ok {
 		return "", errors.NotFound.Newf("failed to trigger plan %s: plan not found", id)
 	}
+	plan := reg.plan
 	var (
 		runID  string
 		params any
@@ -74,14 +77,22 @@ func (m *manager) Trigger(id string, source entity.PlanRunSource) (string, error
 	return runID, nil
 }
 
+// triggeredRun goes with a firing of Trigger: all its runs take the source, only the first
+// the ID Trigger returned, as retries and requeues are runs of their own.
+type triggeredRun struct {
+	id      string
+	source  entity.PlanRunSource
+	claimed atomic.Bool
+}
+
 func (m *manager) Cancel(id string) error {
 	m.RLock()
 	defer m.RUnlock()
-	plan, ok := m.plans[id]
+	reg, ok := m.plans[id]
 	if !ok {
 		return errors.NotFound.Newf("failed to cancel plan %s: plan not found", id)
 	}
-	err := m.tm.Cancel(plan.Task.ID())
+	err := m.tm.Cancel(reg.plan.Task.ID())
 	if errors.Is(err, errors.NotFound) {
 		// the plan is here, its one-shot task finished and left the task manager
 		return errors.Conflict.Newf("plan %s is not running", id)
@@ -91,24 +102,24 @@ func (m *manager) Cancel(id string) error {
 
 func (m *manager) Delete(ctx context.Context, id string) (*entity.PlanRun, error) {
 	m.Lock()
-	plan, ok := m.plans[id]
+	reg, ok := m.plans[id]
 	if !ok {
 		m.Unlock()
 		return nil, errors.NotFound.Newf("plan %s not found", id)
 	}
 	delete(m.plans, id)
 	m.Unlock()
-	if err := m.tm.Remove(ctx, plan.Task); err != nil {
-		return lastRun(plan), errors.Wrapf(err, "plan %s deleted with its run still going", id)
+	if err := m.tm.Remove(ctx, reg.plan.Task); err != nil {
+		return reg.lastRun(), errors.Wrapf(err, "plan %s deleted with its run still going", id)
 	}
-	return lastRun(plan), nil
+	return reg.lastRun(), nil
 }
 
 func (m *manager) Result(id string) (any, error) {
 	m.RLock()
 	defer m.RUnlock()
-	if plan, ok := m.plans[id]; ok {
-		return plan.Task.Job.Result(), nil
+	if reg, ok := m.plans[id]; ok {
+		return reg.plan.Task.Job.Result(), nil
 	}
 	return nil, errors.NotFound.Newf("failed to get result of plan %s: plan not found", id)
 }
@@ -116,22 +127,11 @@ func (m *manager) Result(id string) (any, error) {
 func (m *manager) LastRun(id string) (*entity.PlanRun, error) {
 	m.RLock()
 	defer m.RUnlock()
-	plan, ok := m.plans[id]
+	reg, ok := m.plans[id]
 	if !ok {
 		return nil, errors.NotFound.Newf("failed to get the last run of plan %s: plan not found", id)
 	}
-	return lastRun(plan), nil
-}
-
-func lastRun(plan *entity.Plan) *entity.PlanRun {
-	if plan.Kind == "" {
-		return nil
-	}
-	run, ok := plan.Task.Job.Result().(entity.PlanRun)
-	if !ok {
-		return nil
-	}
-	return &run
+	return reg.lastRun(), nil
 }
 
 // By path, not run ID, since the plan manager only remembers the latest run. The check is lexical:
@@ -173,7 +173,8 @@ func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error
 // whose job succeeded is left out unless all.
 func (m *manager) stats(all bool) []*entity.PlanStats {
 	result := make([]*entity.PlanStats, 0)
-	for _, plan := range m.plans {
+	for _, reg := range m.plans {
+		plan := reg.plan
 		j := plan.Task.Job
 		if !all && j.State() == job.StateSucceeded {
 			continue

@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
@@ -28,7 +27,7 @@ type manager struct {
 	tailBytes int
 
 	sync.RWMutex
-	plans map[string]*entity.Plan
+	plans map[string]*registration
 }
 
 func New(ms common.MessageSender, tm model.Task, opts ...Option) Manager {
@@ -39,7 +38,7 @@ func newManager(ms common.MessageSender, tm model.Task, opts ...Option) *manager
 	m := &manager{
 		ms:    ms,
 		tm:    tm,
-		plans: make(map[string]*entity.Plan),
+		plans: make(map[string]*registration),
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()

@@ -22,8 +22,8 @@ func (m *manager) Start(ctx context.Context) error {
 func (m *manager) Stop(ctx context.Context) error {
 	m.Lock()
 	tasks := make([]*entity.Task, 0, len(m.plans))
-	for _, plan := range m.plans {
-		tasks = append(tasks, plan.Task)
+	for _, reg := range m.plans {
+		tasks = append(tasks, reg.plan.Task)
 	}
 	clear(m.plans)
 	m.Unlock()

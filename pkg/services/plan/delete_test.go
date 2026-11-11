@@ -107,7 +107,7 @@ func TestDeleteOfAnIdlePlanReturnsItsLastRunAtOnce(t *testing.T) {
 	}
 	runID := triggered(t, m, "idle")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
-	eventually(t, "the run to settle", func() bool { return !m.plans["idle"].Task.Job.IsExecuting() })
+	eventually(t, "the run to settle", func() bool { return !m.plans["idle"].plan.Task.Job.IsExecuting() })
 	begin := time.Now()
 	run, err := m.Delete(context.Background(), "idle")
 	if err != nil {
@@ -690,5 +690,23 @@ func TestDeleteSendsTheKillToAnOwnJobOnceItsContextEnds(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the deadline passed without a kill")
+	}
+}
+
+func TestARunLeftByADeleteStaysOffThePlanAddedAgain(t *testing.T) {
+	m, sender := startedPlanner(t)
+	pids := pidFile(t)
+	if err := m.Add(withGrace(commandPlan("same", &entity.Task{}, "sh", "-c", stubbornCommand, pids), time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	triggered(t, m, "same")
+	waitPid(t, pids)
+	forcedDelete(t, m, "same")
+	if err := m.Add(commandPlan("same", &entity.Task{}, "true")); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the run left behind to end", func() bool { return len(sender.finished()) == 1 })
+	if run, err := m.LastRun("same"); err != nil || run != nil {
+		t.Fatalf("LastRun = %+v, %v: the plan added again has not run", run, err)
 	}
 }

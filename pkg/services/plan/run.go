@@ -23,71 +23,91 @@ var (
 	_ common.Message = entity.PlanRunFinished{}
 )
 
-// runJob makes a job whose every run does body inside the run's bookkeeping: its PlanRun, a log
-// file headed by header, the tail of its output, and reports as it starts and as it ends.
-func (m *manager) runJob(plan *entity.Plan, header string, body func(jc job.Context, out io.Writer) (plans.Outcome, error)) job.Func {
+// run is one run of a plan of a kind, from its start to its end: its record, its log file and
+// the tail of its output.
+type run struct {
+	entity.PlanRun
+	reg  *registration
+	log  *os.File
+	tail ioutil.TailWriter
+}
+
+// runJob is the job of a plan of a kind: every execution of it is a run doing body.
+func (m *manager) runJob(reg *registration, header string, body func(job.Context, io.Writer) (plans.Outcome, error)) job.Func {
 	return func(jc job.Context) error {
-		run := newRun(jc, plan)
-		tail := ioutil.NewTailWriter(m.tailBytes)
-		var out io.Writer = tail
-		if f := m.createRunLog(&run, header); f != nil {
-			defer f.Close()
-			out = io.MultiWriter(f, tail)
-		}
-		jc.SetResult(run)
-		m.report(entity.PlanRunStarted{PlanRun: run})
-
-		o, err := body(jc, out)
-
-		run.EndedAt = time.Now()
-		run.State, run.Error, run.ExitCode = o.State, o.Error, o.ExitCode
-		run.OutputTail = tail.String()
-		jc.SetResult(run)
-		m.report(entity.PlanRunFinished{PlanRun: run})
+		r := m.startRun(reg, jc, header)
+		o, err := body(jc, r.out())
+		m.endRun(r, o)
 		if err != nil {
-			return errors.Wrapf(err, "plan %s run %s", plan.ID, run.ID)
+			return errors.Wrapf(err, "plan %s run %s", reg.plan.ID, r.ID)
 		}
 		return nil
 	}
 }
 
-// newRun begins the PlanRun of this execution. A firing of Trigger gives its source to all its
-// runs and the ID Trigger returned to the first, as retries and requeues are runs of their own.
-func newRun(jc job.Context, plan *entity.Plan) entity.PlanRun {
-	run := entity.PlanRun{
-		ID:        uuid.NewString(),
-		PlanID:    plan.ID,
-		Source:    entity.PlanRunSchedule,
-		State:     entity.PlanRunRunning,
-		StartedAt: time.Now(),
+// startRun begins a run of reg's plan. A firing of Trigger gives its source to all its runs and
+// the ID Trigger returned to the first, as retries and requeues are runs of their own.
+func (m *manager) startRun(reg *registration, jc job.Context, header string) *run {
+	r := &run{
+		PlanRun: entity.PlanRun{
+			ID:        uuid.NewString(),
+			PlanID:    reg.plan.ID,
+			Source:    entity.PlanRunSchedule,
+			State:     entity.PlanRunRunning,
+			StartedAt: time.Now(),
+		},
+		reg:  reg,
+		tail: ioutil.NewTailWriter(m.tailBytes),
 	}
 	if triggered, ok := jc.Params().(*triggeredRun); ok {
-		run.Source = triggered.source
+		r.Source = triggered.source
 		if triggered.claimed.CompareAndSwap(false, true) {
-			run.ID = triggered.id
+			r.ID = triggered.id
 		}
 	}
-	return run
+	r.log = m.openRunLog(r, header)
+	reg.record(r.PlanRun)
+	m.report(entity.PlanRunStarted{PlanRun: r.PlanRun})
+	return r
 }
 
-// createRunLog opens the run's log file and records its path; a run without one still runs.
-func (m *manager) createRunLog(run *entity.PlanRun, header string) *os.File {
+// out is where the run's output goes: its log file, if it has one, and its tail.
+func (r *run) out() io.Writer {
+	if r.log == nil {
+		return r.tail
+	}
+	return io.MultiWriter(r.log, r.tail)
+}
+
+func (m *manager) endRun(r *run, o plans.Outcome) {
+	if r.log != nil {
+		_ = r.log.Close()
+	}
+	r.EndedAt = time.Now()
+	r.State, r.Error, r.ExitCode = o.State, o.Error, o.ExitCode
+	r.OutputTail = r.tail.String()
+	r.reg.record(r.PlanRun)
+	m.report(entity.PlanRunFinished{PlanRun: r.PlanRun})
+}
+
+// openRunLog creates the run's log file and records its path; a run without one still runs.
+func (m *manager) openRunLog(r *run, header string) *os.File {
 	if m.logDir == "" {
 		return nil
 	}
-	path := filepath.Join(m.logDir, run.PlanID, run.StartedAt.Format("20060102-150405")+"-"+run.ID[:8]+".log")
+	path := filepath.Join(m.logDir, r.PlanID, r.StartedAt.Format("20060102-150405")+"-"+r.ID[:8]+".log")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		m.log.Warnf("plan %s run %s: cannot create log dir: %v", run.PlanID, run.ID, err)
+		m.log.Warnf("plan %s run %s: cannot create log dir: %v", r.PlanID, r.ID, err)
 		return nil
 	}
 	f, err := os.Create(path)
 	if err != nil {
-		m.log.Warnf("plan %s run %s: cannot create log file: %v", run.PlanID, run.ID, err)
+		m.log.Warnf("plan %s run %s: cannot create log file: %v", r.PlanID, r.ID, err)
 		return nil
 	}
-	fmt.Fprintf(f, "# plan %s run %s (%s) at %s\n# %s\n\n", run.PlanID, run.ID, run.Source,
-		run.StartedAt.Format(time.RFC3339), header)
-	run.LogPath = path
+	fmt.Fprintf(f, "# plan %s run %s (%s) at %s\n# %s\n\n", r.PlanID, r.ID, r.Source,
+		r.StartedAt.Format(time.RFC3339), header)
+	r.LogPath = path
 	return f
 }
 

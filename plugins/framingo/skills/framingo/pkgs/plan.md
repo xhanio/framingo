@@ -23,7 +23,7 @@ type Plan interface {
     LastRun(id string) (*entity.PlanRun, error)
     // Opens a run's log by its PlanRun.LogPath; see "Run logs".
     OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error)
-    // The result of a plan's own Job.
+    // The result of a plan's own Job; nil for a plan of a kind, whose runs are LastRun's.
     Result(id string) (any, error)
     Stats(opts entity.PlanStatsOptions) ([]*entity.PlanStats, error)
 }

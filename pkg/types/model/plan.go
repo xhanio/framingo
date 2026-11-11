@@ -27,7 +27,8 @@ type Plan interface {
 	// being written. With tailBytes > 0 it reads from that many bytes before the end. A path
 	// outside the log dir is Forbidden; no log dir or no such file is NotFound.
 	OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error)
-	// Result is the result of a plan's own job.
+	// Result is the result of a plan's own job; a plan of a kind has none, its runs being
+	// LastRun's.
 	Result(id string) (any, error)
 	Stats(opts entity.PlanStatsOptions) ([]*entity.PlanStats, error)
 }

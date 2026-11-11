@@ -440,37 +440,15 @@ func TestEveryRerunIsANewRun(t *testing.T) {
 	}
 }
 
-func TestResultFollowsTheLatestRun(t *testing.T) {
+func TestResultOfACommandPlanIsNil(t *testing.T) {
 	m, sender := startedPlanner(t)
-	release := filepath.Join(t.TempDir(), "release")
-	script := "while [ ! -e " + release + " ]; do sleep 0.01; done"
-	if err := m.Add(commandPlan("latest", &entity.Task{}, "sh", "-c", script)); err != nil {
+	if err := m.Add(commandPlan("ran", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	if res, err := m.Result("latest"); err != nil || res != nil {
-		t.Fatalf("Result before any run = %v, %v", res, err)
-	}
-	runID := triggered(t, m, "latest")
-	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
-	res, err := m.Result("latest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	run, ok := res.(entity.PlanRun)
-	if !ok || run.ID != runID || run.State != entity.PlanRunRunning {
-		t.Fatalf("Result during the run = %+v", res)
-	}
-	if err := os.WriteFile(release, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	triggered(t, m, "ran")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
-	res, err = m.Result("latest")
-	if err != nil {
-		t.Fatal(err)
-	}
-	run, ok = res.(entity.PlanRun)
-	if !ok || run.ID != runID || run.State != entity.PlanRunSucceeded {
-		t.Fatalf("Result after the run = %+v", res)
+	if res, err := m.Result("ran"); err != nil || res != nil {
+		t.Fatalf("Result = %+v, %v: a command plan's job keeps no result, its runs are LastRun's", res, err)
 	}
 }
 
@@ -738,9 +716,8 @@ func TestCommandPlanWithoutASenderStillRuns(t *testing.T) {
 	}
 	runID := triggered(t, m, "silent")
 	eventually(t, "the run to finish", func() bool {
-		res, _ := m.Result("silent")
-		run, ok := res.(entity.PlanRun)
-		return ok && run.ID == runID && run.State == entity.PlanRunSucceeded
+		run, _ := m.LastRun("silent")
+		return run != nil && run.ID == runID && run.State == entity.PlanRunSucceeded
 	})
 }
 
