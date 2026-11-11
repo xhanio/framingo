@@ -2,111 +2,142 @@ package task
 
 import (
 	"context"
-	"fmt"
-	"math/rand"
-	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/xhanio/errors"
-	"github.com/xhanio/framingo/pkg/structs/staque"
+
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
-	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/printutil"
-	"github.com/xhanio/framingo/pkg/utils/strutil"
 )
 
-func newTestJob(id string, d time.Duration, fail bool) job.Job {
-	return job.New(id, func(tc job.Context) error {
-		for {
-			select {
-			case <-tc.Context().Done():
-				if tc.Context().Err() == context.DeadlineExceeded {
-					return errors.DeadlineExceeded.Newf("job timed out")
-				} else {
-					return errors.Cancaled.Newf("job canceled")
-				}
-			case <-time.After(d):
-				if fail {
-					return errors.Newf("job %s failed", tc.ID())
-				}
-				return nil
-			}
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting: %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func startedManager(t *testing.T, opts ...Option) *manager {
+	t.Helper()
+	m := newManager(append([]Option{MaxConcurrency(3)}, opts...)...)
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Stop(context.Background()) })
+	return m
+}
+
+func canceled() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+// a schedule that never fires during a test
+const neverFires = "0 0 1 1 *"
+
+// a cooldown that outlives every test unless something ends it
+const longCooldown = time.Hour
+
+func countingJob(id string, runs *atomic.Int32) job.Job {
+	return job.New(id, func(job.Context) error {
+		runs.Add(1)
+		return nil
+	})
+}
+
+// failingJob fails its first failures runs and then succeeds, counting every run.
+func failingJob(id string, failures int32, runs *atomic.Int32) job.Job {
+	return job.New(id, func(job.Context) error {
+		if runs.Add(1) <= failures {
+			return errors.Newf("run failed")
+		}
+		return nil
+	})
+}
+
+func alwaysFailingJob(id string, runs *atomic.Int32) job.Job {
+	return failingJob(id, 1<<30, runs)
+}
+
+// blockedJob counts its runs and holds each one until release closes or it is canceled.
+func blockedJob(id string, runs *atomic.Int32, release <-chan struct{}) job.Job {
+	return job.New(id, func(jc job.Context) error {
+		runs.Add(1)
+		select {
+		case <-release:
+			return nil
+		case <-jc.Context().Done():
+			return jc.Context().Err()
 		}
 	})
 }
 
-func TestMaxConcurrency(t *testing.T) {
-	tasks := make([]*entity.Task, 20)
-	for i := range 20 {
-		tasks[i] = &entity.Task{
-			Job:      newTestJob(fmt.Sprintf("#%d", i), 2*time.Second, false),
-			Priority: i,
-		}
-	}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	r.Shuffle(20, func(i, j int) {
-		tasks[i], tasks[j] = tasks[j], tasks[i]
+// holdJob ignores its context: it ends when released, however it was asked to stop.
+func holdJob(id string, started chan<- struct{}, release <-chan struct{}) job.Job {
+	return job.New(id, func(job.Context) error {
+		close(started)
+		<-release
+		return nil
 	})
-	s := newManager(MaxConcurrency(3))
-	log.Default.Debugln("sequence:", strutil.Join(" ", tasks[:10]...))
-	_ = s.Add(tasks[:10]...)
-	_ = s.Start(context.Background())
-	time.Sleep(3 * time.Second)
-	log.Default.Debugln("sequence:", strutil.Join(" ", tasks[10:]...))
-	_ = s.Add(tasks[10:]...)
-	time.Sleep(3 * time.Second)
-	_ = s.Stop(context.Background())
 }
 
-func TestExclusivePlan(t *testing.T) {
-	tasks := make([]*entity.Task, 20)
-	for i := range 20 {
-		tasks[i] = &entity.Task{
-			Job:      newTestJob(fmt.Sprintf("#%d", i), 1*time.Second, false),
-			Priority: i,
+// stubborn ignores its cancel and ends only on the kill signal.
+func stubborn(t *testing.T, m *manager) (_ *entity.Task, killed <-chan struct{}) {
+	t.Helper()
+	started, kill, ended := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(ended) })
+	tk := &entity.Task{Job: job.New("stubborn", func(jc job.Context) error {
+		close(started)
+		select {
+		case <-jc.Signaled(job.SignalKill):
+			close(kill)
+		case <-ended:
 		}
-		if i%5 == 0 {
-			tasks[i].Exclusive = true
-		}
+		return nil
+	}), Manual: true}
+	if err := m.Add(tk); err != nil {
+		t.Fatal(err)
 	}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	r.Shuffle(20, func(i, j int) {
-		tasks[i], tasks[j] = tasks[j], tasks[i]
-	})
-	s := newManager(MaxConcurrency(3))
-	log.Default.Debugln("sequence:", strutil.Join(" ", tasks[:10]...))
-	_ = s.Add(tasks[:10]...)
-	_ = s.Start(context.Background())
-	time.Sleep(5 * time.Second)
-	log.Default.Debugln("sequence:", strutil.Join(" ", tasks[10:]...))
-	_ = s.Add(tasks[10:]...)
-	time.Sleep(5 * time.Second)
-	_ = s.Stop(context.Background())
-	time.Sleep(1 * time.Second)
+	if err := m.Trigger(tk.ID(), nil); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	return tk, kill
 }
 
-func TestPriorityQueue(t *testing.T) {
-	pq := staque.NewPriority(
-		staque.WithLessFunc(queueOrder),
-		staque.BlockIfEmpty[*registration](),
-	)
-	regs := make([]*registration, 20)
-	for i := range 20 {
-		regs[i] = &registration{
-			task:     &entity.Task{Job: newTestJob(fmt.Sprintf("#%d", i), 2*time.Second, false), Priority: i, Exclusive: i%5 == 0},
-			priority: i,
-		}
+// busy reports whether a task is queued, running or being requeued.
+func busy(m *manager, tk *entity.Task) bool {
+	m.el.RLock()
+	defer m.el.RUnlock()
+	_, running := m.running[tk]
+	reg := m.registered[tk.ID()]
+	return running || (reg != nil && (reg.queued || reg.cooldown != nil))
+}
+
+func requeueing(m *manager, tk *entity.Task) func() bool {
+	return func() bool {
+		st := m.Stats(tk.ID())
+		return st != nil && st.Requeueing
 	}
-	wake := &registration{}
-	pq.Push(wake)
-	pq.Push(regs...)
-	pq.Push(wake)
-	table := printutil.NewTable(os.Stdout)
-	for range 21 {
-		item := pq.MustPop()
-		table.Row(item.Key())
+}
+
+func registrationOf(m *manager, tk *entity.Task) *registration {
+	m.el.RLock()
+	defer m.el.RUnlock()
+	return m.registered[tk.ID()]
+}
+
+// forceStop stops with an ended context, which leaves the held execution behind.
+func forceStop(t *testing.T, m *manager) {
+	t.Helper()
+	if err := m.Stop(canceled()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("forced stop = %v, want the context's error for what it left", err)
 	}
-	table.Flush()
 }

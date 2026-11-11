@@ -5,9 +5,37 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/xhanio/framingo/pkg/structs/staque"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
+
+func TestQueueOrder(t *testing.T) {
+	pq := staque.NewPriority(staque.WithLessFunc(queueOrder))
+	queued := func(id string, priority int, seq uint64) *registration {
+		tk := &entity.Task{Job: job.New(id, func(job.Context) error { return nil })}
+		return &registration{task: tk, priority: priority, seq: seq}
+	}
+	pq.Push(
+		queued("later", 1, 3),
+		queued("b", 1, 2),
+		queued("urgent", 0, 4),
+		&registration{}, // a wake-up
+		queued("a", 1, 2),
+	)
+	var order []string
+	for {
+		reg, err := pq.Pop()
+		if err != nil {
+			break
+		}
+		order = append(order, reg.Key())
+	}
+	// a wake-up, then the more urgent, then the earlier queued, then by ID
+	if want := []string{"", "urgent", "a", "b", "later"}; !slices.Equal(order, want) {
+		t.Fatalf("order = %q, want %q", order, want)
+	}
+}
 
 func TestQueueTakesTheMoreUrgentThenTheEarlierQueued(t *testing.T) {
 	var (
@@ -22,16 +50,16 @@ func TestQueueTakesTheMoreUrgentThenTheEarlierQueued(t *testing.T) {
 			return nil
 		})
 	}
-	s := startedManager(t, MaxConcurrency(1))
+	m := startedManager(t, MaxConcurrency(1))
 	// ran has run before, so its job is no longer new; older is created before newer
 	ran := &entity.Task{Job: recorded("ran"), Manual: true, Priority: 1}
 	older := &entity.Task{Job: recorded("older"), Manual: true, Priority: 3}
 	newer := &entity.Task{Job: recorded("newer"), Manual: true, Priority: 3}
 	fresh := &entity.Task{Job: recorded("fresh"), Manual: true, Priority: 2}
-	if err := s.Add(ran, older, newer, fresh); err != nil {
+	if err := m.Add(ran, older, newer, fresh); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Trigger(ran.ID(), nil); err != nil {
+	if err := m.Trigger(ran.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "ran to run once", func() bool { return ran.Job.IsState(job.StateSucceeded) })
@@ -39,18 +67,18 @@ func TestQueueTakesTheMoreUrgentThenTheEarlierQueued(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	blocker := &entity.Task{Job: holdJob("blocker", started, release), Manual: true}
 	held := &entity.Task{Job: recorded("held"), Manual: true}
-	if err := s.Add(blocker, held); err != nil {
+	if err := m.Add(blocker, held); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Trigger(blocker.ID(), nil); err != nil {
+	if err := m.Trigger(blocker.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
 	<-started
-	if err := s.Trigger(held.ID(), nil); err != nil {
+	if err := m.Trigger(held.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, tk := range []*entity.Task{fresh, newer, older, ran} {
-		if err := s.Trigger(tk.ID(), nil); err != nil {
+		if err := m.Trigger(tk.ID(), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
