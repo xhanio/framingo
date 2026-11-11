@@ -57,19 +57,18 @@ func (m *manager) Remove(ctx context.Context, tasks ...*entity.Task) error {
 			continue
 		}
 		m.el.Lock()
-		if reg, ok := m.registered[key]; ok && reg.task == t {
+		// a task is its job: a copy is the same task, another task under its ID is not
+		if reg, ok := m.registered[key]; ok && reg.task.Job == t.Job {
 			delete(m.registered, key)
 			m.drop(reg)
 		}
 		// admission happens under el too, so an execution is either here or never starts
-		e, running := m.running[t]
-		if running {
-			going = append(going, e)
-		}
+		e, running := m.running[t.Job]
 		m.el.Unlock()
-		t.Job.Cancel()
 		if running {
+			t.Job.Cancel()
 			e.cancel()
+			going = append(going, e)
 		}
 	}
 	for _, e := range going {
@@ -123,7 +122,7 @@ func (m *manager) Cancel(id string) error {
 		return errors.NotFound.Newf("task %s not found", id)
 	}
 	task := reg.task
-	e, running := m.running[task]
+	e, running := m.running[task.Job]
 	if !running && !reg.queued && reg.cooldown == nil {
 		m.el.Unlock()
 		return errors.Conflict.Newf("task %s is not running", id)
@@ -163,7 +162,7 @@ func (m *manager) fire(reg *registration, params any) error {
 	if m.registered[key] != reg {
 		return errors.NotFound.Newf("task %s not found", key)
 	}
-	if _, running := m.running[reg.task]; running || reg.queued || reg.cooldown != nil {
+	if _, running := m.running[reg.task.Job]; running || reg.queued || reg.cooldown != nil {
 		return errors.Conflict.Newf("task %s is already queued, running or cooling down", key)
 	}
 	reg.params = params

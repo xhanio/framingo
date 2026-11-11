@@ -315,6 +315,79 @@ func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 	})
 }
 
+func TestRemoveOfACopyRemovesTheTask(t *testing.T) {
+	m := startedManager(t)
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	free := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(free)
+	tk := &entity.Task{Job: holdJob("copied", started, release), Manual: true}
+	if err := m.Add(tk); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Trigger(tk.ID(), nil); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	copied := *tk
+	removed := removeInBackground(m, context.Background(), &copied)
+	assertStillRemoving(t, removed)
+	free()
+	assertRemoved(t, removed)
+	if st := m.Stats(tk.ID()); st != nil {
+		t.Fatalf("a task removed through a copy still has stats: %+v", st)
+	}
+}
+
+func TestACopyAddedAfterAForcedRemoveWaitsForItsJob(t *testing.T) {
+	m := startedManager(t)
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	free := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(free)
+	var runs atomic.Int32
+	tk := &entity.Task{Job: job.New("again", func(job.Context) error {
+		if runs.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		return nil
+	})}
+	if err := m.Add(tk); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	if err := m.Remove(canceled(), tk); !errors.Is(err, context.Canceled) {
+		t.Fatalf("forced Remove = %v, want the context's error for what it left", err)
+	}
+	copied := *tk
+	if err := m.Add(&copied); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := runs.Load(); n != 1 {
+		t.Fatalf("runs = %d while its job's last execution goes on, want 1", n)
+	}
+	free()
+	eventually(t, "the copy to run once its job is free", func() bool { return runs.Load() == 2 })
+}
+
+func TestRemoveOfATaskNeverAddedLeavesItsJobAlone(t *testing.T) {
+	m := startedManager(t)
+	release := make(chan struct{})
+	defer close(release)
+	var runs atomic.Int32
+	tk := &entity.Task{Job: blockedJob("elsewhere", &runs, release)}
+	tk.Job.Run(context.Background(), nil) // running outside the manager
+	eventually(t, "the job to run", func() bool { return runs.Load() == 1 })
+	if err := m.Remove(context.Background(), tk); err != nil {
+		t.Fatal(err)
+	}
+	if st := tk.Job.State(); st != job.StateRunning {
+		t.Fatalf("job state = %s after a Remove of a task never added, want %s", st, job.StateRunning)
+	}
+}
+
 // writes its pid to "$0" once it ignores SIGTERM, and so does the child it waits for
 const stubbornCommand = `trap "" TERM; sh -c 'trap "" TERM; echo $$ > "$0"; exec sleep 60' "$0" & wait`
 

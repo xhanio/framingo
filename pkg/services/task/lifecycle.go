@@ -77,7 +77,7 @@ func (m *manager) admit(ctx context.Context, reg *registration) func() {
 		m.log.Debugf("task %s skipped: removed or canceled", key)
 		return nil
 	}
-	if e, busy := m.running[task]; busy {
+	if e, busy := m.running[task.Job]; busy {
 		// from before a Remove or a forced stop: a job runs once at a time
 		e.next = reg
 		m.log.Debugf("task %s waits for its last execution to end", key)
@@ -99,7 +99,7 @@ func (m *manager) admit(ctx context.Context, reg *registration) func() {
 	}
 	execCtx, cancel := context.WithCancel(parent)
 	e := &execution{reg: reg, cancel: cancel, done: make(chan struct{})}
-	m.running[task] = e
+	m.running[task.Job] = e
 	return func() {
 		defer cancel()
 		err := reg.exec.Start(execCtx, params)

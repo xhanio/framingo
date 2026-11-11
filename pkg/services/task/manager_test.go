@@ -116,7 +116,7 @@ func stubborn(t *testing.T, m *manager) (_ *entity.Task, killed <-chan struct{})
 func busy(m *manager, tk *entity.Task) bool {
 	m.el.RLock()
 	defer m.el.RUnlock()
-	_, running := m.running[tk]
+	_, running := m.running[tk.Job]
 	reg := m.registered[tk.ID()]
 	return running || (reg != nil && (reg.queued || reg.cooldown != nil))
 }

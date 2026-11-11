@@ -15,7 +15,7 @@ func (m *manager) settle(ctx, execCtx context.Context, e *execution, err error) 
 	key := task.ID()
 	m.el.Lock()
 	defer m.el.Unlock()
-	delete(m.running, task)
+	delete(m.running, task.Job)
 	close(e.done)
 	if next := e.next; next != nil && next.queued && m.registered[key] == next {
 		m.pq.Push(next)
