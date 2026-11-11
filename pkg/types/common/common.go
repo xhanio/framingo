@@ -9,6 +9,6 @@ type Unique interface {
 }
 
 type Weighted interface {
-	GetPriority() int
+	Priority() int
 	SetPriority(priority int)
 }

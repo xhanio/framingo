@@ -10,7 +10,7 @@ type PriorityItem interface {
 }
 
 func DefaultLessFunc[T PriorityItem](a, b T) bool {
-	priorityDiff := a.GetPriority() - b.GetPriority()
+	priorityDiff := a.Priority() - b.Priority()
 	if priorityDiff != 0 {
 		return priorityDiff < 0
 	}

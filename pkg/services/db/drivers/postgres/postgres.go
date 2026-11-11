@@ -38,7 +38,7 @@ func migration(sqlDB *sql.DB) (migratedb.Driver, error) {
 }
 
 func dsn(s db.Source) (string, error) {
-	params := s.GetParams()
+	params := s.CloneParams()
 	if _, ok := params["sslmode"]; !ok {
 		if s.Secure {
 			params["sslmode"] = "require"

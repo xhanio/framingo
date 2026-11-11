@@ -46,7 +46,7 @@ func dsn(s db.Source) (string, error) {
 	if value == "" {
 		value = ":memory:"
 	}
-	return paramutil.Query.Apply(value, s.GetParams()), nil
+	return paramutil.Query.Apply(value, s.CloneParams()), nil
 }
 
 func cleanup(gdb *gorm.DB, _ string, schema bool) error {

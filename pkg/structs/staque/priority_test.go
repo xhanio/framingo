@@ -15,7 +15,7 @@ func (t *testPriorityItem) Key() string {
 	return t.key
 }
 
-func (t *testPriorityItem) GetPriority() int {
+func (t *testPriorityItem) Priority() int {
 	return t.priority
 }
 
@@ -38,7 +38,7 @@ func TestNewPriority(t *testing.T) {
 
 func TestNewPriorityWithOptions(t *testing.T) {
 	customLessFunc := func(a, b *testPriorityItem) bool {
-		return a.GetPriority() > b.GetPriority() // Reverse order
+		return a.Priority() > b.Priority() // Reverse order
 	}
 
 	pq := NewPriority(WithLessFunc(customLessFunc))
@@ -56,8 +56,8 @@ func TestNewPriorityWithOptions(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	if popped.GetPriority() != 5 { // Should pop lower priority first due to custom less func
-		t.Errorf("Expected priority 5, got %d", popped.GetPriority())
+	if popped.Priority() != 5 { // Should pop lower priority first due to custom less func
+		t.Errorf("Expected priority 5, got %d", popped.Priority())
 	}
 }
 
@@ -84,8 +84,8 @@ func TestPriorityQueuePushAndPop(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	if item.GetPriority() != 10 {
-		t.Errorf("Expected highest priority 10, got %d", item.GetPriority())
+	if item.Priority() != 10 {
+		t.Errorf("Expected highest priority 10, got %d", item.Priority())
 	}
 	if item.Key() != "high" {
 		t.Errorf("Expected key 'high', got '%s'", item.Key())
@@ -123,8 +123,8 @@ func TestPriorityQueueUpdate(t *testing.T) {
 	if len(items) != 1 {
 		t.Errorf("Expected 1 item, got %d", len(items))
 	}
-	if items[0].GetPriority() != 15 {
-		t.Errorf("Expected updated priority 15, got %d", items[0].GetPriority())
+	if items[0].Priority() != 15 {
+		t.Errorf("Expected updated priority 15, got %d", items[0].Priority())
 	}
 }
 
@@ -276,7 +276,7 @@ func TestWithLessFuncOption(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	if popped.GetPriority() != 10 { // Should still use default (higher priority first)
-		t.Errorf("Expected priority 10, got %d", popped.GetPriority())
+	if popped.Priority() != 10 { // Should still use default (higher priority first)
+		t.Errorf("Expected priority 10, got %d", popped.Priority())
 	}
 }

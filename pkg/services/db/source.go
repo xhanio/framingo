@@ -23,9 +23,9 @@ type Source struct {
 	Params   map[string]string
 }
 
-// GetParams returns a defensive copy of s.Params so drivers can mutate it
+// CloneParams returns a copy of s.Params, never nil, so drivers can mutate it
 // while building a DSN without affecting the caller's Source.
-func (s *Source) GetParams() map[string]string {
+func (s *Source) CloneParams() map[string]string {
 	params := make(map[string]string)
 	maps.Copy(params, s.Params)
 	return params

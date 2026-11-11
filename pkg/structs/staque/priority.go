@@ -68,7 +68,7 @@ func (p *priority[T]) Update(item T) error {
 	if !ok {
 		return errors.NotFound.Newf("failed to update item: key %s not found", item.Key())
 	}
-	i.SetPriority(item.GetPriority())
+	i.SetPriority(item.Priority())
 	p.tree.ReplaceOrInsert(i)
 	return nil
 }

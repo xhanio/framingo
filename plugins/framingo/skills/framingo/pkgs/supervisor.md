@@ -70,7 +70,7 @@ services and their satellites lean on:
 ```go
 type Named interface { Name() string }                    // embedded in Service
 type Unique interface { Key() string }                    // stable dedup/ordering key
-type Weighted interface { GetPriority() int; SetPriority(priority int) }
+type Weighted interface { Priority() int; SetPriority(priority int) }
 ```
 
 - `Named` is the currency of identity everywhere: `log.Logger.By(caller

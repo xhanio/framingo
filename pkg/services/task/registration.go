@@ -43,7 +43,7 @@ func (r *registration) Key() string {
 	return r.task.ID()
 }
 
-func (r *registration) GetPriority() int {
+func (r *registration) Priority() int {
 	return r.priority
 }
 
