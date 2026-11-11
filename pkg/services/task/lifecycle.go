@@ -35,9 +35,12 @@ func (m *manager) loop(ctx context.Context, slots *semaphore.Weighted) {
 		}
 		held := int64(1)
 		if reg.exclusive() {
-			// every slot, so that it runs alone
-			if slots.Acquire(ctx, int64(m.concurrent)-1) != nil {
-				return
+			if !m.acquireRest(ctx, slots, reg) {
+				slots.Release(held)
+				if ctx.Err() != nil {
+					return
+				}
+				continue
 			}
 			held = int64(m.concurrent)
 		}
@@ -51,6 +54,27 @@ func (m *manager) loop(ctx context.Context, slots *semaphore.Weighted) {
 			run()
 		})
 	}
+}
+
+// acquireRest takes the rest of the slots for an exclusive reg, so that it runs alone. It gives
+// up if ctx ends or reg stops waiting meanwhile, canceled or removed.
+func (m *manager) acquireRest(ctx context.Context, slots *semaphore.Weighted, reg *registration) bool {
+	m.el.RLock()
+	queued, unqueued := reg.queued, reg.unqueued
+	m.el.RUnlock()
+	if !queued {
+		return false
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-unqueued:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return slots.Acquire(ctx, int64(m.concurrent)-1) == nil
 }
 
 // pop waits for a registration in the queue, and returns nil once ctx ends.

@@ -81,5 +81,6 @@ func (m *manager) stopWaiting(reg *registration) {
 	if reg.queued {
 		m.pq.Remove(reg)
 		reg.queued = false
+		close(reg.unqueued)
 	}
 }

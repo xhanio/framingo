@@ -126,6 +126,46 @@ func TestAnExclusiveTaskGivesBackEverySlot(t *testing.T) {
 	}
 }
 
+func TestAnExclusiveTaskDroppedWhileItWaitsHoldsUpNothing(t *testing.T) {
+	cases := []struct {
+		name string
+		drop func(*manager, *entity.Task) error
+	}{
+		{name: "canceled", drop: func(m *manager, tk *entity.Task) error { return m.Cancel(tk.ID()) }},
+		{name: "removed", drop: func(m *manager, tk *entity.Task) error { return m.Remove(context.Background(), tk) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := startedManager(t, MaxConcurrency(2))
+			started, release := make(chan struct{}), make(chan struct{})
+			t.Cleanup(func() { close(release) })
+			if err := m.Add(&entity.Task{Job: holdJob("long", started, release)}); err != nil {
+				t.Fatal(err)
+			}
+			<-started
+			var exclusiveRuns, runs atomic.Int32
+			exclusive := &entity.Task{Job: countingJob("exclusive", &exclusiveRuns), Manual: true, Exclusive: true}
+			if err := m.Add(exclusive); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.Trigger(exclusive.ID(), nil); err != nil {
+				t.Fatal(err)
+			}
+			eventually(t, "the exclusive task to wait for the slots", m.pq.IsEmpty)
+			if err := tc.drop(m, exclusive); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.Add(&entity.Task{Job: countingJob("next", &runs)}); err != nil {
+				t.Fatal(err)
+			}
+			eventually(t, "the next task to run beside the long one", func() bool { return runs.Load() == 1 })
+			if n := exclusiveRuns.Load(); n != 0 {
+				t.Fatalf("the dropped exclusive task ran %d times", n)
+			}
+		})
+	}
+}
+
 func TestQuickTasksDoNotUnbalanceTheQueue(t *testing.T) {
 	const n = 3000
 	var done atomic.Int32

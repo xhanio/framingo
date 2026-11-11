@@ -11,34 +11,44 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/job/executor"
 )
 
+// Add registers all the tasks or, if one of them cannot be, none.
 func (m *manager) Add(tasks ...*entity.Task) error {
 	for _, t := range tasks {
-		if t.ID() == "" {
-			continue
+		if !t.IsValid() {
+			return errors.InvalidArgument.Newf("a task needs a job")
 		}
-		if err := m.add(t); err != nil {
+		if t.Manual && t.Schedule != "" {
+			return errors.InvalidArgument.Newf("task %s cannot be both manual and scheduled", t.ID())
+		}
+	}
+	m.el.Lock()
+	defer m.el.Unlock()
+	added := make([]*registration, 0, len(tasks))
+	for _, t := range tasks {
+		reg, err := m.add(t)
+		if err != nil {
+			for _, reg := range added {
+				delete(m.registered, reg.task.ID())
+				m.drop(reg)
+			}
 			return err
 		}
+		added = append(added, reg)
 	}
 	return nil
 }
 
-func (m *manager) add(t *entity.Task) error {
+// The caller holds el, so no Remove comes between a task and its schedule.
+func (m *manager) add(t *entity.Task) (*registration, error) {
 	key := t.ID()
-	if t.Manual && t.Schedule != "" {
-		return errors.InvalidArgument.Newf("task %s cannot be both manual and scheduled", key)
-	}
-	m.el.Lock()
-	defer m.el.Unlock()
 	if _, ok := m.registered[key]; ok {
-		return errors.Conflict.Newf("task %s already added", key)
+		return nil, errors.Conflict.Newf("task %s already added", key)
 	}
 	reg := &registration{task: t, exec: newExecutor(t), priority: t.Priority}
 	if t.Schedule != "" {
-		// under el, so no Remove comes between the task and its schedule
 		id, err := m.cm.AddFunc(t.Schedule, func() { m.tick(reg) })
 		if err != nil {
-			return errors.Wrap(err)
+			return nil, errors.Wrap(err)
 		}
 		reg.cron = id
 	}
@@ -46,7 +56,7 @@ func (m *manager) add(t *entity.Task) error {
 	if t.IsOneShot() {
 		m.enqueue(reg)
 	}
-	return nil
+	return reg, nil
 }
 
 func (m *manager) Remove(ctx context.Context, tasks ...*entity.Task) error {
@@ -176,6 +186,7 @@ func (m *manager) enqueue(reg *registration) {
 	m.arrivals++
 	reg.seq = m.arrivals
 	reg.queued = true
+	reg.unqueued = make(chan struct{})
 	m.pq.Push(reg)
 }
 

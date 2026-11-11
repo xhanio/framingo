@@ -9,6 +9,8 @@ import (
 
 type Task interface {
 	common.Service
+	// Add registers all the tasks or, if one of them cannot be, none: a task without a Job
+	// is an InvalidArgument, an ID already added a Conflict.
 	Add(tasks ...*entity.Task) error
 	// Remove forgets the tasks and ends what they are doing, then waits for their executions
 	// until ctx ends; nothing of them starts after Remove. What still runs once ctx ends is

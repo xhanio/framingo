@@ -47,6 +47,60 @@ func TestAddRejectsAManualTaskWithASchedule(t *testing.T) {
 	}
 }
 
+func TestAddRejectsATaskWithoutAJob(t *testing.T) {
+	m := startedManager(t)
+	for _, tk := range []*entity.Task{nil, {Schedule: neverFires}} {
+		if err := m.Add(tk); !errors.Is(err, errors.InvalidArgument) {
+			t.Fatalf("Add(%+v) = %v, want InvalidArgument", tk, err)
+		}
+	}
+}
+
+func TestAddOfSeveralIsAllOrNothing(t *testing.T) {
+	cases := []struct {
+		name  string
+		third func(taken *entity.Task) *entity.Task
+		want  error
+	}{
+		{name: "an ID taken already", third: func(taken *entity.Task) *entity.Task { return taken }, want: errors.Conflict},
+		{name: "an ID taken in the same Add", third: func(*entity.Task) *entity.Task {
+			return &entity.Task{Job: job.New("first", func(job.Context) error { return nil }), Manual: true}
+		}, want: errors.Conflict},
+		{name: "a task without a job", third: func(*entity.Task) *entity.Task { return &entity.Task{Manual: true} }, want: errors.InvalidArgument},
+		{name: "a bad schedule", third: func(*entity.Task) *entity.Task {
+			return &entity.Task{Job: job.New("bad", func(job.Context) error { return nil }), Schedule: "not a schedule"}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := startedManager(t)
+			taken := &entity.Task{Job: job.New("taken", func(job.Context) error { return nil }), Manual: true}
+			if err := m.Add(taken); err != nil {
+				t.Fatal(err)
+			}
+			var runs atomic.Int32
+			first := &entity.Task{Job: countingJob("first", &runs)} // one-shot: it would run at once
+			second := &entity.Task{Job: countingJob("second", &runs), Schedule: neverFires}
+			err := m.Add(first, second, tc.third(taken))
+			if err == nil || tc.want != nil && !errors.Is(err, tc.want) {
+				t.Fatalf("Add = %v, want %v", err, tc.want)
+			}
+			for _, tk := range []*entity.Task{first, second} {
+				if st := m.Stats(tk.ID()); st != nil {
+					t.Fatalf("%s stayed after the Add failed: %+v", tk.ID(), st)
+				}
+			}
+			if n := len(m.cm.Entries()); n != 0 {
+				t.Fatalf("%d schedules stayed after the Add failed", n)
+			}
+			time.Sleep(50 * time.Millisecond)
+			if n := runs.Load(); n != 0 {
+				t.Fatalf("runs = %d, want 0: a task of a failed Add ran", n)
+			}
+		})
+	}
+}
+
 func TestValidScheduleIsAcceptedByTheManager(t *testing.T) {
 	m := newManager()
 	for _, spec := range []string{"0 30 6 * * *", "*/5 * * * *", "@daily", "@every 10m"} {

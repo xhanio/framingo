@@ -22,15 +22,16 @@ type registration struct {
 	exec executor.Executor
 
 	// guarded by the manager's el
-	cron     cron.EntryID // its schedule's entry, 0 without one
-	queued   bool         // waiting to run: in the queue, popped, or held back by its task's last execution
-	params   any          // what Trigger gave this firing, in place of Task.Params
-	requeues uint         // times the current firing went back to the queue
-	cooldown *time.Timer  // set while a failed execution cools down
-	cooling  time.Time    // when the cooldown ends
-	unwatch  func() bool  // set while a rerun waits, which Task.Ctx ending stops
-	priority int          // the task's Priority, as the queue orders it
-	seq      uint64       // its latest arrival in the queue
+	cron     cron.EntryID  // its schedule's entry, 0 without one
+	queued   bool          // waiting to run: in the queue, popped, or held back by its task's last execution
+	unqueued chan struct{} // closed if it stops waiting without running
+	params   any           // what Trigger gave this firing, in place of Task.Params
+	requeues uint          // times the current firing went back to the queue
+	cooldown *time.Timer   // set while a failed execution cools down
+	cooling  time.Time     // when the cooldown ends
+	unwatch  func() bool   // set while a rerun waits, which Task.Ctx ending stops
+	priority int           // the task's Priority, as the queue orders it
+	seq      uint64        // its latest arrival in the queue
 }
 
 // requeueing: a failed execution waits to run again, cooling down or back in the queue.
