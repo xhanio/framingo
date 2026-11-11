@@ -193,7 +193,7 @@ Production-ready service implementations:
 
 - **[task](pkg/services/task/)** — Task manager (`model.TaskManager` + `Daemon`)
   - Runs `entity.Task`s by schedule, by `Trigger` or once, in priority then arrival order, within a concurrency limit
-  - Retries, requeues on failure, exclusive tasks; `task.Command` is a ready job function for running a command
+  - Retries, requeues on failure, exclusive tasks
 
 - **[planner](pkg/services/planner/)** — Task scheduling
   - Concurrent execution with priority, cancel, and result lookup
@@ -238,12 +238,13 @@ Interface contracts and shared types:
 | Package | Purpose |
 | --- | --- |
 | **[certutil](pkg/utils/certutil/)** | X.509 CA/server/client cert generation and TLS config |
-| **[cmdutil](pkg/utils/cmdutil/)** | Context-aware external command execution with I/O capture, plus `MergeArgs` for last-wins flag merging |
+| **[cmdutil](pkg/utils/cmdutil/)** | External command execution: `Start`/`Wait`/`Run`, `Terminate`/`Kill` of the process or its process group, output to writers or collected; plus `MergeArgs` for last-wins flag merging |
 | **[confutil](pkg/utils/confutil/)** | `Config` read-side over a Viper instance, propagated via `context.Context`; getters take format-string keys |
 | **[envutil](pkg/utils/envutil/)** | Env-var prefix derivation (`EnvPrefix`) and last-wins env merging (`Merge`) |
 | **[infra](pkg/utils/infra/)** | OS-level helpers (timezone detection and loading) |
 | **[ioutil](pkg/utils/ioutil/)** | File copy/compress/encrypt with progress tracking, plus `LimitWriter`/`LimitReader` for bounding untrusted streams (the reader fails past its limit rather than truncating) |
-| **[job](pkg/utils/job/)** | Job model with state, labels, results, statistics |
+| **[job](pkg/utils/job/)** | Job model with state, labels, results, statistics, and signals |
+| **[jobs](pkg/utils/jobs/)** | Predefined job functions: `jobs.Command` runs a command in its own process group, stopping it on the job's cancel and `SignalKill` |
 | **[job/executor](pkg/utils/job/executor/)** | Executor with retry, timeout, and stop control |
 | **[log](pkg/utils/log/)** | Zap-based logger with file rotation, custom levels, per-service scoping, and `NoStdout` to suppress the console core |
 | **[maputil](pkg/utils/maputil/)** | Map and set helpers (copy, diff, keys, membership) |

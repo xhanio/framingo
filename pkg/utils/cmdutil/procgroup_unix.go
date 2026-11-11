@@ -51,3 +51,11 @@ func signalProcessGroup(p *exec.Cmd, sig syscall.Signal) error {
 	}
 	return nil
 }
+
+// A process already gone is not an error.
+func terminateProcess(p *exec.Cmd) error {
+	if err := p.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return errors.Wrapf(err, "failed to terminate process %d", p.Process.Pid)
+	}
+	return nil
+}

@@ -21,6 +21,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
+	"github.com/xhanio/framingo/pkg/utils/jobs"
 )
 
 // each writes its pid once it ignores SIGTERM, so a test can signal it from then on
@@ -605,7 +606,7 @@ func TestDeleteUnderStress(t *testing.T) {
 				if tk.Schedule == "" {
 					tk.Manual = true
 				}
-				plan := &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Params: entity.CommandParams{Command: commands[r.Intn(len(commands))]}, Task: tk}
+				plan := &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: commands[r.Intn(len(commands))]}, Task: tk}
 				if err := m.Add(plan); err != nil {
 					t.Errorf("Add = %v", err)
 					return

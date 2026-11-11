@@ -24,3 +24,8 @@ func KillProcessGroup(p *exec.Cmd) error {
 	}
 	return nil
 }
+
+// terminateProcess has no gentler way than a kill without signals.
+func terminateProcess(p *exec.Cmd) error {
+	return KillProcessGroup(p)
+}

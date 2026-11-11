@@ -1,122 +1,126 @@
-package task
+package jobs
 
 import (
 	"context"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"time"
 
 	"github.com/xhanio/errors"
 
-	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/cmdutil"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
-// Command is a command task. job.New(id, cmd.Run) takes a copy, which fixes the definition.
+// DefaultCommandGrace is how long a stopped Command gets before a SIGKILL when its Grace is zero.
+const DefaultCommandGrace = 10 * time.Second
+
+// Command is a predefined job function that runs a command: job.New(id, cmd.Run) takes a copy,
+// which fixes the definition.
 type Command struct {
 	Argv  []string          `json:"argv"` // the executable first
 	Dir   string            `json:"dir,omitempty"`
 	Env   map[string]string `json:"env,omitempty"`   // on top of the process environment
-	Grace time.Duration     `json:"grace,omitempty"` // how long a stopped command gets before a SIGKILL; zero is entity.DefaultTaskGracePeriod
+	Grace time.Duration     `json:"grace,omitempty"` // how long a stopped command gets before a SIGKILL; zero is DefaultCommandGrace
 	Out   io.Writer         `json:"-"`               // nil discards the output
 }
 
-type CommandResult struct {
+// CommandError is how a Command ended when it did not end on its own with status 0. It unwraps
+// to what stopped the command, so errors.Is(err, context.Canceled) works.
+type CommandError struct {
 	ExitCode int   // -1 if the command never started or died of a signal
 	Stopped  error // context.Canceled or context.DeadlineExceeded if it was stopped, nil if it ended on its own
 	Killed   bool  // it was sent a SIGKILL: forced, or its grace period ran out
 	Err      error // why it could not start, or what waiting on it reported
 }
 
-func (r CommandResult) succeeded() bool {
-	return r.Stopped == nil && r.ExitCode == 0
-}
-
-// CommandError unwraps to what stopped the command, so errors.Is(err, context.Canceled) works.
-type CommandError struct {
-	Result CommandResult
-}
-
 func (e *CommandError) Error() string {
 	if err := e.Unwrap(); err != nil {
 		return err.Error()
 	}
-	return fmt.Sprintf("exit status %d", e.Result.ExitCode)
+	return fmt.Sprintf("exit status %d", e.ExitCode)
 }
 
 func (e *CommandError) Unwrap() error {
-	if e.Result.Stopped != nil {
-		return e.Result.Stopped
+	if e.Stopped != nil {
+		return e.Stopped
 	}
-	return e.Result.Err
+	return e.Err
+}
+
+func (e *CommandError) succeeded() bool {
+	return e.Stopped == nil && e.ExitCode == 0
 }
 
 // Run returns nil when the command ended on its own with status 0, a *CommandError otherwise.
 // A job function with bookkeeping of its own calls it on a copy with the Out it wants.
 func (c Command) Run(jc job.Context) error {
-	if res := c.execute(jc); !res.succeeded() {
-		return &CommandError{Result: res}
+	if end := c.execute(jc); !end.succeeded() {
+		return end
 	}
 	return nil
 }
 
-func (c Command) execute(jc job.Context) CommandResult {
+func (c Command) execute(jc job.Context) *CommandError {
 	ctx := jc.Context()
 	if len(c.Argv) == 0 {
-		return CommandResult{ExitCode: -1, Err: errors.InvalidArgument.Newf("no command to run")}
+		return &CommandError{ExitCode: -1, Err: errors.InvalidArgument.Newf("no command to run")}
 	}
 	if err := ctx.Err(); err != nil {
-		return CommandResult{ExitCode: -1, Stopped: err}
+		return &CommandError{ExitCode: -1, Stopped: err}
 	}
 	grace := c.Grace
 	if grace <= 0 {
-		grace = entity.DefaultTaskGracePeriod
+		grace = DefaultCommandGrace
 	}
-	p := exec.Command(c.Argv[0], c.Argv[1:]...)
-	p.Dir = c.Dir
-	p.Env = append(os.Environ(), commandEnv(c.Env)...)
-	p.Stdout, p.Stderr = c.Out, c.Out
-	p.WaitDelay = grace // so a child still holding the output does not hold up the end
-	cmdutil.SetProcessGroup(p)
+	out := c.Out
+	if out == nil {
+		out = io.Discard
+	}
+	p := cmdutil.New(c.Argv[0], c.Argv[1:],
+		cmdutil.WithDir(c.Dir),
+		cmdutil.WithEnv(commandEnv(c.Env)...),
+		cmdutil.WithStdout(out),
+		cmdutil.WithStderr(out),
+		cmdutil.WithWaitDelay(grace), // so a child still holding the output does not hold up the end
+		cmdutil.WithProcessGroup(),
+	)
 	if err := p.Start(); err != nil {
-		return CommandResult{ExitCode: -1, Err: errors.Wrapf(err, "failed to start %s", c.Argv[0])}
+		return &CommandError{ExitCode: -1, Err: err}
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- p.Wait() }()
 
-	var res CommandResult
+	end := &CommandError{}
 	stop, kill := ctx.Done(), jc.Signaled(job.SignalKill)
 	var graceUp <-chan time.Time
 	for {
 		select {
 		case err := <-exited:
-			if res.Stopped != nil {
+			if end.Stopped != nil {
 				// what ignored the SIGTERM goes too; a command that ended on its own keeps its children
-				_ = cmdutil.KillProcessGroup(p)
+				_ = p.Kill()
 			}
-			res.ExitCode, res.Err = p.ProcessState.ExitCode(), err
-			return res
+			end.ExitCode, end.Err = p.ExitCode(), err
+			return end
 		case <-stop:
 			stop = nil
-			res.Stopped = ctx.Err()
-			_ = cmdutil.TerminateProcessGroup(p)
+			end.Stopped = ctx.Err()
+			_ = p.Terminate()
 			timer := time.NewTimer(grace)
 			defer timer.Stop()
 			graceUp = timer.C
 		case <-graceUp:
 			graceUp = nil
-			res.Killed = true
-			_ = cmdutil.KillProcessGroup(p)
+			end.Killed = true
+			_ = p.Kill()
 		case <-kill:
 			kill = nil
-			if res.Stopped == nil {
-				res.Stopped = context.Canceled
+			if end.Stopped == nil {
+				end.Stopped = context.Canceled
 			}
-			res.Killed = true
-			_ = cmdutil.KillProcessGroup(p)
+			end.Killed = true
+			_ = p.Kill()
 		}
 	}
 }

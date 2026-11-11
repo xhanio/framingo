@@ -34,7 +34,7 @@ type Plan struct {
     Metadata    labels.Set // k8s.io label set
     Description string
     Kind        string     // a predefined kind, or empty for a Task with its own Job
-    Params      any        // what the kind takes: entity.CommandParams for a command plan
+    Params      any        // what the kind takes: a jobs.Command for a command plan
     Task        *Task      // entity.Task - what actually runs
 }
 
@@ -86,7 +86,7 @@ so the caller writes none:
 err := pl.Add(&entity.Plan{
     ID:     "backup",
     Kind:   entity.PlanKindCommand,
-    Params: entity.CommandParams{Command: []string{"/usr/bin/pg_dump", "mydb"}, Dir: "/tmp"},
+    Params: jobs.Command{Argv: []string{"/usr/bin/pg_dump", "mydb"}, Dir: "/tmp"},
     Task: &entity.Task{
         Schedule: "30 2 * * *",
         Timeout:  time.Hour,
@@ -96,17 +96,20 @@ runID, err := pl.Trigger("backup", entity.PlanRunManual) // run it now as well
 ```
 
 A plan of a kind takes what the kind needs in `Plan.Params` and leaves `Task.Params` empty:
-the planner passes each firing's run ID and source there. A command plan's job is a command
-task from `pkg/services/task` (see below) with the run's bookkeeping around it. The command runs in its own process group, so stopping it reaches
+the planner passes each firing's run ID and source there. A command plan's job is its
+`jobs.Command` (see below) with the run's bookkeeping around it. Leave the command's `Grace`
+and `Out` unset: `Grace` comes from `Task.GracePeriod`, and the planner sets `Out` for each
+run. The command runs in its own process group, so stopping it reaches
 its children, and one that ends on its own keeps any background children it left. Its
 output goes to `<log dir>/<plan ID>/<time>-<run>.log` and the tail of it into the run.
 
-## Command tasks and job signals
+## Commands and job signals
 
-A command does not need a planner to run on a task manager:
+`jobs.Command` is a predefined job function in `pkg/utils/jobs`, and a command does not need
+a planner to run on a task manager:
 
 ```go
-backup := task.Command{
+backup := jobs.Command{
     Argv:  []string{"/usr/bin/pg_dump", "mydb"},
     Grace: 30 * time.Second, // how long it gets to stop before a SIGKILL; 10s by default
     Out:   logWriter,        // nil discards the output
@@ -114,14 +117,14 @@ backup := task.Command{
 err := tm.Add(&entity.Task{Job: job.New("backup", backup.Run), Schedule: "30 2 * * *"})
 ```
 
-`Command` defines the task and its `Run` is the job function; `job.New` takes a copy, so
+`Command` defines what runs and its `Run` is the job function; `job.New` takes a copy, so
 the definition is fixed there. Run decides how the command stops: the job's context
 ending, by a cancel or a timeout, sends the process group a SIGTERM, then a SIGKILL once
 `Grace` is up; `job.SignalKill` sends the SIGKILL at once. Whatever a stopped command left
 in its group goes with it.
 
 Run returns nil when the command ended on its own with status 0, and otherwise a
-`*task.CommandError` whose `Result` says what actually happened: the exit code, whether it
+`*jobs.CommandError` that says what actually happened: the exit code, whether it
 was stopped and by what, whether it was killed. It unwraps to what stopped the command, so
 `errors.Is(err, context.Canceled)` works, and `errors.As` finds it through wrapping. A job
 function with bookkeeping of its own around the command calls `Run` on a copy with the
@@ -132,16 +135,16 @@ func(jc job.Context) error {
     c := cmd // a copy; cmd is the shared definition
     c.Out = openThisRunsLog()
     err := c.Run(jc)
-    var failed *task.CommandError
+    var failed *jobs.CommandError
     if errors.As(err, &failed) {
-        // failed.Result.ExitCode, failed.Result.Stopped ...
+        // failed.ExitCode, failed.Stopped, failed.Killed ...
     }
     return err
 }
 ```
 
-A command plan builds its `Command` when it is added, with `Grace` from the plan's
-`Task.GracePeriod`, which says when the command gets its SIGKILL. Neither the planner nor
+A command plan takes its `Command` from `Plan.Params` when it is added, with `Grace` from
+the plan's `Task.GracePeriod`, which says when the command gets its SIGKILL. Neither the planner nor
 the task manager waits by it: how long a stop waits is the caller's context.
 
 `job.SignalKill` is one of a job's signals. `Job.Signal(sig)` sends a signal to the

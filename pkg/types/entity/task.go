@@ -28,7 +28,7 @@ type Task struct {
 	RetryDelay    time.Duration `json:"retry_delay,omitempty"`
 	// GracePeriod is how long a canceled or timed out execution gets to end on its own, for
 	// whoever stops it to bound its wait with; the task manager itself never reads it. Zero
-	// means DefaultTaskGracePeriod. A task.Command has its own Grace for how it stops, which a
+	// means DefaultTaskGracePeriod. A jobs.Command has its own Grace for how it stops, which a
 	// command plan fills from this.
 	GracePeriod time.Duration `json:"grace_period,omitempty"`
 	// RequeueAttempts is how many times a failed execution, its retries used

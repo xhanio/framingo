@@ -33,12 +33,6 @@ func WithEnv(envs ...string) Option {
 	}
 }
 
-func Async() Option {
-	return func(c *cmd) {
-		c.async = true
-	}
-}
-
 // WithInput feeds the command, and calling it with no readers hands over the
 // parent's stdin. That substitution stays here rather than in setDefaults -
 // the exception to the rule - because it turns on the *call* having happened,

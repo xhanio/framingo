@@ -83,7 +83,7 @@ func TestWithProcessGroupStopsChildrenOnCancel(t *testing.T) {
 	defer cancel()
 	c := New("sh", []string{"-c", childScript, "sh", pidFile}, WithContext(ctx), WithProcessGroup())
 	done := make(chan error, 1)
-	go func() { done <- c.Start() }()
+	go func() { done <- c.Run() }()
 	child := readPid(t, pidFile)
 	cancel()
 	select {

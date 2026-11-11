@@ -1,7 +1,6 @@
 package cmdutil
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -15,14 +14,11 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/ioutil"
 )
 
-const ErrorCodeCmd string = "CMD_ERROR"
-
 type cmd struct {
 	ctx       context.Context
 	bin       string
 	args      []string
 	envs      []string
-	async     bool
 	dir       string
 	procGroup bool
 	cancel    func(*os.Process) error
@@ -31,7 +27,6 @@ type cmd struct {
 	stdout    io.Writer
 	stderr    io.Writer
 	in        io.Reader
-	out       io.Reader
 	outBuff   *bytes.Buffer
 	errBuff   *bytes.Buffer
 	p         *exec.Cmd
@@ -43,8 +38,10 @@ func New(bin string, args []string, opts ...Option) Command {
 
 func newCMD(bin string, args []string, opts ...Option) *cmd {
 	c := &cmd{
-		bin:  bin,
-		args: args,
+		bin:     bin,
+		args:    args,
+		outBuff: &bytes.Buffer{},
+		errBuff: &bytes.Buffer{},
 	}
 	c.applyOptions(opts...)
 	c.setDefaults()
@@ -67,35 +64,22 @@ func newCMD(bin string, args []string, opts ...Option) *cmd {
 	if c.waitDelay > 0 {
 		p.WaitDelay = c.waitDelay
 	}
-	if c.maxBuffer > 0 {
-		c.outBuff = bytes.NewBuffer(make([]byte, 0, c.maxBuffer))
-		c.errBuff = bytes.NewBuffer(make([]byte, 0, c.maxBuffer))
-	} else {
-		c.outBuff = bytes.NewBuffer([]byte{})
-		c.errBuff = bytes.NewBuffer([]byte{})
-	}
-	var outWriter io.Writer = c.outBuff
-	var errWriter io.Writer = c.errBuff
-	if c.maxBuffer > 0 {
-		outWriter = ioutil.NewLimitWriter(c.outBuff, c.maxBuffer)
-		errWriter = ioutil.NewLimitWriter(c.errBuff, c.maxBuffer)
-	}
-	if c.stdout != nil {
-		outWriter = io.MultiWriter(outWriter, c.stdout)
-	}
-	if c.stderr != nil {
-		errWriter = io.MultiWriter(errWriter, c.stderr)
-	}
-	if c.async {
-		pr, pw := io.Pipe()
-		c.out = pr
-		p.Stdout = pw
-	} else {
-		p.Stdout = outWriter
-	}
-	p.Stderr = errWriter
+	p.Stdout = c.stream(c.stdout, c.outBuff)
+	p.Stderr = c.stream(c.stderr, c.errBuff)
 	c.p = p
 	return c
+}
+
+// stream is where one of the command's outputs goes: its writer, or else its buffer.
+func (c *cmd) stream(w io.Writer, buff *bytes.Buffer) io.Writer {
+	switch {
+	case w != nil:
+		return w
+	case c.maxBuffer > 0:
+		return ioutil.NewLimitWriter(buff, c.maxBuffer)
+	default:
+		return buff
+	}
 }
 
 func (c *cmd) String() string {
@@ -110,26 +94,6 @@ func (c *cmd) Error() string {
 	return c.errBuff.String()
 }
 
-func (c *cmd) Print(fns ...PrintFunc) {
-	scanner := bufio.NewScanner(c.out)
-	scanner.Split(bufio.ScanLines)
-	go func() {
-		for {
-			if !scanner.Scan() {
-				return
-			}
-			line := scanner.Text()
-			for _, fn := range fns {
-				fn(line)
-			}
-			_, err := c.outBuff.WriteString(line)
-			if err != nil {
-				return
-			}
-		}
-	}()
-}
-
 func (c *cmd) ExitCode() int {
 	if c.p.ProcessState == nil {
 		return -1
@@ -141,38 +105,45 @@ func (c *cmd) ExitCode() int {
 }
 
 func (c *cmd) Start() error {
-	err := c.p.Start()
-	if err != nil {
-		return errors.New(
-			errors.WithMessage("(%s) %s", err, c.Error()),
-			errors.WithCode(ErrorCodeCmd, map[string]string{
-				"cmd":    c.String(),
-				"stage":  "start",
-				"stdout": c.Output(),
-				"stderr": c.Error(),
-			}),
-		)
+	if err := c.p.Start(); err != nil {
+		return errors.Wrapf(err, "failed to start %s", c)
 	}
-	if c.async {
+	return nil
+}
+
+func (c *cmd) Wait() error {
+	if c.p.ProcessState != nil {
 		return nil
+	}
+	return errors.Wrap(c.p.Wait())
+}
+
+func (c *cmd) Run() error {
+	if err := c.Start(); err != nil {
+		return err
 	}
 	return c.Wait()
 }
 
-func (c *cmd) Wait() error {
-	if c.p.ProcessState == nil {
-		err := c.p.Wait()
-		if err != nil {
-			return errors.New(
-				errors.WithMessage("(%s) %s", err, c.Error()),
-				errors.WithCode(ErrorCodeCmd, map[string]string{
-					"cmd":    c.String(),
-					"stage":  "wait",
-					"stdout": c.Output(),
-					"stderr": c.Error(),
-				}),
-			)
-		}
+func (c *cmd) Terminate() error {
+	if c.p.Process == nil {
+		return errors.Conflict.Newf("%s has not started", c)
+	}
+	if c.procGroup {
+		return TerminateProcessGroup(c.p)
+	}
+	return terminateProcess(c.p)
+}
+
+func (c *cmd) Kill() error {
+	if c.p.Process == nil {
+		return errors.Conflict.Newf("%s has not started", c)
+	}
+	if c.procGroup {
+		return KillProcessGroup(c.p)
+	}
+	if err := c.p.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return errors.Wrapf(err, "failed to kill process %d", c.p.Process.Pid)
 	}
 	return nil
 }

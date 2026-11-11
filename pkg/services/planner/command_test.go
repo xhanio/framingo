@@ -19,6 +19,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
+	"github.com/xhanio/framingo/pkg/utils/jobs"
 )
 
 type recordingSender struct {
@@ -105,7 +106,7 @@ func commandPlan(id string, tk *entity.Task, command ...string) *entity.Plan {
 	if tk.Schedule == "" {
 		tk.Manual = true
 	}
-	return &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Params: entity.CommandParams{Command: command}, Task: tk}
+	return &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: command}, Task: tk}
 }
 
 func triggered(t *testing.T, m *manager, id string) string {
@@ -279,10 +280,10 @@ func TestCommandPlanAppliesDirAndEnv(t *testing.T) {
 	t.Setenv("PLANNER_TEST_INHERITED", "kept")
 	t.Setenv("PLANNER_TEST_OVERRIDDEN", "old")
 	plan := commandPlan("env", &entity.Task{}, "sh", "-c", `pwd; echo "$PLANNER_TEST_INHERITED $PLANNER_TEST_OVERRIDDEN"`)
-	plan.Params = entity.CommandParams{
-		Command: plan.Params.(entity.CommandParams).Command,
-		Dir:     dir,
-		Env:     map[string]string{"PLANNER_TEST_OVERRIDDEN": "new"},
+	plan.Params = jobs.Command{
+		Argv: plan.Params.(jobs.Command).Argv,
+		Dir:  dir,
+		Env:  map[string]string{"PLANNER_TEST_OVERRIDDEN": "new"},
 	}
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
@@ -530,12 +531,13 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 		name string
 		plan *entity.Plan
 	}{
-		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Params: entity.CommandParams{Command: []string{"true"}}, Task: &entity.Task{}}},
+		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Params: jobs.Command{Argv: []string{"true"}}, Task: &entity.Task{}}},
 		{name: "a kind without a task", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand}},
 		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: "true", Task: &entity.Task{}}},
-		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: entity.CommandParams{}, Task: &entity.Task{}}},
-		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &entity.Task{Params: entity.CommandParams{Command: []string{"true"}}}}},
-		{name: "params on the task as well", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: entity.CommandParams{Command: []string{"true"}}, Task: &entity.Task{Params: "extra"}}},
+		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{}, Task: &entity.Task{}}},
+		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &entity.Task{Params: jobs.Command{Argv: []string{"true"}}}}},
+		{name: "a command with a grace of its own", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: []string{"true"}, Grace: time.Second}, Task: &entity.Task{}}},
+		{name: "params on the task as well", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: []string{"true"}}, Task: &entity.Task{Params: "extra"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

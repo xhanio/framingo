@@ -16,7 +16,7 @@ var (
 
 func GetTimezone() (string, error) {
 	c := cmdutil.New("timedatectl", []string{"show"})
-	err := c.Start()
+	err := c.Run()
 	if err != nil {
 		return "", errors.Wrap(err)
 	}

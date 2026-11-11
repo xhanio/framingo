@@ -6,7 +6,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-// PlanKindCommand runs a command: its Params is a CommandParams, the planner builds
+// PlanKindCommand runs a command: its Params is a jobs.Command, the planner builds
 // its Task.Job, and every run of it is reported with PlanRunStarted and PlanRunFinished.
 const PlanKindCommand = "command"
 
@@ -17,12 +17,6 @@ type Plan struct {
 	Kind        string     `json:"kind,omitempty"`   // a predefined kind, or empty for a Task with its own Job
 	Params      any        `json:"params,omitempty"` // what the kind takes, as its constant says
 	Task        *Task      `json:"task"`
-}
-
-type CommandParams struct {
-	Command []string          `json:"command"` // argv, the executable first
-	Dir     string            `json:"dir,omitempty"`
-	Env     map[string]string `json:"env,omitempty"` // on top of the process environment
 }
 
 // PlanRunSource says who started a run; a caller of Trigger may define values of its own.

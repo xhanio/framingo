@@ -9,22 +9,25 @@ import (
 
 	"github.com/xhanio/errors"
 
-	"github.com/xhanio/framingo/pkg/services/task"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
+	"github.com/xhanio/framingo/pkg/utils/jobs"
 )
 
-// commandJob is the job of a command plan: each run is a command task built from the plan's
-// CommandParams, with the plan's grace period, and its log is headed by the command line.
+// commandJob is the job of a command plan: each run is the plan's jobs.Command, with the grace
+// period of the plan's task, and its log is headed by the command line.
 func (m *manager) commandJob(plan *entity.Plan) (job.Func, error) {
-	params, ok := plan.Params.(entity.CommandParams)
+	cmd, ok := plan.Params.(jobs.Command)
 	if !ok {
-		return nil, errors.InvalidArgument.Newf("plan %s: a %s plan takes entity.CommandParams in Plan.Params, not %T", plan.ID, plan.Kind, plan.Params)
+		return nil, errors.InvalidArgument.Newf("plan %s: a %s plan takes a jobs.Command in Plan.Params, not %T", plan.ID, plan.Kind, plan.Params)
 	}
-	if len(params.Command) == 0 {
+	if len(cmd.Argv) == 0 {
 		return nil, errors.InvalidArgument.Newf("plan %s has no command", plan.ID)
 	}
-	cmd := task.Command{Argv: params.Command, Dir: params.Dir, Env: params.Env, Grace: plan.Task.Grace()}
+	if cmd.Grace != 0 || cmd.Out != nil {
+		return nil, errors.InvalidArgument.Newf("plan %s: a command plan's Grace comes from Task.GracePeriod, and its Out from the planner", plan.ID)
+	}
+	cmd.Grace = plan.Task.Grace()
 	timeout := plan.Task.Timeout
 	return m.runJob(plan, strings.Join(cmd.Argv, " "), func(jc job.Context, out io.Writer) (outcome, error) {
 		c := cmd // this run's copy
@@ -35,24 +38,21 @@ func (m *manager) commandJob(plan *entity.Plan) (job.Func, error) {
 }
 
 func commandOutcome(err error, timeout time.Duration) outcome {
-	var res task.CommandResult // a success: status 0, not stopped
-	var failed *task.CommandError
-	if errors.As(err, &failed) {
-		res = failed.Result
+	if err == nil {
+		return outcome{State: entity.PlanRunSucceeded}
 	}
-	o := outcome{ExitCode: res.ExitCode}
+	var failed *jobs.CommandError
+	if !errors.As(err, &failed) {
+		return outcome{State: entity.PlanRunFailed, Error: err.Error(), ExitCode: -1}
+	}
+	o := outcome{State: entity.PlanRunFailed, ExitCode: failed.ExitCode}
 	switch {
-	case errors.Is(res.Stopped, context.DeadlineExceeded):
-		o.State, o.Error = entity.PlanRunFailed, fmt.Sprintf("timed out after %s", timeout)
-	case res.Stopped != nil:
+	case errors.Is(failed.Stopped, context.DeadlineExceeded):
+		o.Error = fmt.Sprintf("timed out after %s", timeout)
+	case failed.Stopped != nil:
 		o.State, o.Error = entity.PlanRunCanceled, "canceled"
-	case res.ExitCode == 0:
-		o.State = entity.PlanRunSucceeded
-	case res.ExitCode > 0:
-		// the output is already in the tail and the log, the error need not repeat it
-		o.State, o.Error = entity.PlanRunFailed, fmt.Sprintf("exit status %d", res.ExitCode)
 	default:
-		o.State, o.Error = entity.PlanRunFailed, res.Err.Error()
+		o.Error = failed.Error() // its exit status, or why it could not start
 	}
 	return o
 }
