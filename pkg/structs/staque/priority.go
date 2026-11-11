@@ -61,15 +61,23 @@ func (p *priority[T]) Push(items ...T) {
 	}
 }
 
-func (p *priority[T]) Update(item T) error {
+func (p *priority[T]) Update(items ...T) error {
 	p.Lock()
 	defer p.Unlock()
-	i, ok := p.items[item.Key()]
-	if !ok {
-		return errors.NotFound.Newf("failed to update item: key %s not found", item.Key())
+	for _, item := range items {
+		if _, ok := p.items[item.Key()]; !ok {
+			return errors.NotFound.Newf("failed to update item: key %s not found", item.Key())
+		}
 	}
-	i.SetPriority(item.Priority())
-	p.tree.ReplaceOrInsert(i)
+	for _, item := range items {
+		i := p.items[item.Key()]
+		// out of the tree while its priority changes, which is where the tree finds it
+		if _, found := p.tree.Delete(i); !found {
+			panic(errors.Newf("inconsistent queue: item %s is not in the tree", item.Key()))
+		}
+		i.SetPriority(item.Priority())
+		p.tree.ReplaceOrInsert(i)
+	}
 	return nil
 }
 

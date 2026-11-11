@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	xerrors "github.com/xhanio/errors"
 )
 
 type testPriorityItem struct {
@@ -128,6 +130,74 @@ func TestPriorityQueueUpdate(t *testing.T) {
 	}
 	if items[0].Priority() != 15 {
 		t.Errorf("Expected updated priority 15, got %d", items[0].Priority())
+	}
+}
+
+func TestPriorityQueueUpdateMovesTheItem(t *testing.T) {
+	pq := NewPriority[*testPriorityItem]()
+	pq.Push(&testPriorityItem{key: "a", priority: 1}, &testPriorityItem{key: "b", priority: 2}, &testPriorityItem{key: "c", priority: 3})
+	if err := pq.Update(&testPriorityItem{key: "a", priority: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if n := pq.Length(); n != 3 {
+		t.Fatalf("length = %d, want 3", n)
+	}
+	var order []string
+	for {
+		item, err := pq.Pop()
+		if err != nil {
+			break
+		}
+		order = append(order, item.Key())
+	}
+	if want := []string{"a", "c", "b"}; fmt.Sprint(order) != fmt.Sprint(want) {
+		t.Fatalf("pop order = %v, want %v", order, want)
+	}
+}
+
+func TestPriorityQueueUpdateOfSeveral(t *testing.T) {
+	pq := NewPriority[*testPriorityItem]()
+	pq.Push(&testPriorityItem{key: "a", priority: 1}, &testPriorityItem{key: "b", priority: 2}, &testPriorityItem{key: "c", priority: 3}, &testPriorityItem{key: "d", priority: 4})
+	if err := pq.Update(&testPriorityItem{key: "a", priority: 10}, &testPriorityItem{key: "c", priority: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := popOrder(pq), "[a(10) d(4) b(2) c(0)]"; got != want {
+		t.Fatalf("pop order = %s, want %s", got, want)
+	}
+}
+
+func TestPriorityQueueUpdateOfTheSameKeyTwiceTakesTheLast(t *testing.T) {
+	pq := NewPriority[*testPriorityItem]()
+	pq.Push(&testPriorityItem{key: "a", priority: 1}, &testPriorityItem{key: "b", priority: 6})
+	if err := pq.Update(&testPriorityItem{key: "a", priority: 5}, &testPriorityItem{key: "a", priority: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := popOrder(pq), "[a(7) b(6)]"; got != want {
+		t.Fatalf("pop order = %s, want %s", got, want)
+	}
+}
+
+func TestPriorityQueueUpdateWithAKeyNotQueuedChangesNothing(t *testing.T) {
+	pq := NewPriority[*testPriorityItem]()
+	pq.Push(&testPriorityItem{key: "a", priority: 1}, &testPriorityItem{key: "b", priority: 2})
+	err := pq.Update(&testPriorityItem{key: "a", priority: 10}, &testPriorityItem{key: "missing", priority: 5})
+	if !xerrors.Is(err, xerrors.NotFound) {
+		t.Fatalf("Update = %v, want NotFound", err)
+	}
+	if got, want := popOrder(pq), "[b(2) a(1)]"; got != want {
+		t.Fatalf("pop order = %s, want %s: a failed Update changed a priority", got, want)
+	}
+}
+
+// popOrder empties the queue, greatest first.
+func popOrder(pq Priority[*testPriorityItem]) string {
+	var order []string
+	for {
+		item, err := pq.Pop()
+		if err != nil {
+			return fmt.Sprint(order)
+		}
+		order = append(order, fmt.Sprintf("%s(%d)", item.key, item.priority))
 	}
 }
 

@@ -44,7 +44,9 @@ type Priority[T PriorityItem] interface {
 	// empty. Once ctx ends they return its error and take nothing.
 	WaitPop(ctx context.Context) (T, error)
 	WaitShift(ctx context.Context) (T, error)
-	Update(item T) error
+	// Update gives the queued elements under the items' keys the items' priorities, all in one
+	// go, or none if a key is not queued: NotFound. Change a queued element's priority only so.
+	Update(items ...T) error
 	Remove(item T) (T, bool)
 	Items() []T
 }
