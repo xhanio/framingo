@@ -10,6 +10,7 @@ import (
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/cmdutil"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
@@ -19,7 +20,7 @@ type Command struct {
 	Argv  []string          `json:"argv"` // the executable first
 	Dir   string            `json:"dir,omitempty"`
 	Env   map[string]string `json:"env,omitempty"`   // on top of the process environment
-	Grace time.Duration     `json:"grace,omitempty"` // how long a stopped command gets before a SIGKILL; zero is DefaultGracePeriod
+	Grace time.Duration     `json:"grace,omitempty"` // how long a stopped command gets before a SIGKILL; zero is entity.DefaultTaskGracePeriod
 	Out   io.Writer         `json:"-"`               // nil discards the output
 }
 
@@ -72,7 +73,7 @@ func (c Command) execute(jc job.Context) CommandResult {
 	}
 	grace := c.Grace
 	if grace <= 0 {
-		grace = DefaultGracePeriod
+		grace = entity.DefaultTaskGracePeriod
 	}
 	p := exec.Command(c.Argv[0], c.Argv[1:]...)
 	p.Dir = c.Dir

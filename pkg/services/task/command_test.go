@@ -13,6 +13,7 @@ import (
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -310,7 +311,7 @@ func TestCommandRunIsATaskJobThatHonorsItsGracePeriod(t *testing.T) {
 	pids := pidPath(t)
 	c := sh(stubbornCommand, pids)
 	c.Grace = 200 * time.Millisecond
-	tk := &Task{Job: job.New("stubborn", c.Run), Manual: true}
+	tk := &entity.Task{Job: job.New("stubborn", c.Run), Manual: true}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +329,7 @@ func TestCommandRunIsATaskJobThatHonorsItsGracePeriod(t *testing.T) {
 
 func TestCommandRunFailsTheJobAsTheCommandFails(t *testing.T) {
 	s := startedManager(t)
-	tk := &Task{Job: job.New("failing", sh("exit 4").Run)}
+	tk := &entity.Task{Job: job.New("failing", sh("exit 4").Run)}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}

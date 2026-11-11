@@ -9,6 +9,7 @@ import (
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -42,7 +43,7 @@ func alwaysFailingJob(id string, runs *atomic.Int32) job.Job {
 
 func TestRequeueRerunsAFailedTaskUntilItSucceeds(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             failingJob("flaky", 2, &runs),
 		RequeueAttempts: 5,
 		RequeueCooldown: 10 * time.Millisecond,
@@ -60,7 +61,7 @@ func TestRequeueRerunsAFailedTaskUntilItSucceeds(t *testing.T) {
 
 func TestRequeueGivesUpAfterItsAttempts(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("hopeless", &runs),
 		RequeueAttempts: 2,
 		RequeueCooldown: 10 * time.Millisecond,
@@ -83,7 +84,7 @@ func TestRequeueGivesUpAfterItsAttempts(t *testing.T) {
 
 func TestRequeueDoesNothingWithoutAttempts(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("no-requeue", &runs),
 		RequeueCooldown: 10 * time.Millisecond,
 	}
@@ -103,7 +104,7 @@ func TestRequeueDoesNothingWithoutAttempts(t *testing.T) {
 
 func TestRequeueComesOnTopOfTheJobRetry(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("both", &runs),
 		RetryAttempts:   1,
 		RetryDelay:      time.Millisecond,
@@ -126,7 +127,7 @@ func TestRequeueWaitsOutTheCooldown(t *testing.T) {
 		mu    sync.Mutex
 		times []time.Time
 	)
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("patient", func(job.Context) error {
 			mu.Lock()
 			defer mu.Unlock()
@@ -153,13 +154,13 @@ func TestRequeueWaitsOutTheCooldown(t *testing.T) {
 
 func TestRequeueCooldownFreesTheSlot(t *testing.T) {
 	var failed atomic.Int32
-	cooling := &Task{
+	cooling := &entity.Task{
 		Job:             alwaysFailingJob("cooling", &failed),
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
 	}
 	var ran atomic.Bool
-	other := &Task{Job: job.New("other", func(job.Context) error {
+	other := &entity.Task{Job: job.New("other", func(job.Context) error {
 		ran.Store(true)
 		return nil
 	})}
@@ -176,7 +177,7 @@ func TestRequeueCooldownFreesTheSlot(t *testing.T) {
 
 func TestRequeueKeepsTheTaskRegisteredWhileCooling(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("registered", &runs),
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
@@ -206,7 +207,7 @@ func TestRequeueKeepsTheTaskRegisteredWhileCooling(t *testing.T) {
 
 func TestRemoveEndsARequeue(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("removed", &runs),
 		RequeueAttempts: 3,
 		RequeueCooldown: 50 * time.Millisecond,
@@ -229,7 +230,7 @@ func TestRemoveEndsARequeue(t *testing.T) {
 	}
 
 	var again atomic.Int32
-	next := &Task{Job: failingJob(tk.ID(), 0, &again)}
+	next := &entity.Task{Job: failingJob(tk.ID(), 0, &again)}
 	if err := s.Add(next); err != nil {
 		t.Fatalf("Add under the removed task's ID = %v", err)
 	}
@@ -239,12 +240,12 @@ func TestRemoveEndsARequeue(t *testing.T) {
 func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 	block := make(chan struct{})
 	defer close(block)
-	busy := &Task{Job: job.New("busy", func(job.Context) error {
+	busy := &entity.Task{Job: job.New("busy", func(job.Context) error {
 		<-block
 		return nil
 	})}
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("queued", &runs),
 		RequeueAttempts: 1,
 		RequeueCooldown: 200 * time.Millisecond,
@@ -273,7 +274,7 @@ func TestRemoveOfAQueuedRerunDoesNotRunIt(t *testing.T) {
 
 func TestStopEndsARequeue(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("stopped", &runs),
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
@@ -305,7 +306,7 @@ func TestTaskContextEndsARequeue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("ctx-canceled", &runs),
 		Ctx:             ctx,
 		RequeueAttempts: 1,
@@ -329,7 +330,7 @@ func TestTaskContextEndsARequeue(t *testing.T) {
 func TestCanceledRunIsNotRequeued(t *testing.T) {
 	var runs atomic.Int32
 	started := make(chan struct{}, 10)
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("canceled", func(jc job.Context) error {
 			runs.Add(1)
 			started <- struct{}{}
@@ -360,7 +361,7 @@ func TestRunEndedByItsContextIsNotRequeued(t *testing.T) {
 	defer cancel()
 	var runs atomic.Int32
 	started := make(chan struct{}, 10)
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("ctx-run", func(jc job.Context) error {
 			runs.Add(1)
 			started <- struct{}{}
@@ -390,7 +391,7 @@ func TestTicksAreSkippedDuringARequeue(t *testing.T) {
 		mu    sync.Mutex
 		times []time.Time
 	)
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("tick-skipped", func(job.Context) error {
 			mu.Lock()
 			defer mu.Unlock()
@@ -418,7 +419,7 @@ func TestTicksAreSkippedDuringARequeue(t *testing.T) {
 
 func TestStatsRequeuesStartOverWithANewFiring(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             failingJob("fresh-firing", 1, &runs),
 		Schedule:        "* * * * * *",
 		RequeueAttempts: 1,
@@ -442,7 +443,7 @@ func TestTickDuringARunStaysOutOfTheQueue(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	started := make(chan struct{}, 10)
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("long", func(job.Context) error {
 			started <- struct{}{}
 			<-release
@@ -466,12 +467,12 @@ func TestStartingARunLeavesNoCopyInTheQueue(t *testing.T) {
 	block := make(chan struct{})
 	release := make(chan struct{})
 	defer close(release)
-	busy := &Task{Job: job.New("busy", func(job.Context) error {
+	busy := &entity.Task{Job: job.New("busy", func(job.Context) error {
 		<-block
 		return nil
 	})}
 	// popped, and out of the queue until busy gives up its slot
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("copied", func(job.Context) error {
 			<-release
 			return nil
@@ -501,7 +502,7 @@ func TestStartingARunLeavesNoCopyInTheQueue(t *testing.T) {
 
 func TestStrayPopDuringARequeueDoesNotRunTheTask(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("stray", &runs),
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
@@ -523,14 +524,14 @@ func TestStrayPopDuringARequeueDoesNotRunTheTask(t *testing.T) {
 func TestTaskContextTakesAQueuedRerunOutOfTheQueue(t *testing.T) {
 	block := make(chan struct{})
 	defer close(block)
-	busy := &Task{Job: job.New("busy", func(job.Context) error {
+	busy := &entity.Task{Job: job.New("busy", func(job.Context) error {
 		<-block
 		return nil
 	})}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("ctx-queued", &runs),
 		Ctx:             ctx,
 		RequeueAttempts: 1,
@@ -559,7 +560,7 @@ func TestTaskContextTakesAQueuedRerunOutOfTheQueue(t *testing.T) {
 func TestCanceledRerunEndsTheRequeue(t *testing.T) {
 	var runs atomic.Int32
 	rerunning := make(chan struct{}, 10)
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("canceled-rerun", func(jc job.Context) error {
 			if runs.Add(1) == 1 {
 				return errors.Newf("run failed")
@@ -589,7 +590,7 @@ func TestCanceledRerunEndsTheRequeue(t *testing.T) {
 
 func TestAddAfterRemoveDuringARequeue(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("again", &runs),
 		RequeueAttempts: 1,
 		RequeueCooldown: longCooldown,
@@ -620,7 +621,7 @@ func TestARerunIsNotRequeueing(t *testing.T) {
 	var runs atomic.Int32
 	rerunning := make(chan struct{}, 10)
 	release := make(chan struct{})
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("rerun-state", func(job.Context) error {
 			if runs.Add(1) == 1 {
 				return errors.Newf("run failed")
@@ -647,7 +648,7 @@ func TestRefusedStartIsNotRequeued(t *testing.T) {
 	var runs atomic.Int32
 	started := make(chan struct{})
 	release := make(chan struct{})
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("elsewhere", func(job.Context) error {
 			runs.Add(1)
 			close(started)

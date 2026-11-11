@@ -29,7 +29,7 @@ func (m *manager) settle(ctx, execCtx context.Context, e *execution, err error) 
 		m.startCooldown(reg, err)
 		return
 	}
-	if task.isOneShot() && current {
+	if task.IsOneShot() && current {
 		delete(m.registered, key)
 	}
 }
@@ -63,7 +63,7 @@ func (m *manager) contextEnded(reg *registration) {
 		return // the rerun started, or the wait was stopped already
 	}
 	m.stopWaiting(reg)
-	if key := reg.task.ID(); reg.task.isOneShot() && m.registered[key] == reg {
+	if key := reg.task.ID(); reg.task.IsOneShot() && m.registered[key] == reg {
 		delete(m.registered, key)
 	}
 }

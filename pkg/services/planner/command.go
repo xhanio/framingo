@@ -9,9 +9,9 @@ import (
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/services/task"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
-	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 // commandJob is the job of a command plan: each run is a command task built from the plan's

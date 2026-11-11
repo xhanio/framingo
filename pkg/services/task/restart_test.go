@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -19,7 +20,7 @@ func held(t *testing.T, concurrency int) (*manager, chan struct{}) {
 		t.Fatal(err)
 	}
 	started, release := make(chan struct{}), make(chan struct{})
-	tk := &Task{Job: holdJob("held", started, release), Manual: true}
+	tk := &entity.Task{Job: holdJob("held", started, release), Manual: true}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +111,11 @@ func TestStopGivesUpOnceItsContextEnds(t *testing.T) {
 }
 
 // stubborn ignores its cancel and ends only on the kill signal.
-func stubborn(t *testing.T, s *manager) (_ *Task, killed <-chan struct{}) {
+func stubborn(t *testing.T, s *manager) (_ *entity.Task, killed <-chan struct{}) {
 	t.Helper()
 	started, kill, ended := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	t.Cleanup(func() { close(ended) })
-	tk := &Task{Job: job.New("stubborn", func(jc job.Context) error {
+	tk := &entity.Task{Job: job.New("stubborn", func(jc job.Context) error {
 		close(started)
 		select {
 		case <-jc.Signaled(job.SignalKill):
@@ -197,7 +198,7 @@ func TestStartRightAfterAForcedStop(t *testing.T) {
 		t.Fatalf("Start = %v right after a forced stop", err)
 	}
 	var runs atomic.Int32
-	if err := s.Add(&Task{Job: countingJob("next", &runs)}); err != nil {
+	if err := s.Add(&entity.Task{Job: countingJob("next", &runs)}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the new start to run a task while the one left over holds its slot", func() bool {
@@ -235,7 +236,7 @@ func TestAStopThatWaitsDoesNotKill(t *testing.T) {
 	}
 	started := make(chan struct{})
 	var killed atomic.Bool
-	tk := &Task{Job: job.New("graceful", func(jc job.Context) error {
+	tk := &entity.Task{Job: job.New("graceful", func(jc job.Context) error {
 		close(started)
 		<-jc.Context().Done()
 		select {
@@ -264,7 +265,7 @@ func TestATaskAddedAgainRunsOnceWhatAForcedStopLeftEnds(t *testing.T) {
 	s := startedManager(t)
 	started, release := make(chan struct{}), make(chan struct{})
 	var runs atomic.Int32
-	tk := &Task{Job: job.New("again", func(job.Context) error {
+	tk := &entity.Task{Job: job.New("again", func(job.Context) error {
 		if runs.Add(1) == 1 {
 			close(started)
 			<-release
@@ -298,7 +299,7 @@ func TestAForcedStopIsNotHeldUpByAnExclusiveTaskWaitingToRun(t *testing.T) {
 	t.Cleanup(func() { _ = s.Stop(context.Background()) })
 	t.Cleanup(func() { close(release) })
 	var runs atomic.Int32
-	if err := s.Add(&Task{Job: countingJob("exclusive", &runs), Exclusive: true}); err != nil {
+	if err := s.Add(&entity.Task{Job: countingJob("exclusive", &runs), Exclusive: true}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the exclusive task to wait for the slots", s.pq.IsEmpty)
@@ -314,16 +315,16 @@ func TestAForcedStopIsNotHeldUpByAnExclusiveTaskWaitingToRun(t *testing.T) {
 func TestAnExclusiveTaskRunsAlone(t *testing.T) {
 	s := startedManager(t)
 	firstStarted, firstRelease := make(chan struct{}), make(chan struct{})
-	if err := s.Add(&Task{Job: holdJob("first", firstStarted, firstRelease)}); err != nil {
+	if err := s.Add(&entity.Task{Job: holdJob("first", firstStarted, firstRelease)}); err != nil {
 		t.Fatal(err)
 	}
 	<-firstStarted
 	exclusiveStarted, exclusiveRelease := make(chan struct{}), make(chan struct{})
-	if err := s.Add(&Task{Job: holdJob("exclusive", exclusiveStarted, exclusiveRelease), Exclusive: true}); err != nil {
+	if err := s.Add(&entity.Task{Job: holdJob("exclusive", exclusiveStarted, exclusiveRelease), Exclusive: true}); err != nil {
 		t.Fatal(err)
 	}
 	var runs atomic.Int32
-	if err := s.Add(&Task{Job: countingJob("after", &runs), Priority: 1}); err != nil {
+	if err := s.Add(&entity.Task{Job: countingJob("after", &runs), Priority: 1}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -348,14 +349,14 @@ func TestAnExclusiveTaskRunsAlone(t *testing.T) {
 func TestAnExclusiveTaskGivesBackEverySlot(t *testing.T) {
 	s := startedManager(t, MaxConcurrency(2))
 	var runs atomic.Int32
-	if err := s.Add(&Task{Job: countingJob("exclusive", &runs), Exclusive: true}); err != nil {
+	if err := s.Add(&entity.Task{Job: countingJob("exclusive", &runs), Exclusive: true}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the exclusive task to run", func() bool { return runs.Load() == 1 })
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 	firstStarted, secondStarted := make(chan struct{}), make(chan struct{})
-	if err := s.Add(&Task{Job: holdJob("first", firstStarted, release)}, &Task{Job: holdJob("second", secondStarted, release)}); err != nil {
+	if err := s.Add(&entity.Task{Job: holdJob("first", firstStarted, release)}, &entity.Task{Job: holdJob("second", secondStarted, release)}); err != nil {
 		t.Fatal(err)
 	}
 	for _, started := range []chan struct{}{firstStarted, secondStarted} {
@@ -376,7 +377,7 @@ func TestAnExclusiveTaskDoesNotWaitForWhatAForcedStopLeft(t *testing.T) {
 		t.Fatal(err)
 	}
 	var runs atomic.Int32
-	if err := s.Add(&Task{Job: countingJob("exclusive", &runs), Exclusive: true}); err != nil {
+	if err := s.Add(&entity.Task{Job: countingJob("exclusive", &runs), Exclusive: true}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the exclusive task to run beside what the forced stop left", func() bool {
@@ -388,7 +389,7 @@ func TestStopLeavesTheQueueEmpty(t *testing.T) {
 	for range 50 {
 		s, release := held(t, 1)
 		var runs atomic.Int32
-		queued := &Task{Job: countingJob("queued", &runs), Manual: true}
+		queued := &entity.Task{Job: countingJob("queued", &runs), Manual: true}
 		if err := s.Add(queued); err != nil {
 			t.Fatal(err)
 		}
@@ -413,16 +414,16 @@ func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 	t.Run("queued", func(t *testing.T) {
 		s := startedManager(t, MaxConcurrency(1))
 		var staleRuns, runs atomic.Int32
-		stale := &Task{Job: countingJob("same", &staleRuns), Manual: true}
+		stale := &entity.Task{Job: countingJob("same", &staleRuns), Manual: true}
 		if err := s.Add(stale); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.Remove(context.Background(), stale); err != nil {
 			t.Fatal(err)
 		}
-		successor := &Task{Job: countingJob("same", &runs), Manual: true}
+		successor := &entity.Task{Job: countingJob("same", &runs), Manual: true}
 		started, release := make(chan struct{}), make(chan struct{})
-		blocker := &Task{Job: holdJob("blocker", started, release), Manual: true}
+		blocker := &entity.Task{Job: holdJob("blocker", started, release), Manual: true}
 		if err := s.Add(successor, blocker); err != nil {
 			t.Fatal(err)
 		}
@@ -442,14 +443,14 @@ func TestRemoveOfAStaleTaskLeavesItsSuccessorAlone(t *testing.T) {
 	t.Run("scheduled", func(t *testing.T) {
 		s := startedManager(t)
 		var staleRuns, runs atomic.Int32
-		stale := &Task{Job: countingJob("same", &staleRuns), Schedule: "0 0 1 1 *"}
+		stale := &entity.Task{Job: countingJob("same", &staleRuns), Schedule: "0 0 1 1 *"}
 		if err := s.Add(stale); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.Remove(context.Background(), stale); err != nil {
 			t.Fatal(err)
 		}
-		successor := &Task{Job: countingJob("same", &runs), Schedule: "* * * * * *"}
+		successor := &entity.Task{Job: countingJob("same", &runs), Schedule: "* * * * * *"}
 		if err := s.Add(successor); err != nil {
 			t.Fatal(err)
 		}
@@ -464,7 +465,7 @@ func TestCancelOfATaskWaitingForWhatAForcedStopLeftEndsIt(t *testing.T) {
 	s := startedManager(t)
 	started, release := make(chan struct{}), make(chan struct{})
 	var runs atomic.Int32
-	tk := &Task{Job: job.New("waiting", func(job.Context) error {
+	tk := &entity.Task{Job: job.New("waiting", func(job.Context) error {
 		if runs.Add(1) == 1 {
 			close(started)
 			<-release

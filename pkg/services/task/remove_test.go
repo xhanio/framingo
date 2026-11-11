@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -19,7 +20,7 @@ func holdJob(id string, started chan<- struct{}, release <-chan struct{}) job.Jo
 	})
 }
 
-func removeInBackground(s *manager, ctx context.Context, tasks ...*Task) <-chan error {
+func removeInBackground(s *manager, ctx context.Context, tasks ...*entity.Task) <-chan error {
 	removed := make(chan error, 1)
 	go func() { removed <- s.Remove(ctx, tasks...) }()
 	return removed
@@ -66,7 +67,7 @@ func TestNewWithoutAConcurrencyStillRunsTasks(t *testing.T) {
 				t.Fatalf("concurrency = %d, want %d", s.concurrent, defaultConcurrency)
 			}
 			var runs atomic.Int32
-			if err := s.Add(&Task{Job: countingJob("once", &runs)}); err != nil {
+			if err := s.Add(&entity.Task{Job: countingJob("once", &runs)}); err != nil {
 				t.Fatal(err)
 			}
 			eventually(t, "the task to run", func() bool { return runs.Load() == 1 })
@@ -74,26 +75,10 @@ func TestNewWithoutAConcurrencyStillRunsTasks(t *testing.T) {
 	}
 }
 
-func TestGraceDefaultsToTenSeconds(t *testing.T) {
-	cases := []struct {
-		period time.Duration
-		want   time.Duration
-	}{
-		{period: 0, want: 10 * time.Second},
-		{period: -time.Second, want: 10 * time.Second},
-		{period: time.Second, want: time.Second},
-	}
-	for _, tc := range cases {
-		if got := (&Task{GracePeriod: tc.period}).Grace(); got != tc.want {
-			t.Errorf("Grace of %s = %s, want %s", tc.period, got, tc.want)
-		}
-	}
-}
-
 func TestRemoveOfATaskNotRunningIsDoneAtOnce(t *testing.T) {
 	s := startedManager(t)
 	var runs atomic.Int32
-	tk := &Task{Job: countingJob("idle", &runs), Manual: true}
+	tk := &entity.Task{Job: countingJob("idle", &runs), Manual: true}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +88,7 @@ func TestRemoveOfATaskNotRunningIsDoneAtOnce(t *testing.T) {
 func TestRemoveIsDoneOnceTheExecutionHasEnded(t *testing.T) {
 	s := startedManager(t)
 	started, release := make(chan struct{}), make(chan struct{})
-	tk := &Task{Job: holdJob("held", started, release), Manual: true}
+	tk := &entity.Task{Job: holdJob("held", started, release), Manual: true}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -124,12 +109,12 @@ func TestRemoveOfSeveralIsDoneOnceTheLastHasEnded(t *testing.T) {
 	s := startedManager(t)
 	firstStarted, firstRelease := make(chan struct{}), make(chan struct{})
 	secondStarted, secondRelease := make(chan struct{}), make(chan struct{})
-	first := &Task{Job: holdJob("first", firstStarted, firstRelease), Manual: true}
-	second := &Task{Job: holdJob("second", secondStarted, secondRelease), Manual: true}
+	first := &entity.Task{Job: holdJob("first", firstStarted, firstRelease), Manual: true}
+	second := &entity.Task{Job: holdJob("second", secondStarted, secondRelease), Manual: true}
 	if err := s.Add(first, second); err != nil {
 		t.Fatal(err)
 	}
-	for _, tk := range []*Task{first, second} {
+	for _, tk := range []*entity.Task{first, second} {
 		if err := s.Trigger(tk.ID(), nil); err != nil {
 			t.Fatal(err)
 		}
@@ -146,9 +131,9 @@ func TestRemoveOfSeveralIsDoneOnceTheLastHasEnded(t *testing.T) {
 func TestQueuedTaskRemovedIsDoneAtOnceAndNeverRuns(t *testing.T) {
 	s := startedManager(t, MaxConcurrency(1))
 	started, release := make(chan struct{}), make(chan struct{})
-	blocker := &Task{Job: holdJob("blocker", started, release), Manual: true}
+	blocker := &entity.Task{Job: holdJob("blocker", started, release), Manual: true}
 	var runs atomic.Int32
-	queued := &Task{Job: countingJob("queued", &runs), Manual: true}
+	queued := &entity.Task{Job: countingJob("queued", &runs), Manual: true}
 	if err := s.Add(blocker, queued); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +155,7 @@ func TestQueuedTaskRemovedIsDoneAtOnceAndNeverRuns(t *testing.T) {
 func TestTaskRemovedDuringARequeueNeverRunsAgain(t *testing.T) {
 	s := startedManager(t)
 	var runs atomic.Int32
-	tk := &Task{Job: alwaysFailingJob("requeued", &runs), Manual: true, RequeueAttempts: 100, RequeueCooldown: 10 * time.Millisecond}
+	tk := &entity.Task{Job: alwaysFailingJob("requeued", &runs), Manual: true, RequeueAttempts: 100, RequeueCooldown: 10 * time.Millisecond}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +209,7 @@ func TestRemoveKillsOnlyWhatItRemoves(t *testing.T) {
 	otherStarted, otherRelease := make(chan struct{}), make(chan struct{})
 	defer close(otherRelease)
 	var otherKilled atomic.Bool
-	other := &Task{Job: job.New("other", func(jc job.Context) error {
+	other := &entity.Task{Job: job.New("other", func(jc job.Context) error {
 		close(otherStarted)
 		select {
 		case <-jc.Signaled(job.SignalKill):

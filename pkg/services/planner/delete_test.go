@@ -17,10 +17,10 @@ import (
 	"github.com/xhanio/errors"
 	"k8s.io/apimachinery/pkg/labels"
 
+	"github.com/xhanio/framingo/pkg/services/task"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
-	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 // each writes its pid once it ignores SIGTERM, so a test can signal it from then on
@@ -86,7 +86,7 @@ func assertWithin(t *testing.T, what string, limit time.Duration, begin time.Tim
 	}
 }
 
-func ownJobPlan(id string, tk *task.Task, fn job.Func) *entity.Plan {
+func ownJobPlan(id string, tk *entity.Task, fn job.Func) *entity.Plan {
 	tk.Job = job.New(id+"-job", fn)
 	tk.Manual = true
 	return &entity.Plan{ID: id, Task: tk}
@@ -101,7 +101,7 @@ func TestDeleteOfAnUnknownPlanIsNotFound(t *testing.T) {
 
 func TestDeleteOfAnIdlePlanReturnsItsLastRunAtOnce(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("idle", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("idle", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	runID := triggered(t, m, "idle")
@@ -123,10 +123,10 @@ func TestDeleteOfAnIdlePlanReturnsItsLastRunAtOnce(t *testing.T) {
 
 func TestDeleteWithoutARunReturnsNil(t *testing.T) {
 	m, _ := startedPlanner(t)
-	if err := m.Add(commandPlan("never", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("never", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Add(ownJobPlan("own", &task.Task{}, func(job.Context) error { return nil })); err != nil {
+	if err := m.Add(ownJobPlan("own", &entity.Task{}, func(job.Context) error { return nil })); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"never", "own"} {
@@ -140,7 +140,7 @@ func TestDeleteReturnsOnlyOnceTheCanceledRunHasEnded(t *testing.T) {
 	m, sender := startedPlanner(t)
 	ready := filepath.Join(t.TempDir(), "ready")
 	script := `trap 'sleep 0.3; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
-	if err := m.Add(commandPlan("slow", &task.Task{}, "sh", "-c", script)); err != nil {
+	if err := m.Add(commandPlan("slow", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
 	runID := triggered(t, m, "slow")
@@ -165,10 +165,10 @@ func TestDeleteOfAQueuedPlanMeansItNeverRuns(t *testing.T) {
 	sender := &recordingSender{}
 	m := newManager(sender, startedTaskManager(t, task.MaxConcurrency(1)), WithLogDir(t.TempDir()))
 	t.Cleanup(func() { _ = m.Stop(context.Background()) })
-	if err := m.Add(commandPlan("blocker", &task.Task{}, "sleep", "30")); err != nil {
+	if err := m.Add(commandPlan("blocker", &entity.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Add(commandPlan("queued", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("queued", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "blocker")
@@ -191,7 +191,7 @@ func TestDeleteOfAQueuedPlanMeansItNeverRuns(t *testing.T) {
 
 func TestDeleteDuringARequeueEndsIt(t *testing.T) {
 	m, sender := startedPlanner(t)
-	plan := commandPlan("requeued", &task.Task{RequeueAttempts: 100, RequeueCooldown: 10 * time.Millisecond}, "false")
+	plan := commandPlan("requeued", &entity.Task{RequeueAttempts: 100, RequeueCooldown: 10 * time.Millisecond}, "false")
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestNoCronRunStartsAfterDeleteBegan(t *testing.T) {
 	ready := filepath.Join(t.TempDir(), "ready")
 	// the run ends just as the next ticks are due
 	script := `trap 'sleep 1.1; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
-	if err := m.Add(commandPlan("cron", &task.Task{Schedule: "* * * * * *"}, "sh", "-c", script)); err != nil {
+	if err := m.Add(commandPlan("cron", &entity.Task{Schedule: "* * * * * *"}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "a scheduled run", func() bool { _, err := os.Stat(ready); return err == nil })
@@ -247,7 +247,7 @@ func forcedDelete(t *testing.T, m *manager, id string) *entity.PlanRun {
 func TestAForcedDeleteKillsACommandIgnoringTheSignalAtOnce(t *testing.T) {
 	m, sender := startedPlanner(t)
 	pids := pidFile(t)
-	if err := m.Add(commandPlan("stubborn", &task.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
+	if err := m.Add(commandPlan("stubborn", &entity.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
 	runID := triggered(t, m, "stubborn")
@@ -265,7 +265,7 @@ func TestAForcedDeleteKillsACommandIgnoringTheSignalAtOnce(t *testing.T) {
 func TestAForcedDeleteCutsTheGracePeriodOfACanceledRunShort(t *testing.T) {
 	m, _ := startedPlanner(t)
 	pids := pidFile(t)
-	if err := m.Add(commandPlan("stubborn", &task.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
+	if err := m.Add(commandPlan("stubborn", &entity.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "stubborn")
@@ -280,7 +280,7 @@ func TestAForcedDeleteCutsTheGracePeriodOfACanceledRunShort(t *testing.T) {
 func TestDeleteReturnsTheRunStillGoingOnceItsContextEnds(t *testing.T) {
 	m, _ := startedPlanner(t)
 	pids := pidFile(t)
-	if err := m.Add(commandPlan("stubborn", &task.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
+	if err := m.Add(commandPlan("stubborn", &entity.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
 	runID := triggered(t, m, "stubborn")
@@ -319,7 +319,7 @@ func TestDeleteOfAnOwnJobIgnoringTheCancelReturnsOnceItsContextEnds(t *testing.T
 			release := make(chan struct{})
 			defer close(release)
 			var started atomic.Bool
-			plan := ownJobPlan("own", &task.Task{GracePeriod: time.Minute}, func(job.Context) error {
+			plan := ownJobPlan("own", &entity.Task{GracePeriod: time.Minute}, func(job.Context) error {
 				started.Store(true)
 				<-release
 				return nil
@@ -351,7 +351,7 @@ func TestDeleteOfAnOwnJobIgnoringTheCancelReturnsOnceItsContextEnds(t *testing.T
 func TestDeleteOfAnOwnJobHonoringTheCancelReturnsAsItEnds(t *testing.T) {
 	m, _ := startedPlanner(t)
 	var started atomic.Bool
-	plan := ownJobPlan("own", &task.Task{}, func(jc job.Context) error {
+	plan := ownJobPlan("own", &entity.Task{}, func(jc job.Context) error {
 		started.Store(true)
 		<-jc.Context().Done()
 		return nil
@@ -374,12 +374,12 @@ func TestNoProcessOutlivesAStoppedRun(t *testing.T) {
 	const grace = 200 * time.Millisecond
 	stops := []struct {
 		name  string
-		task  func() *task.Task
+		task  func() *entity.Task
 		stop  func(*testing.T, *manager)
 		state entity.PlanRunState
 	}{
 		{
-			name: "Cancel", task: func() *task.Task { return &task.Task{GracePeriod: grace} }, state: entity.PlanRunCanceled,
+			name: "Cancel", task: func() *entity.Task { return &entity.Task{GracePeriod: grace} }, state: entity.PlanRunCanceled,
 			stop: func(t *testing.T, m *manager) {
 				if err := m.Cancel("stubborn"); err != nil {
 					t.Fatal(err)
@@ -387,7 +387,7 @@ func TestNoProcessOutlivesAStoppedRun(t *testing.T) {
 			},
 		},
 		{
-			name: "Delete", task: func() *task.Task { return &task.Task{GracePeriod: grace} }, state: entity.PlanRunCanceled,
+			name: "Delete", task: func() *entity.Task { return &entity.Task{GracePeriod: grace} }, state: entity.PlanRunCanceled,
 			stop: func(t *testing.T, m *manager) {
 				if _, err := m.Delete(context.Background(), "stubborn"); err != nil {
 					t.Fatal(err)
@@ -395,7 +395,7 @@ func TestNoProcessOutlivesAStoppedRun(t *testing.T) {
 			},
 		},
 		{
-			name: "a timeout", task: func() *task.Task { return &task.Task{GracePeriod: grace, Timeout: 300 * time.Millisecond} }, state: entity.PlanRunFailed,
+			name: "a timeout", task: func() *entity.Task { return &entity.Task{GracePeriod: grace, Timeout: 300 * time.Millisecond} }, state: entity.PlanRunFailed,
 			stop: func(*testing.T, *manager) {},
 		},
 	}
@@ -431,7 +431,7 @@ func TestNoProcessOutlivesAStoppedRun(t *testing.T) {
 func TestShortGracePeriodEndsEarlierThanTheDefault(t *testing.T) {
 	m, sender := startedPlanner(t)
 	pids := pidFile(t)
-	plan := commandPlan("stubborn", &task.Task{GracePeriod: 100 * time.Millisecond}, "sh", "-c", stubbornCommand, pids)
+	plan := commandPlan("stubborn", &entity.Task{GracePeriod: 100 * time.Millisecond}, "sh", "-c", stubbornCommand, pids)
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
 	}
@@ -449,7 +449,7 @@ func TestZeroGracePeriodStillGivesACommandTimeToCleanUp(t *testing.T) {
 	m, sender := startedPlanner(t)
 	ready := filepath.Join(t.TempDir(), "ready")
 	script := `trap 'sleep 0.3; echo cleaned; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
-	if err := m.Add(commandPlan("tidy", &task.Task{}, "sh", "-c", script)); err != nil {
+	if err := m.Add(commandPlan("tidy", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "tidy")
@@ -467,7 +467,7 @@ func TestCommandEndingOnItsOwnKeepsItsBackgroundChild(t *testing.T) {
 	m, sender := startedPlanner(t)
 	pids := pidFile(t)
 	script := `sleep 60 >/dev/null 2>&1 & echo $! > "$0"`
-	if err := m.Add(commandPlan("daemonizer", &task.Task{}, "sh", "-c", script, pids)); err != nil {
+	if err := m.Add(commandPlan("daemonizer", &entity.Task{}, "sh", "-c", script, pids)); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "daemonizer")
@@ -492,7 +492,7 @@ func TestAForcedPlannerStopKills(t *testing.T) {
 	sender := &recordingSender{}
 	m := newManager(sender, startedTaskManager(t), WithLogDir(t.TempDir()))
 	pids := pidFile(t)
-	if err := m.Add(commandPlan("stubborn", &task.Task{}, "sh", "-c", stubbornCommand, pids)); err != nil {
+	if err := m.Add(commandPlan("stubborn", &entity.Task{}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "stubborn")
@@ -509,7 +509,7 @@ func TestPlannerStopKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
 	sender := &recordingSender{}
 	m := newManager(sender, startedTaskManager(t), WithLogDir(t.TempDir()))
 	pids := pidFile(t)
-	if err := m.Add(commandPlan("stubborn", &task.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
+	if err := m.Add(commandPlan("stubborn", &entity.Task{GracePeriod: time.Minute}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "stubborn")
@@ -536,7 +536,7 @@ func TestPlannerStopWaitsForTheSlowestPlanNotTheSum(t *testing.T) {
 		id := fmt.Sprintf("slow-%d", i)
 		ready := filepath.Join(dir, id)
 		script := `trap 'sleep 0.5; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
-		if err := m.Add(commandPlan(id, &task.Task{}, "sh", "-c", script)); err != nil {
+		if err := m.Add(commandPlan(id, &entity.Task{}, "sh", "-c", script)); err != nil {
 			t.Fatal(err)
 		}
 		triggered(t, m, id)
@@ -585,12 +585,12 @@ func TestDeleteUnderStress(t *testing.T) {
 	sender := &countingSender{started: map[string]int{}, finished: map[string]int{}}
 	m := newManager(sender, startedTaskManager(t, task.MaxConcurrency(4)), WithLogDir(t.TempDir()))
 	t.Cleanup(func() { _ = m.Stop(context.Background()) })
-	tasks := []func() *task.Task{
-		func() *task.Task { return &task.Task{} },
-		func() *task.Task { return &task.Task{RetryAttempts: 2, RetryDelay: time.Millisecond} },
-		func() *task.Task { return &task.Task{RequeueAttempts: 3, RequeueCooldown: time.Millisecond} },
-		func() *task.Task { return &task.Task{Schedule: "* * * * * *"} },
-		func() *task.Task { return &task.Task{Timeout: time.Millisecond} },
+	tasks := []func() *entity.Task{
+		func() *entity.Task { return &entity.Task{} },
+		func() *entity.Task { return &entity.Task{RetryAttempts: 2, RetryDelay: time.Millisecond} },
+		func() *entity.Task { return &entity.Task{RequeueAttempts: 3, RequeueCooldown: time.Millisecond} },
+		func() *entity.Task { return &entity.Task{Schedule: "* * * * * *"} },
+		func() *entity.Task { return &entity.Task{Timeout: time.Millisecond} },
 	}
 	commands := [][]string{{"true"}, {"false"}, {"sleep", "0.01"}, {"sleep", "30"}}
 	var wg sync.WaitGroup
@@ -642,7 +642,7 @@ func TestDeleteUnderStress(t *testing.T) {
 func TestAForcedDeleteSendsTheKillToAnOwnJob(t *testing.T) {
 	m, _ := startedPlanner(t)
 	var started, killed atomic.Bool
-	plan := ownJobPlan("own", &task.Task{GracePeriod: time.Minute}, func(jc job.Context) error {
+	plan := ownJobPlan("own", &entity.Task{GracePeriod: time.Minute}, func(jc job.Context) error {
 		started.Store(true)
 		<-jc.Signaled(job.SignalKill)
 		killed.Store(true)
@@ -663,7 +663,7 @@ func TestDeleteSendsTheKillToAnOwnJobOnceItsContextEnds(t *testing.T) {
 	m, _ := startedPlanner(t)
 	var started atomic.Bool
 	killed := make(chan time.Time, 1)
-	plan := ownJobPlan("own", &task.Task{GracePeriod: time.Minute}, func(jc job.Context) error {
+	plan := ownJobPlan("own", &entity.Task{GracePeriod: time.Minute}, func(jc job.Context) error {
 		started.Store(true)
 		<-jc.Signaled(job.SignalKill)
 		killed <- time.Now()

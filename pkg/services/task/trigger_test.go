@@ -9,6 +9,7 @@ import (
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -37,7 +38,7 @@ func blockedJob(id string, runs *atomic.Int32, release <-chan struct{}) job.Job 
 
 func TestManualTaskRunsOnlyWhenTriggered(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{Job: countingJob("manual", &runs), Manual: true}
+	tk := &entity.Task{Job: countingJob("manual", &runs), Manual: true}
 	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
@@ -57,21 +58,21 @@ func TestManualTaskRunsOnlyWhenTriggered(t *testing.T) {
 	}
 }
 
-func requeueing(s *manager, tk *Task) func() bool {
+func requeueing(s *manager, tk *entity.Task) func() bool {
 	return func() bool {
 		st := s.Stats(tk.ID())
 		return st != nil && st.Requeueing
 	}
 }
 
-func registrationOf(s *manager, tk *Task) *registration {
+func registrationOf(s *manager, tk *entity.Task) *registration {
 	s.el.RLock()
 	defer s.el.RUnlock()
 	return s.registered[tk.ID()]
 }
 
 // busy reports whether a task is queued, running or being requeued.
-func busy(s *manager, tk *Task) bool {
+func busy(s *manager, tk *entity.Task) bool {
 	s.el.RLock()
 	defer s.el.RUnlock()
 	_, running := s.running[tk]
@@ -81,7 +82,7 @@ func busy(s *manager, tk *Task) bool {
 
 func TestAddRejectsAManualTaskWithASchedule(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{Job: countingJob("both", &runs), Manual: true, Schedule: neverFires}
+	tk := &entity.Task{Job: countingJob("both", &runs), Manual: true, Schedule: neverFires}
 	s := startedManager(t)
 	if err := s.Add(tk); !errors.Is(err, errors.InvalidArgument) {
 		t.Fatalf("Add = %v, want InvalidArgument", err)
@@ -93,7 +94,7 @@ func TestAddRejectsAManualTaskWithASchedule(t *testing.T) {
 
 func TestTriggerRunsAScheduledTaskNow(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{Job: countingJob("scheduled", &runs), Schedule: neverFires}
+	tk := &entity.Task{Job: countingJob("scheduled", &runs), Schedule: neverFires}
 	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
@@ -118,7 +119,7 @@ func TestTriggerOfARunningTaskConflicts(t *testing.T) {
 	var runs atomic.Int32
 	release := make(chan struct{})
 	defer close(release)
-	tk := &Task{Job: blockedJob("running", &runs, release), Manual: true}
+	tk := &entity.Task{Job: blockedJob("running", &runs, release), Manual: true}
 	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
@@ -136,8 +137,8 @@ func TestTriggerOfAQueuedTaskConflicts(t *testing.T) {
 	var busyRuns, runs atomic.Int32
 	release := make(chan struct{})
 	defer close(release)
-	other := &Task{Job: blockedJob("other", &busyRuns, release)}
-	tk := &Task{Job: countingJob("waiting", &runs), Manual: true}
+	other := &entity.Task{Job: blockedJob("other", &busyRuns, release)}
+	tk := &entity.Task{Job: countingJob("waiting", &runs), Manual: true}
 	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(other, tk); err != nil {
 		t.Fatal(err)
@@ -153,7 +154,7 @@ func TestTriggerOfAQueuedTaskConflicts(t *testing.T) {
 
 func TestTriggerDuringARequeueConflicts(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("cooling-trigger", &runs),
 		Manual:          true,
 		RequeueAttempts: 1,
@@ -181,7 +182,7 @@ func TestTriggerParamsLastForThatFiring(t *testing.T) {
 		seen []any
 	)
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("params", func(jc job.Context) error {
 			mu.Lock()
 			seen = append(seen, jc.GetParams())
@@ -225,7 +226,7 @@ func TestCancelOfARunEndsItAndKeepsTheTask(t *testing.T) {
 	var runs atomic.Int32
 	release := make(chan struct{})
 	defer close(release)
-	tk := &Task{Job: blockedJob("cancel-run", &runs, release), Manual: true}
+	tk := &entity.Task{Job: blockedJob("cancel-run", &runs, release), Manual: true}
 	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
@@ -251,7 +252,7 @@ func TestCancelEndsAOneShotTask(t *testing.T) {
 	var runs atomic.Int32
 	release := make(chan struct{})
 	defer close(release)
-	tk := &Task{Job: blockedJob("cancel-one-shot", &runs, release)}
+	tk := &entity.Task{Job: blockedJob("cancel-one-shot", &runs, release)}
 	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
@@ -265,7 +266,7 @@ func TestCancelEndsAOneShotTask(t *testing.T) {
 
 func TestCancelInterruptsARetryWait(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("cancel-retry", &runs),
 		Manual:          true,
 		RetryAttempts:   3,
@@ -294,7 +295,7 @@ func TestCancelInterruptsARetryWait(t *testing.T) {
 
 func TestCancelEndsARequeueCooldown(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:             alwaysFailingJob("cancel-cooling", &runs),
 		Manual:          true,
 		RequeueAttempts: 3,
@@ -323,8 +324,8 @@ func TestCancelEndsARequeueCooldown(t *testing.T) {
 func TestCancelTakesAQueuedTaskOutOfTheQueue(t *testing.T) {
 	var busyRuns, runs atomic.Int32
 	release := make(chan struct{})
-	other := &Task{Job: blockedJob("other", &busyRuns, release)}
-	tk := &Task{Job: countingJob("queued-cancel", &runs), Manual: true}
+	other := &entity.Task{Job: blockedJob("other", &busyRuns, release)}
+	tk := &entity.Task{Job: countingJob("queued-cancel", &runs), Manual: true}
 	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
@@ -358,8 +359,8 @@ func TestCancelOfAQueuedOneShotTaskEndsIt(t *testing.T) {
 	var busyRuns, runs atomic.Int32
 	release := make(chan struct{})
 	defer close(release)
-	other := &Task{Job: blockedJob("other", &busyRuns, release)}
-	tk := &Task{Job: countingJob("queued-one-shot", &runs)}
+	other := &entity.Task{Job: blockedJob("other", &busyRuns, release)}
+	tk := &entity.Task{Job: countingJob("queued-one-shot", &runs)}
 	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)
@@ -378,7 +379,7 @@ func TestCancelOfAQueuedOneShotTaskEndsIt(t *testing.T) {
 
 func TestCancelOfAnIdleTaskConflicts(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{Job: countingJob("idle", &runs), Manual: true}
+	tk := &entity.Task{Job: countingJob("idle", &runs), Manual: true}
 	s := startedManager(t)
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
@@ -397,7 +398,7 @@ func TestCancelOfAnUnknownTaskIsNotFound(t *testing.T) {
 
 func TestRemoveInterruptsARetryWait(t *testing.T) {
 	var runs, otherRuns atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:           alwaysFailingJob("remove-retry", &runs),
 		RetryAttempts: 3,
 		RetryDelay:    time.Hour,
@@ -411,7 +412,7 @@ func TestRemoveInterruptsARetryWait(t *testing.T) {
 	if err := s.Remove(context.Background(), tk); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Add(&Task{Job: countingJob("next", &otherRuns)}); err != nil {
+	if err := s.Add(&entity.Task{Job: countingJob("next", &otherRuns)}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the only slot to be free", func() bool { return otherRuns.Load() == 1 })
@@ -419,7 +420,7 @@ func TestRemoveInterruptsARetryWait(t *testing.T) {
 
 func TestStopInterruptsARetryWait(t *testing.T) {
 	var runs atomic.Int32
-	tk := &Task{
+	tk := &entity.Task{
 		Job:           alwaysFailingJob("stop-retry", &runs),
 		RetryAttempts: 3,
 		RetryDelay:    100 * time.Millisecond,
@@ -445,8 +446,8 @@ func TestStopInterruptsARetryWait(t *testing.T) {
 func TestTickWhileQueuedIsSkipped(t *testing.T) {
 	var busyRuns, runs atomic.Int32
 	release := make(chan struct{})
-	other := &Task{Job: blockedJob("other", &busyRuns, release)}
-	tk := &Task{Job: countingJob("ticking", &runs), Schedule: "* * * * * *"}
+	other := &entity.Task{Job: blockedJob("other", &busyRuns, release)}
+	tk := &entity.Task{Job: countingJob("ticking", &runs), Schedule: "* * * * * *"}
 	s := startedManager(t, MaxConcurrency(1))
 	if err := s.Add(other); err != nil {
 		t.Fatal(err)

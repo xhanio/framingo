@@ -4,8 +4,6 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/labels"
-
-	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 // PlanKindCommand runs a command: its Params is a CommandParams, the planner builds
@@ -18,7 +16,7 @@ type Plan struct {
 	Description string     `json:"description"`
 	Kind        string     `json:"kind,omitempty"`   // a predefined kind, or empty for a Task with its own Job
 	Params      any        `json:"params,omitempty"` // what the kind takes, as its constant says
-	Task        *task.Task `json:"task"`
+	Task        *Task      `json:"task"`
 }
 
 type CommandParams struct {

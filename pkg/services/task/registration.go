@@ -6,6 +6,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job/executor"
 )
 
@@ -17,7 +18,7 @@ var (
 // registration lasts from Add to Remove; its executor outlives a single execution so that retry
 // state carries over from one push to the next.
 type registration struct {
-	task *Task
+	task *entity.Task
 	exec executor.Executor
 
 	// guarded by the manager's el

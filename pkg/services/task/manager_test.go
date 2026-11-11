@@ -10,6 +10,7 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/structs/staque"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
@@ -37,9 +38,9 @@ func newTestJob(id string, d time.Duration, fail bool) job.Job {
 }
 
 func TestMaxConcurrency(t *testing.T) {
-	tasks := make([]*Task, 20)
+	tasks := make([]*entity.Task, 20)
 	for i := range 20 {
-		tasks[i] = &Task{
+		tasks[i] = &entity.Task{
 			Job:      newTestJob(fmt.Sprintf("#%d", i), 2*time.Second, false),
 			Priority: i,
 		}
@@ -60,9 +61,9 @@ func TestMaxConcurrency(t *testing.T) {
 }
 
 func TestExclusivePlan(t *testing.T) {
-	tasks := make([]*Task, 20)
+	tasks := make([]*entity.Task, 20)
 	for i := range 20 {
-		tasks[i] = &Task{
+		tasks[i] = &entity.Task{
 			Job:      newTestJob(fmt.Sprintf("#%d", i), 1*time.Second, false),
 			Priority: i,
 		}
@@ -94,7 +95,7 @@ func TestPriorityQueue(t *testing.T) {
 	regs := make([]*registration, 20)
 	for i := range 20 {
 		regs[i] = &registration{
-			task:     &Task{Job: newTestJob(fmt.Sprintf("#%d", i), 2*time.Second, false), Priority: i, Exclusive: i%5 == 0},
+			task:     &entity.Task{Job: newTestJob(fmt.Sprintf("#%d", i), 2*time.Second, false), Priority: i, Exclusive: i%5 == 0},
 			priority: i,
 		}
 	}

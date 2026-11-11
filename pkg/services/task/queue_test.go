@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -23,10 +24,10 @@ func TestQueueTakesTheMoreUrgentThenTheEarlierQueued(t *testing.T) {
 	}
 	s := startedManager(t, MaxConcurrency(1))
 	// ran has run before, so its job is no longer new; older is created before newer
-	ran := &Task{Job: recorded("ran"), Manual: true, Priority: 1}
-	older := &Task{Job: recorded("older"), Manual: true, Priority: 3}
-	newer := &Task{Job: recorded("newer"), Manual: true, Priority: 3}
-	fresh := &Task{Job: recorded("fresh"), Manual: true, Priority: 2}
+	ran := &entity.Task{Job: recorded("ran"), Manual: true, Priority: 1}
+	older := &entity.Task{Job: recorded("older"), Manual: true, Priority: 3}
+	newer := &entity.Task{Job: recorded("newer"), Manual: true, Priority: 3}
+	fresh := &entity.Task{Job: recorded("fresh"), Manual: true, Priority: 2}
 	if err := s.Add(ran, older, newer, fresh); err != nil {
 		t.Fatal(err)
 	}
@@ -36,8 +37,8 @@ func TestQueueTakesTheMoreUrgentThenTheEarlierQueued(t *testing.T) {
 	eventually(t, "ran to run once", func() bool { return ran.Job.IsState(job.StateSucceeded) })
 
 	started, release := make(chan struct{}), make(chan struct{})
-	blocker := &Task{Job: holdJob("blocker", started, release), Manual: true}
-	held := &Task{Job: recorded("held"), Manual: true}
+	blocker := &entity.Task{Job: holdJob("blocker", started, release), Manual: true}
+	held := &entity.Task{Job: recorded("held"), Manual: true}
 	if err := s.Add(blocker, held); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +49,7 @@ func TestQueueTakesTheMoreUrgentThenTheEarlierQueued(t *testing.T) {
 	if err := s.Trigger(held.ID(), nil); err != nil {
 		t.Fatal(err)
 	}
-	for _, tk := range []*Task{fresh, newer, older, ran} {
+	for _, tk := range []*entity.Task{fresh, newer, older, ran} {
 		if err := s.Trigger(tk.ID(), nil); err != nil {
 			t.Fatal(err)
 		}

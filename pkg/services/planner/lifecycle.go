@@ -8,8 +8,8 @@ import (
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
-	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 // The task manager is the caller's, a dependency started before the planner.
@@ -21,7 +21,7 @@ func (m *manager) Start(ctx context.Context) error {
 // SignalKill. It leaves the task manager running: other tasks may share it.
 func (m *manager) Stop(ctx context.Context) error {
 	m.Lock()
-	tasks := make([]*task.Task, 0, len(m.plans))
+	tasks := make([]*entity.Task, 0, len(m.plans))
 	for _, plan := range m.plans {
 		tasks = append(tasks, plan.Task)
 	}

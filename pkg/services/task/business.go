@@ -6,11 +6,12 @@ import (
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/job/executor"
 )
 
-func (m *manager) Add(tasks ...*Task) error {
+func (m *manager) Add(tasks ...*entity.Task) error {
 	for _, t := range tasks {
 		if t.ID() == "" {
 			continue
@@ -22,7 +23,7 @@ func (m *manager) Add(tasks ...*Task) error {
 	return nil
 }
 
-func (m *manager) add(t *Task) error {
+func (m *manager) add(t *entity.Task) error {
 	key := t.ID()
 	if t.Manual && t.Schedule != "" {
 		return errors.InvalidArgument.Newf("task %s cannot be both manual and scheduled", key)
@@ -42,13 +43,13 @@ func (m *manager) add(t *Task) error {
 		reg.cron = id
 	}
 	m.registered[key] = reg
-	if t.isOneShot() {
+	if t.IsOneShot() {
 		m.enqueue(reg)
 	}
 	return nil
 }
 
-func (m *manager) Remove(ctx context.Context, tasks ...*Task) error {
+func (m *manager) Remove(ctx context.Context, tasks ...*entity.Task) error {
 	var going []*execution
 	for _, t := range tasks {
 		key := t.ID()
@@ -129,7 +130,7 @@ func (m *manager) Cancel(id string) error {
 	}
 	if reg.queued || reg.cooldown != nil {
 		m.stopWaiting(reg)
-		if task.isOneShot() {
+		if task.IsOneShot() {
 			delete(m.registered, id)
 		}
 	}
@@ -141,14 +142,14 @@ func (m *manager) Cancel(id string) error {
 	return nil
 }
 
-func (m *manager) Stats(id string) *Stats {
+func (m *manager) Stats(id string) *entity.TaskStats {
 	m.el.RLock()
 	defer m.el.RUnlock()
 	reg, ok := m.registered[id]
 	if !ok {
 		return nil
 	}
-	st := &Stats{Stats: *reg.exec.Stats(), Requeues: reg.requeues, Requeueing: reg.requeueing()}
+	st := &entity.TaskStats{Stats: *reg.exec.Stats(), Requeues: reg.requeues, Requeueing: reg.requeueing()}
 	if left := time.Until(reg.cooling); left > 0 {
 		st.Cooldown = left
 	}
@@ -194,7 +195,7 @@ func (m *manager) tick(reg *registration) {
 	}
 }
 
-func newExecutor(t *Task) executor.Executor {
+func newExecutor(t *entity.Task) executor.Executor {
 	return executor.New(t.Job,
 		executor.WithTimeout(t.Timeout),
 		executor.WithRetry(t.RetryAttempts, t.RetryDelay),

@@ -34,7 +34,8 @@ type Plan struct {
     Metadata    labels.Set // k8s.io label set
     Description string
     Kind        string     // a predefined kind, or empty for a Task with its own Job
-    Task        *task.Task // pkg/utils/task - what actually runs
+    Params      any        // what the kind takes: entity.CommandParams for a command plan
+    Task        *Task      // entity.Task - what actually runs
 }
 
 type PlannerStatsOptions struct {
@@ -46,7 +47,7 @@ type PlannerStatsOptions struct {
 The `Task` decides when a plan runs: `Schedule` for cron, `Manual: true` to keep it
 registered until `Trigger` runs it (the two exclude each other), neither to run it
 once on `Add`. `Timeout`, `RetryAttempts`, `RequeueAttempts` and the rest apply as
-they do in `pkg/utils/task`. `GracePeriod` (default 10 seconds) is how long a stopped
+they do in the task manager, `pkg/services/task`. `GracePeriod` (default 10 seconds) is how long a stopped
 plan gets to end on its own; see [Stopping a plan](#stopping-a-plan).
 
 ## Construction
@@ -54,14 +55,14 @@ plan gets to end on its own; see [Stopping a plan](#stopping-a-plan).
 ```go
 import (
     "github.com/xhanio/framingo/pkg/services/planner"
-    "github.com/xhanio/framingo/pkg/utils/task"
+    "github.com/xhanio/framingo/pkg/services/task"
 )
 
 // tm runs the plans. It is yours: set the concurrency there (10 by default) and share it
-// with tasks of your own if you like.
+// with tasks of your own if you like. The planner takes it as a model.TaskManager.
 tm := task.New(task.WithLogger(logger))
 
-// es: where run events are sent - typically the messagebus manager
+// the message sender: where run events are sent - typically the messagebus manager
 // (any common.MessageSender), or nil. The planner depends on it and on tm.
 pl := planner.New(messagebusMgr, tm,
     planner.WithLogger(logger),
@@ -86,7 +87,7 @@ err := pl.Add(&entity.Plan{
     ID:     "backup",
     Kind:   entity.PlanKindCommand,
     Params: entity.CommandParams{Command: []string{"/usr/bin/pg_dump", "mydb"}, Dir: "/tmp"},
-    Task: &task.Task{
+    Task: &entity.Task{
         Schedule: "30 2 * * *",
         Timeout:  time.Hour,
     },
@@ -96,7 +97,7 @@ runID, err := pl.Trigger("backup", entity.PlanRunManual) // run it now as well
 
 A plan of a kind takes what the kind needs in `Plan.Params` and leaves `Task.Params` empty:
 the planner passes each firing's run ID and source there. A command plan's job is a command
-task from `pkg/utils/task` (see below) with the run's bookkeeping around it. The command runs in its own process group, so stopping it reaches
+task from `pkg/services/task` (see below) with the run's bookkeeping around it. The command runs in its own process group, so stopping it reaches
 its children, and one that ends on its own keeps any background children it left. Its
 output goes to `<log dir>/<plan ID>/<time>-<run>.log` and the tail of it into the run.
 
@@ -110,7 +111,7 @@ backup := task.Command{
     Grace: 30 * time.Second, // how long it gets to stop before a SIGKILL; 10s by default
     Out:   logWriter,        // nil discards the output
 }
-err := tm.Add(&task.Task{Job: job.New("backup", backup.Run), Schedule: "30 2 * * *"})
+err := tm.Add(&entity.Task{Job: job.New("backup", backup.Run), Schedule: "30 2 * * *"})
 ```
 
 `Command` defines the task and its `Run` is the job function; `job.New` takes a copy, so

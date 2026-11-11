@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/cronutil"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
@@ -14,7 +15,7 @@ func TestValidScheduleIsAcceptedByTheManager(t *testing.T) {
 		if err := cronutil.Validate(spec); err != nil {
 			t.Fatalf("cronutil.Validate(%q) = %v", spec, err)
 		}
-		tk := &Task{Job: job.New(spec, func(job.Context) error { return nil }), Ctx: context.Background(), Schedule: spec}
+		tk := &entity.Task{Job: job.New(spec, func(job.Context) error { return nil }), Ctx: context.Background(), Schedule: spec}
 		if err := s.Add(tk); err != nil {
 			t.Fatalf("Add rejected %q that validation accepted: %v", spec, err)
 		}

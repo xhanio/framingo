@@ -5,8 +5,8 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
+	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 const (
@@ -22,7 +22,7 @@ type manager struct {
 
 	ms common.MessageSender
 
-	tm task.Manager
+	tm model.TaskManager
 
 	logDir    string
 	tailBytes int
@@ -31,11 +31,11 @@ type manager struct {
 	plans map[string]*entity.Plan
 }
 
-func New(ms common.MessageSender, tm task.Manager, opts ...Option) Manager {
+func New(ms common.MessageSender, tm model.TaskManager, opts ...Option) Manager {
 	return newManager(ms, tm, opts...)
 }
 
-func newManager(ms common.MessageSender, tm task.Manager, opts ...Option) *manager {
+func newManager(ms common.MessageSender, tm model.TaskManager, opts ...Option) *manager {
 	m := &manager{
 		ms:    ms,
 		tm:    tm,

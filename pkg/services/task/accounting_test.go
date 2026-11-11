@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -19,7 +20,7 @@ func TestQuickTasksDoNotUnbalanceTheQueue(t *testing.T) {
 	}
 	defer func() { _ = s.Stop(context.Background()) }()
 	for i := range n {
-		tk := &Task{Job: job.New(fmt.Sprintf("quick-%d", i), func(job.Context) error {
+		tk := &entity.Task{Job: job.New(fmt.Sprintf("quick-%d", i), func(job.Context) error {
 			done.Add(1)
 			return nil
 		})}

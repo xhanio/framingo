@@ -15,10 +15,10 @@ import (
 	"github.com/xhanio/errors"
 	"k8s.io/apimachinery/pkg/labels"
 
+	"github.com/xhanio/framingo/pkg/services/task"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
-	"github.com/xhanio/framingo/pkg/utils/task"
 )
 
 type recordingSender struct {
@@ -101,7 +101,7 @@ func startedPlanner(t *testing.T, opts ...Option) (*manager, *recordingSender) {
 	return m, sender
 }
 
-func commandPlan(id string, tk *task.Task, command ...string) *entity.Plan {
+func commandPlan(id string, tk *entity.Task, command ...string) *entity.Plan {
 	if tk.Schedule == "" {
 		tk.Manual = true
 	}
@@ -122,7 +122,7 @@ func triggered(t *testing.T, m *manager, id string) string {
 
 func TestCommandPlanRunsOnlyWhenTriggered(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("idle", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("idle", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -133,7 +133,7 @@ func TestCommandPlanRunsOnlyWhenTriggered(t *testing.T) {
 
 func TestCommandPlanReportsASuccessfulRun(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("ok", &task.Task{}, "sh", "-c", "echo hello")); err != nil {
+	if err := m.Add(commandPlan("ok", &entity.Task{}, "sh", "-c", "echo hello")); err != nil {
 		t.Fatal(err)
 	}
 	runID := triggered(t, m, "ok")
@@ -179,7 +179,7 @@ func TestCommandPlanReportsASuccessfulRun(t *testing.T) {
 
 func TestCommandPlanReportsAFailedRun(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("bad", &task.Task{}, "sh", "-c", "echo boom >&2; exit 3")); err != nil {
+	if err := m.Add(commandPlan("bad", &entity.Task{}, "sh", "-c", "echo boom >&2; exit 3")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "bad")
@@ -198,7 +198,7 @@ func TestCommandPlanReportsAFailedRun(t *testing.T) {
 
 func TestCommandPlanReportsACommandThatCannotStart(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("missing", &task.Task{}, "/no/such/binary")); err != nil {
+	if err := m.Add(commandPlan("missing", &entity.Task{}, "/no/such/binary")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "missing")
@@ -214,7 +214,7 @@ func TestCommandPlanReportsACommandThatCannotStart(t *testing.T) {
 
 func TestCommandPlanReportsATimeout(t *testing.T) {
 	m, sender := startedPlanner(t)
-	plan := commandPlan("slow", &task.Task{Timeout: 100 * time.Millisecond}, "sleep", "30")
+	plan := commandPlan("slow", &entity.Task{Timeout: 100 * time.Millisecond}, "sleep", "30")
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestCommandPlanCancelKillsTheWholeProcessGroup(t *testing.T) {
 	m, sender := startedPlanner(t)
 	marker := filepath.Join(t.TempDir(), "survived")
 	script := "(sleep 1; touch " + marker + ") & echo started; wait"
-	if err := m.Add(commandPlan("group", &task.Task{}, "sh", "-c", script)); err != nil {
+	if err := m.Add(commandPlan("group", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "group")
@@ -255,7 +255,7 @@ func TestCommandPlanCancelKillsTheWholeProcessGroup(t *testing.T) {
 
 func TestDeleteOfARunningPlanEndsItCanceled(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("deleted", &task.Task{}, "sleep", "30")); err != nil {
+	if err := m.Add(commandPlan("deleted", &entity.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "deleted")
@@ -278,7 +278,7 @@ func TestCommandPlanAppliesDirAndEnv(t *testing.T) {
 	}
 	t.Setenv("PLANNER_TEST_INHERITED", "kept")
 	t.Setenv("PLANNER_TEST_OVERRIDDEN", "old")
-	plan := commandPlan("env", &task.Task{}, "sh", "-c", `pwd; echo "$PLANNER_TEST_INHERITED $PLANNER_TEST_OVERRIDDEN"`)
+	plan := commandPlan("env", &entity.Task{}, "sh", "-c", `pwd; echo "$PLANNER_TEST_INHERITED $PLANNER_TEST_OVERRIDDEN"`)
 	plan.Params = entity.CommandParams{
 		Command: plan.Params.(entity.CommandParams).Command,
 		Dir:     dir,
@@ -298,7 +298,7 @@ func TestCommandPlanAppliesDirAndEnv(t *testing.T) {
 func TestCommandPlanKeepsATailAndTheWholeLog(t *testing.T) {
 	m, sender := startedPlanner(t, WithOutputTailBytes(16))
 	script := `i=0; while [ $i -lt 20000 ]; do echo line-$i; i=$((i+1)); done`
-	if err := m.Add(commandPlan("loud", &task.Task{}, "sh", "-c", script)); err != nil {
+	if err := m.Add(commandPlan("loud", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "loud")
@@ -321,7 +321,7 @@ func TestCommandPlanKeepsATailAndTheWholeLog(t *testing.T) {
 
 func TestCommandPlanWithoutALogDirKeepsNoFile(t *testing.T) {
 	m, sender := startedPlanner(t, WithLogDir(""))
-	if err := m.Add(commandPlan("nolog", &task.Task{}, "sh", "-c", "echo hi")); err != nil {
+	if err := m.Add(commandPlan("nolog", &entity.Task{}, "sh", "-c", "echo hi")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "nolog")
@@ -334,7 +334,7 @@ func TestCommandPlanWithoutALogDirKeepsNoFile(t *testing.T) {
 
 func TestScheduledCommandPlanReportsItsSource(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("cron", &task.Task{Schedule: "* * * * * *"}, "true")); err != nil {
+	if err := m.Add(commandPlan("cron", &entity.Task{Schedule: "* * * * * *"}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "a scheduled run", func() bool { return len(sender.finished()) >= 1 })
@@ -348,12 +348,12 @@ func TestTriggerRecordsTheSourceOnTheRunAndItsReruns(t *testing.T) {
 	const usage entity.PlanRunSource = "usage"
 	cases := []struct {
 		name string
-		task *task.Task
+		task *entity.Task
 		runs int
 	}{
-		{name: "a single run", task: &task.Task{}, runs: 1},
-		{name: "a retry", task: &task.Task{RetryAttempts: 1, RetryDelay: time.Millisecond}, runs: 2},
-		{name: "a requeue", task: &task.Task{RequeueAttempts: 1, RequeueCooldown: 10 * time.Millisecond}, runs: 2},
+		{name: "a single run", task: &entity.Task{}, runs: 1},
+		{name: "a retry", task: &entity.Task{RetryAttempts: 1, RetryDelay: time.Millisecond}, runs: 2},
+		{name: "a requeue", task: &entity.Task{RequeueAttempts: 1, RequeueCooldown: 10 * time.Millisecond}, runs: 2},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -376,7 +376,7 @@ func TestTriggerRecordsTheSourceOnTheRunAndItsReruns(t *testing.T) {
 
 func TestTriggerWithAScheduleSourceIsRecordedAsSuch(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("late", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("late", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Trigger("late", entity.PlanRunSchedule); err != nil {
@@ -390,7 +390,7 @@ func TestTriggerWithAScheduleSourceIsRecordedAsSuch(t *testing.T) {
 
 func TestTriggerRejectsAnEmptySource(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("plain", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("plain", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Trigger("plain", ""); !errors.Is(err, errors.InvalidArgument) {
@@ -405,10 +405,10 @@ func TestTriggerRejectsAnEmptySource(t *testing.T) {
 func TestEveryRerunIsANewRun(t *testing.T) {
 	cases := []struct {
 		name string
-		task *task.Task
+		task *entity.Task
 	}{
-		{name: "a retry", task: &task.Task{RetryAttempts: 1, RetryDelay: time.Millisecond}},
-		{name: "a requeue", task: &task.Task{RequeueAttempts: 1, RequeueCooldown: 10 * time.Millisecond}},
+		{name: "a retry", task: &entity.Task{RetryAttempts: 1, RetryDelay: time.Millisecond}},
+		{name: "a requeue", task: &entity.Task{RequeueAttempts: 1, RequeueCooldown: 10 * time.Millisecond}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -436,7 +436,7 @@ func TestGetResultFollowsTheLatestRun(t *testing.T) {
 	m, sender := startedPlanner(t)
 	release := filepath.Join(t.TempDir(), "release")
 	script := "while [ ! -e " + release + " ]; do sleep 0.01; done"
-	if err := m.Add(commandPlan("latest", &task.Task{}, "sh", "-c", script)); err != nil {
+	if err := m.Add(commandPlan("latest", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
 	if res, err := m.GetResult("latest"); err != nil || res != nil {
@@ -477,7 +477,7 @@ func TestLastRunFollowsTheLatestRun(t *testing.T) {
 	m, sender := startedPlanner(t)
 	release := filepath.Join(t.TempDir(), "release")
 	script := "while [ ! -e " + release + " ]; do sleep 0.01; done"
-	if err := m.Add(commandPlan("latest", &task.Task{}, "sh", "-c", script)); err != nil {
+	if err := m.Add(commandPlan("latest", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
 	if run, err := m.LastRun("latest"); err != nil || run != nil {
@@ -505,7 +505,7 @@ func TestLastRunFollowsTheLatestRun(t *testing.T) {
 func TestLastRunOfAPlanWithoutAKindIsNil(t *testing.T) {
 	m, _ := startedPlanner(t)
 	var runs atomic.Int32
-	plan := &entity.Plan{ID: "own", Task: &task.Task{
+	plan := &entity.Plan{ID: "own", Task: &entity.Task{
 		Job: job.New("own-job", func(jc job.Context) error {
 			jc.SetResult(entity.PlanRun{ID: "not a run of the planner's"})
 			runs.Add(1)
@@ -530,12 +530,12 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 		name string
 		plan *entity.Plan
 	}{
-		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Params: entity.CommandParams{Command: []string{"true"}}, Task: &task.Task{}}},
+		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Params: entity.CommandParams{Command: []string{"true"}}, Task: &entity.Task{}}},
 		{name: "a kind without a task", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand}},
-		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: "true", Task: &task.Task{}}},
-		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: entity.CommandParams{}, Task: &task.Task{}}},
-		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &task.Task{Params: entity.CommandParams{Command: []string{"true"}}}}},
-		{name: "params on the task as well", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: entity.CommandParams{Command: []string{"true"}}, Task: &task.Task{Params: "extra"}}},
+		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: "true", Task: &entity.Task{}}},
+		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: entity.CommandParams{}, Task: &entity.Task{}}},
+		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &entity.Task{Params: entity.CommandParams{Command: []string{"true"}}}}},
+		{name: "params on the task as well", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: entity.CommandParams{Command: []string{"true"}}, Task: &entity.Task{Params: "extra"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -558,7 +558,7 @@ func TestTriggerAndCancelErrors(t *testing.T) {
 	if err := m.Cancel("nobody"); !errors.Is(err, errors.NotFound) {
 		t.Fatalf("Cancel of an unknown plan = %v, want NotFound", err)
 	}
-	if err := m.Add(commandPlan("busy", &task.Task{}, "sleep", "30")); err != nil {
+	if err := m.Add(commandPlan("busy", &entity.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Cancel("busy"); !errors.Is(err, errors.Conflict) {
@@ -577,7 +577,7 @@ func TestTriggerAndCancelErrors(t *testing.T) {
 func TestPlanWithItsOwnJobStillWorks(t *testing.T) {
 	m, sender := startedPlanner(t)
 	var runs atomic.Int32
-	plan := &entity.Plan{ID: "own", Task: &task.Task{
+	plan := &entity.Plan{ID: "own", Task: &entity.Task{
 		Job:    job.New("own-job", func(job.Context) error { runs.Add(1); return nil }),
 		Manual: true,
 	}}
@@ -600,7 +600,7 @@ func TestPlanWithItsOwnJobStillWorks(t *testing.T) {
 func TestCancelOfAFinishedOneShotPlanConflicts(t *testing.T) {
 	m, _ := startedPlanner(t)
 	var runs atomic.Int32
-	plan := &entity.Plan{ID: "once", Task: &task.Task{
+	plan := &entity.Plan{ID: "once", Task: &entity.Task{
 		Job: job.New("once-job", func(job.Context) error { runs.Add(1); return nil }),
 	}}
 	if err := m.Add(plan); err != nil {
@@ -627,10 +627,10 @@ func TestPlannerDependsOnItsManagerAndSender(t *testing.T) {
 func TestInjectedManagerSetsTheConcurrency(t *testing.T) {
 	sender := &recordingSender{}
 	m := newManager(sender, startedTaskManager(t, task.MaxConcurrency(1)), WithLogDir(t.TempDir()))
-	if err := m.Add(commandPlan("first", &task.Task{}, "sleep", "30")); err != nil {
+	if err := m.Add(commandPlan("first", &entity.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Add(commandPlan("second", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("second", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "first")
@@ -653,7 +653,7 @@ func TestPlannerStartDoesNotStartTheManager(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Stop(context.Background()) })
-	if err := m.Add(commandPlan("idle", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("idle", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "idle")
@@ -668,7 +668,7 @@ func TestPlannerStopEndsItsPlansAndLeavesTheManagerRunning(t *testing.T) {
 	tm := startedTaskManager(t)
 	release := make(chan struct{})
 	defer close(release)
-	other := &task.Task{Job: job.New("other", func(job.Context) error { <-release; return nil }), Manual: true}
+	other := &entity.Task{Job: job.New("other", func(job.Context) error { <-release; return nil }), Manual: true}
 	if err := tm.Add(other); err != nil {
 		t.Fatal(err)
 	}
@@ -681,7 +681,7 @@ func TestPlannerStopEndsItsPlansAndLeavesTheManagerRunning(t *testing.T) {
 	if err := m.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Add(commandPlan("mine", &task.Task{}, "sleep", "30")); err != nil {
+	if err := m.Add(commandPlan("mine", &entity.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "mine")
@@ -701,7 +701,7 @@ func TestPlannerStopEndsItsPlansAndLeavesTheManagerRunning(t *testing.T) {
 		t.Fatalf("the other task's state = %s after the planner stopped", other.Job.State())
 	}
 	var runs atomic.Int32
-	if err := tm.Add(&task.Task{Job: job.New("later", func(job.Context) error { runs.Add(1); return nil })}); err != nil {
+	if err := tm.Add(&entity.Task{Job: job.New("later", func(job.Context) error { runs.Add(1); return nil })}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the manager to run a new task", func() bool { return runs.Load() == 1 })
@@ -709,11 +709,11 @@ func TestPlannerStopEndsItsPlansAndLeavesTheManagerRunning(t *testing.T) {
 
 func TestPlanIDTakenOnTheManagerIsAConflict(t *testing.T) {
 	m, _ := startedPlanner(t)
-	taken := &task.Task{Job: job.New("taken", func(job.Context) error { return nil }), Manual: true}
+	taken := &entity.Task{Job: job.New("taken", func(job.Context) error { return nil }), Manual: true}
 	if err := m.tm.Add(taken); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Add(commandPlan("taken", &task.Task{}, "true")); !errors.Is(err, errors.Conflict) {
+	if err := m.Add(commandPlan("taken", &entity.Task{}, "true")); !errors.Is(err, errors.Conflict) {
 		t.Fatalf("Add = %v, want Conflict", err)
 	}
 }
@@ -724,7 +724,7 @@ func TestCommandPlanWithoutASenderStillRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Stop(context.Background()) })
-	if err := m.Add(commandPlan("silent", &task.Task{}, "true")); err != nil {
+	if err := m.Add(commandPlan("silent", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
 	runID := triggered(t, m, "silent")
@@ -806,7 +806,7 @@ func TestOpenRunLogTakesAFileStillBeingWritten(t *testing.T) {
 
 func TestOpenRunLogOfARealRun(t *testing.T) {
 	m, sender := startedPlanner(t)
-	if err := m.Add(commandPlan("logged", &task.Task{}, "sh", "-c", "echo hello")); err != nil {
+	if err := m.Add(commandPlan("logged", &entity.Task{}, "sh", "-c", "echo hello")); err != nil {
 		t.Fatal(err)
 	}
 	triggered(t, m, "logged")

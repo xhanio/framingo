@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -19,7 +20,7 @@ func startedManager(t *testing.T, opts ...Option) *manager {
 
 func TestRemoveAndStopForgetTheTask(t *testing.T) {
 	s := startedManager(t)
-	tk := &Task{Job: job.New("yearly", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
+	tk := &entity.Task{Job: job.New("yearly", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
 	if err := s.Add(tk); err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +34,7 @@ func TestRemoveAndStopForgetTheTask(t *testing.T) {
 		t.Fatalf("a removed task still has stats: %+v", st)
 	}
 
-	again := &Task{Job: job.New("yearly-2", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
+	again := &entity.Task{Job: job.New("yearly-2", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
 	if err := s.Add(again); err != nil {
 		t.Fatal(err)
 	}

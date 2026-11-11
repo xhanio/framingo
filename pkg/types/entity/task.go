@@ -1,41 +1,17 @@
-package task
+package entity
 
 import (
 	"context"
 	"time"
 
-	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/job"
 	"github.com/xhanio/framingo/pkg/utils/job/executor"
 )
 
-const DefaultGracePeriod = 10 * time.Second
+const DefaultTaskGracePeriod = 10 * time.Second
 
-type Manager interface {
-	common.Service
-	common.Daemon
-	Add(tasks ...*Task) error
-	// Remove forgets the tasks and ends what they are doing, then waits for their executions
-	// until ctx ends; nothing of them starts after Remove. What still runs once ctx ends is
-	// sent SignalKill, like Stop, and the error wraps ctx's.
-	Remove(ctx context.Context, tasks ...*Task) error
-	Trigger(id string, params any) error
-	Cancel(id string) error
-	Stats(id string) *Stats
-}
-
-// Stats is what the task's executor reports, plus what the manager adds on top of it.
-type Stats struct {
-	executor.Stats
-	Requeues uint          `json:"requeues"` // times the current firing went back to the queue
-	Cooldown time.Duration `json:"cooldown"` // what is left of the current RequeueCooldown
-	// Requeueing says the latest execution failed and the task waits to run again, cooling
-	// down or back in the queue. Its job stays failed meanwhile: that run did fail.
-	Requeueing bool `json:"requeueing"`
-}
-
-// Task is configuration; the manager keeps its state of a task elsewhere, so a Task copies like
-// any value.
+// Task is what the task manager runs, and configuration only: the manager keeps its state of a
+// task elsewhere, so a Task copies like any value.
 type Task struct {
 	Job      job.Job         `json:"-"`
 	Ctx      context.Context `json:"-"`
@@ -51,9 +27,9 @@ type Task struct {
 	RetryAttempts int           `json:"retry_attempts,omitempty"`
 	RetryDelay    time.Duration `json:"retry_delay,omitempty"`
 	// GracePeriod is how long a canceled or timed out execution gets to end on its own, for
-	// whoever stops it to bound its wait with; the manager itself never reads it. Zero means
-	// DefaultGracePeriod. A Command has its own Grace for how it stops, which a command plan
-	// fills from this.
+	// whoever stops it to bound its wait with; the task manager itself never reads it. Zero
+	// means DefaultTaskGracePeriod. A task.Command has its own Grace for how it stops, which a
+	// command plan fills from this.
 	GracePeriod time.Duration `json:"grace_period,omitempty"`
 	// RequeueAttempts is how many times a failed execution, its retries used
 	// up, goes back to the queue. Unlike a retry it gives up its slot while
@@ -75,20 +51,31 @@ func (t *Task) ID() string {
 
 func (t *Task) Grace() time.Duration {
 	if t.GracePeriod <= 0 {
-		return DefaultGracePeriod
+		return DefaultTaskGracePeriod
 	}
 	return t.GracePeriod
-}
-
-// isOneShot reports whether the task leaves the manager after its execution.
-func (t *Task) isOneShot() bool {
-	return t.Schedule == "" && !t.Manual
 }
 
 func (t *Task) String() string {
 	return t.ID()
 }
 
+// IsOneShot says whether the task leaves the task manager after it runs: it has no schedule
+// and is not manual.
+func (t *Task) IsOneShot() bool {
+	return t.Schedule == "" && !t.Manual
+}
+
 func (t *Task) IsValid() bool {
 	return t != nil && t.Job != nil
+}
+
+// TaskStats is what the task's executor reports, plus what the task manager adds on top of it.
+type TaskStats struct {
+	executor.Stats
+	Requeues uint          `json:"requeues"` // times the current firing went back to the queue
+	Cooldown time.Duration `json:"cooldown"` // what is left of the current RequeueCooldown
+	// Requeueing says the latest execution failed and the task waits to run again, cooling
+	// down or back in the queue. Its job stays failed meanwhile: that run did fail.
+	Requeueing bool `json:"requeueing"`
 }

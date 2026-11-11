@@ -191,6 +191,10 @@ Production-ready service implementations:
   - Typed (`common.Message`) and raw (`kind`, payload) handlers
   - `NewMessenger(name)` for direct channel access, `AttachWebSocket(messenger, ws)` to bridge a connection (with server-side pings, tunable via `WithPing`)
 
+- **[task](pkg/services/task/)** — Task manager (`model.TaskManager` + `Daemon`)
+  - Runs `entity.Task`s by schedule, by `Trigger` or once, in priority then arrival order, within a concurrency limit
+  - Retries, requeues on failure, exclusive tasks; `task.Command` is a ready job function for running a command
+
 - **[planner](pkg/services/planner/)** — Task scheduling
   - Concurrent execution with priority, cancel, and result lookup
   - Emits task lifecycle events through a `MessageSender`
@@ -251,7 +255,7 @@ Interface contracts and shared types:
 | **[reflectutil](pkg/utils/reflectutil/)** | Type location, byte conversion, field scan/apply |
 | **[sliceutil](pkg/utils/sliceutil/)** | Membership, dedupe, diff, copy, change tracking |
 | **[strutil](pkg/utils/strutil/)** | Validation, join, clean, random, hex format |
-| **[task](pkg/utils/task/)** | Task manager with concurrency control, priority queue, and requeue on failure |
+| **[syncutil](pkg/utils/syncutil/)** | `WaitGroup` whose `Wait(ctx)` gives up once the context ends |
 | **[testutil](pkg/utils/testutil/)** | Test database setup helpers |
 | **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
 

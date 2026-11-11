@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/xhanio/errors"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
@@ -13,7 +14,7 @@ func TestTickOverlappingARunIsSkipped(t *testing.T) {
 	var runs atomic.Int32
 	started := make(chan struct{}, 10)
 	release := make(chan struct{})
-	tk := &Task{
+	tk := &entity.Task{
 		Job: job.New("overlap", func(job.Context) error {
 			runs.Add(1)
 			started <- struct{}{}
@@ -45,8 +46,8 @@ func TestTickOverlappingARunIsSkipped(t *testing.T) {
 
 func TestAddRejectsTaskIDAlreadyAdded(t *testing.T) {
 	s := startedManager(t)
-	first := &Task{Job: job.New("dup", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
-	second := &Task{Job: job.New("dup", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
+	first := &entity.Task{Job: job.New("dup", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
+	second := &entity.Task{Job: job.New("dup", func(job.Context) error { return nil }), Schedule: "0 0 1 1 *"}
 	if err := s.Add(first); err != nil {
 		t.Fatal(err)
 	}
