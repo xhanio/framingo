@@ -21,11 +21,23 @@ func TestStartDoesNotStartTheTaskManager(t *testing.T) {
 	if err := m.Add(commandPlan("idle", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "idle")
+	trigger(t, m, "idle")
 	time.Sleep(50 * time.Millisecond)
 	if kinds := sender.kinds(); len(kinds) != 0 {
 		t.Fatalf("events from a task manager nobody started: %v", kinds)
 	}
+}
+
+func TestStopEndsARunNotStartedYet(t *testing.T) {
+	m, sender := startedManagerOn(t, task.New()) // a task manager nobody started, so the run waits
+	if err := m.Add(commandPlan("waiting", &entity.Task{}, "true")); err != nil {
+		t.Fatal(err)
+	}
+	runID := trigger(t, m, "waiting")
+	if err := m.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertCanceledBeforeItStarted(t, sender, runID)
 }
 
 func TestStopEndsItsPlansAndLeavesTheTaskManagerRunning(t *testing.T) {
@@ -45,7 +57,7 @@ func TestStopEndsItsPlansAndLeavesTheTaskManagerRunning(t *testing.T) {
 	if err := m.Add(commandPlan("mine", &entity.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "mine")
+	trigger(t, m, "mine")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
 	time.Sleep(50 * time.Millisecond)
 	if err := m.Stop(context.Background()); err != nil {
@@ -79,7 +91,7 @@ func TestStopWaitsForTheSlowestPlanNotTheSum(t *testing.T) {
 		if err := m.Add(commandPlan(id, &entity.Task{}, "sh", "-c", script)); err != nil {
 			t.Fatal(err)
 		}
-		triggered(t, m, id)
+		trigger(t, m, id)
 		eventually(t, "the command to get ready", func() bool { _, err := os.Stat(ready); return err == nil })
 	}
 	begin := time.Now()
@@ -101,7 +113,7 @@ func TestStopKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
 	if err := m.Add(withGrace(commandPlan("stubborn", &entity.Task{}, "sh", "-c", stubbornCommand, pids), time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "stubborn")
+	trigger(t, m, "stubborn")
 	child := waitPid(t, pids)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -122,7 +134,7 @@ func TestAForcedStopKills(t *testing.T) {
 	if err := m.Add(commandPlan("stubborn", &entity.Task{}, "sh", "-c", stubbornCommand, pids)); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "stubborn")
+	trigger(t, m, "stubborn")
 	child := waitPid(t, pids)
 	begin := time.Now()
 	if err := m.Stop(canceled()); !errors.Is(err, context.Canceled) {

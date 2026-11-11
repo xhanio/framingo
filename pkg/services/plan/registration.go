@@ -12,8 +12,9 @@ import (
 type registration struct {
 	plan *entity.Plan
 
-	mu     sync.Mutex
-	latest *entity.PlanRun
+	mu      sync.Mutex
+	latest  *entity.PlanRun
+	pending *triggered // the latest firing of Trigger, whose ID a run or a drop claims
 }
 
 // lastRun is the plan's latest run, nil if it has none yet or the plan has no kind.
@@ -25,6 +26,24 @@ func (r *registration) lastRun() *entity.PlanRun {
 	}
 	run := *r.latest
 	return &run
+}
+
+func (r *registration) setPending(tr *triggered) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pending = tr
+}
+
+// unstarted claims the latest firing of Trigger, if no run of it has.
+func (r *registration) unstarted() *triggered {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	tr := r.pending
+	r.pending = nil
+	if tr == nil || !tr.claim() {
+		return nil
+	}
+	return tr
 }
 
 func (r *registration) record(run entity.PlanRun) {

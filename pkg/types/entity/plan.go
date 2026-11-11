@@ -37,7 +37,9 @@ const (
 )
 
 // PlanRun is one run of a plan of a predefined kind, as of when it was reported. A retry or
-// a requeue is a new run. LastRun returns the plan's latest one.
+// a requeue is a new run. LastRun returns the plan's latest one. A run of Trigger that a
+// Cancel, Delete or Stop drops before it starts ends canceled, with the time of its Trigger as
+// StartedAt and no log.
 type PlanRun struct {
 	ID         string        `json:"id"`
 	PlanID     string        `json:"plan_id"`

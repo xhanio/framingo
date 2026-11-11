@@ -59,22 +59,41 @@ func (r *recordingSender) finished() []entity.PlanRun {
 	return out
 }
 
-func (r *recordingSender) counts(id string) (started, finished int) {
+// run is the run's start and end, as reported so far.
+func (r *recordingSender) run(id string) (started, finished *entity.PlanRun) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, msg := range r.msgs {
 		switch ev := msg.(type) {
 		case entity.PlanRunStarted:
-			if ev.PlanID == id {
-				started++
+			if ev.ID == id {
+				started = &ev.PlanRun
 			}
 		case entity.PlanRunFinished:
-			if ev.PlanID == id {
-				finished++
+			if ev.ID == id {
+				finished = &ev.PlanRun
 			}
 		}
 	}
 	return started, finished
+}
+
+// unfinished counts the plan's runs reported started and not finished.
+func (r *recordingSender) unfinished(planID string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	going := map[string]bool{}
+	for _, msg := range r.msgs {
+		switch ev := msg.(type) {
+		case entity.PlanRunStarted:
+			if ev.PlanID == planID {
+				going[ev.ID] = true
+			}
+		case entity.PlanRunFinished:
+			delete(going, ev.ID)
+		}
+	}
+	return len(going)
 }
 
 func (r *recordingSender) kinds() []string {
@@ -151,7 +170,7 @@ func ownJobPlan(id string, tk *entity.Task, fn job.Func) *entity.Plan {
 	return &entity.Plan{ID: id, Task: tk}
 }
 
-func triggered(t *testing.T, m *manager, id string) string {
+func trigger(t *testing.T, m *manager, id string) string {
 	t.Helper()
 	runID, err := m.Trigger(id, entity.PlanRunManual)
 	if err != nil {
@@ -170,6 +189,26 @@ const (
 	// neither does
 	stubbornCommand = `trap "" TERM; ` + stubbornChild
 )
+
+// assertCanceledBeforeItStarted checks the run a Trigger promised ended canceled without
+// having started, reported by PlanRunFinished alone.
+func assertCanceledBeforeItStarted(t *testing.T, sender *recordingSender, runID string) {
+	t.Helper()
+	var started, finished *entity.PlanRun
+	eventually(t, "the run's end to be reported", func() bool {
+		started, finished = sender.run(runID)
+		return finished != nil
+	})
+	if started != nil {
+		t.Fatalf("a run canceled before it started reported a start: %+v", started)
+	}
+	if finished.State != entity.PlanRunCanceled || finished.Error == "" || finished.Source != entity.PlanRunManual {
+		t.Fatalf("finished = %+v", finished)
+	}
+	if finished.StartedAt.IsZero() || finished.EndedAt.Before(finished.StartedAt) || finished.LogPath != "" {
+		t.Fatalf("finished = %+v", finished)
+	}
+}
 
 func pidFile(t *testing.T) string {
 	t.Helper()
@@ -246,9 +285,9 @@ func TestTheTaskManagerSetsTheConcurrency(t *testing.T) {
 	if err := m.Add(commandPlan("second", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "first")
+	trigger(t, m, "first")
 	eventually(t, "the first run to start", func() bool { return len(sender.started()) == 1 })
-	triggered(t, m, "second")
+	trigger(t, m, "second")
 	time.Sleep(100 * time.Millisecond)
 	if started := sender.started(); len(started) != 1 {
 		t.Fatalf("started = %+v, want the second plan held back by the limit", started)

@@ -59,10 +59,10 @@ func (m *manager) startRun(reg *registration, jc job.Context, header string) *ru
 		reg:  reg,
 		tail: ioutil.NewTailWriter(m.tailBytes),
 	}
-	if triggered, ok := jc.Params().(*triggeredRun); ok {
-		r.Source = triggered.source
-		if triggered.claimed.CompareAndSwap(false, true) {
-			r.ID = triggered.id
+	if tr, ok := jc.Params().(*triggered); ok {
+		r.Source = tr.source
+		if tr.claim() {
+			r.ID = tr.id
 		}
 	}
 	r.log = m.openRunLog(r, header)
@@ -109,6 +109,27 @@ func (m *manager) openRunLog(r *run, header string) *os.File {
 		r.StartedAt.Format(time.RFC3339), header)
 	r.LogPath = path
 	return f
+}
+
+// endUnstarted ends the run Trigger promised, if its firing was dropped before any run of it
+// started: that run is reported by PlanRunFinished alone.
+func (m *manager) endUnstarted(reg *registration) {
+	tr := reg.unstarted()
+	if tr == nil {
+		return
+	}
+	run := entity.PlanRun{
+		ID:        tr.id,
+		PlanID:    reg.plan.ID,
+		Source:    tr.source,
+		State:     entity.PlanRunCanceled,
+		StartedAt: tr.at,
+		EndedAt:   time.Now(),
+		ExitCode:  -1,
+		Error:     "canceled before it started",
+	}
+	reg.record(run)
+	m.report(entity.PlanRunFinished{PlanRun: run})
 }
 
 func (m *manager) report(msg common.Message) {

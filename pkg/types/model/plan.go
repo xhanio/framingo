@@ -10,10 +10,15 @@ import (
 
 type Plan interface {
 	common.Service
+	// Add keeps a copy of the plan, which needs an ID and a Task with a Schedule or Manual:
+	// a plan stays until Delete. An ID already added is a Conflict.
 	Add(plan *entity.Plan) error
 	// Trigger runs the plan now and returns the run's ID, empty for a plan without a kind.
 	// source goes on the run and on its retries and requeues; empty is an InvalidArgument.
+	// The run always ends with PlanRunFinished: canceled, without a PlanRunStarted, if a
+	// Cancel, Delete or Stop drops it before it starts.
 	Trigger(id string, source entity.PlanRunSource) (string, error)
+	// Cancel ends what the plan is doing, a run Trigger queued included, and keeps the plan.
 	Cancel(id string) error
 	// Delete ends what the plan is doing, forgets the plan, waits for its run to end until ctx
 	// ends, and returns its latest run, nil if it has none or has no kind. Its cron entry goes

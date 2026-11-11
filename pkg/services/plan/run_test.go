@@ -28,7 +28,7 @@ func TestCommandPlanReportsASuccessfulRun(t *testing.T) {
 	if err := m.Add(commandPlan("ok", &entity.Task{}, "sh", "-c", "echo hello")); err != nil {
 		t.Fatal(err)
 	}
-	runID := triggered(t, m, "ok")
+	runID := trigger(t, m, "ok")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 
 	kinds := sender.kinds()
@@ -74,7 +74,7 @@ func TestCommandPlanReportsAFailedRun(t *testing.T) {
 	if err := m.Add(commandPlan("bad", &entity.Task{}, "sh", "-c", "echo boom >&2; exit 3")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "bad")
+	trigger(t, m, "bad")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	finished := sender.finished()[0]
 	if finished.State != entity.PlanRunFailed || finished.ExitCode != 3 {
@@ -93,7 +93,7 @@ func TestCommandPlanReportsACommandThatCannotStart(t *testing.T) {
 	if err := m.Add(commandPlan("missing", &entity.Task{}, "/no/such/binary")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "missing")
+	trigger(t, m, "missing")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	finished := sender.finished()[0]
 	if finished.State != entity.PlanRunFailed || finished.ExitCode != -1 {
@@ -110,7 +110,7 @@ func TestCommandPlanReportsATimeout(t *testing.T) {
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "slow")
+	trigger(t, m, "slow")
 	eventually(t, "the run to time out", func() bool { return len(sender.finished()) == 1 })
 	finished := sender.finished()[0]
 	if finished.State != entity.PlanRunFailed {
@@ -147,7 +147,7 @@ func TestEveryRerunIsANewRun(t *testing.T) {
 			if err := m.Add(commandPlan("rerun", tc.task, "false")); err != nil {
 				t.Fatal(err)
 			}
-			runID := triggered(t, m, "rerun")
+			runID := trigger(t, m, "rerun")
 			eventually(t, "both runs to finish", func() bool { return len(sender.finished()) == 2 })
 			runs := sender.finished()
 			if runs[0].ID != runID {
@@ -172,7 +172,7 @@ func TestCommandPlanWithoutASenderStillRuns(t *testing.T) {
 	if err := m.Add(commandPlan("silent", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	runID := triggered(t, m, "silent")
+	runID := trigger(t, m, "silent")
 	eventually(t, "the run to finish", func() bool {
 		run, _ := m.LastRun("silent")
 		return run != nil && run.ID == runID && run.State == entity.PlanRunSucceeded
@@ -185,7 +185,7 @@ func TestCommandPlanKeepsATailAndTheWholeLog(t *testing.T) {
 	if err := m.Add(commandPlan("loud", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "loud")
+	trigger(t, m, "loud")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	finished := sender.finished()[0]
 	if finished.State != entity.PlanRunSucceeded {
@@ -208,7 +208,7 @@ func TestCommandPlanWithoutALogDirKeepsNoFile(t *testing.T) {
 	if err := m.Add(commandPlan("nolog", &entity.Task{}, "sh", "-c", "echo hi")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "nolog")
+	trigger(t, m, "nolog")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	finished := sender.finished()[0]
 	if finished.LogPath != "" || finished.OutputTail != "hi\n" {
@@ -233,7 +233,7 @@ func TestCommandPlanAppliesDirAndEnv(t *testing.T) {
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "env")
+	trigger(t, m, "env")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	want := dir + "\nkept new\n"
 	if got := sender.finished()[0].OutputTail; got != want {
@@ -248,7 +248,7 @@ func TestCommandPlanCancelKillsTheWholeProcessGroup(t *testing.T) {
 	if err := m.Add(commandPlan("group", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "group")
+	trigger(t, m, "group")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
 	time.Sleep(100 * time.Millisecond)
 	if err := m.Cancel("group"); err != nil {
@@ -310,7 +310,7 @@ func TestNoProcessOutlivesAStoppedRun(t *testing.T) {
 				if err := m.Add(withGrace(commandPlan("stubborn", tc.task(), "sh", "-c", sc.script, pids), grace)); err != nil {
 					t.Fatal(err)
 				}
-				triggered(t, m, "stubborn")
+				trigger(t, m, "stubborn")
 				child := waitPid(t, pids)
 				tc.stop(t, m)
 				eventually(t, "the run to end", func() bool { return len(sender.finished()) == 1 })
@@ -330,7 +330,7 @@ func TestShortGracePeriodEndsEarlierThanTheDefault(t *testing.T) {
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "stubborn")
+	trigger(t, m, "stubborn")
 	waitPid(t, pids)
 	begin := time.Now()
 	if err := m.Cancel("stubborn"); err != nil {
@@ -347,7 +347,7 @@ func TestZeroGracePeriodStillGivesACommandTimeToCleanUp(t *testing.T) {
 	if err := m.Add(commandPlan("tidy", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "tidy")
+	trigger(t, m, "tidy")
 	eventually(t, "the command to get ready", func() bool { _, err := os.Stat(ready); return err == nil })
 	if err := m.Cancel("tidy"); err != nil {
 		t.Fatal(err)
@@ -365,7 +365,7 @@ func TestCommandEndingOnItsOwnKeepsItsBackgroundChild(t *testing.T) {
 	if err := m.Add(commandPlan("daemonizer", &entity.Task{}, "sh", "-c", script, pids)); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "daemonizer")
+	trigger(t, m, "daemonizer")
 	eventually(t, "the run to end", func() bool { return len(sender.finished()) == 1 })
 	if st := sender.finished()[0].State; st != entity.PlanRunSucceeded {
 		t.Fatalf("state = %s", st)

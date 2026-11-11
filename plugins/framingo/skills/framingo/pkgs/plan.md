@@ -10,12 +10,15 @@ and reports the runs of its predefined kinds through the message bus.
 // pkg/types/model
 type Plan interface {
     common.Service
+    // Keeps a copy of the plan; an ID already added is a Conflict.
     Add(plan *entity.Plan) error
     // Runs the plan now; returns the run's ID, empty for a plan without a kind.
     // source goes on the run and on its retries and requeues; empty is an InvalidArgument.
     // A plan already queued, running or being requeued is a Conflict.
+    // The run always ends with PlanRunFinished; see "Run events".
     Trigger(id string, source entity.PlanRunSource) (string, error)
-    // Ends what the plan is doing and keeps the plan; an idle plan is a Conflict.
+    // Ends what the plan is doing, a run still queued included, and keeps the plan;
+    // an idle plan is a Conflict.
     Cancel(id string) error
     // Ends what the plan is doing, forgets the plan and returns its latest run.
     Delete(ctx context.Context, id string) (*entity.PlanRun, error)
@@ -44,11 +47,12 @@ type PlanStatsOptions struct {
 }
 ```
 
-The `Task` decides when a plan runs: `Schedule` for cron, `Manual: true` to keep it
-registered until `Trigger` runs it (the two exclude each other), neither to run it
-once on `Add`. `Timeout`, `RetryAttempts`, `RequeueAttempts` and the rest apply as
-they do in the task manager, `pkg/services/task`. How a stopped plan ends is its job's:
-a command plan's `Command.Grace`, see [Stopping a plan](#stopping-a-plan).
+A plan needs an `ID`, and `Add` keeps a copy of it and its `Task`: the caller's stay as they
+were. The `Task` decides when a plan runs: `Schedule` for cron, or `Manual: true` to run it
+only when `Trigger` does. It takes one of the two, since a plan stays until `Delete`; a job
+to run once goes on the task manager itself. `Timeout`, `RetryAttempts`, `RequeueAttempts`
+and the rest apply as they do in the task manager, `pkg/services/task`. How a stopped plan
+ends is its job's: a command plan's `Command.Grace`, see [Stopping a plan](#stopping-a-plan).
 
 ## Construction
 
@@ -153,9 +157,10 @@ function that wants a forced stop to cut its cleanup short should watch for it.
 
 ## Stopping a plan
 
-`Cancel` ends what a plan is doing and keeps the plan. `Delete(ctx, id)` also forgets it,
-removing its cron entry first so no new run starts meanwhile, waits for its run until `ctx`
-ends, and returns its latest run. `Stop(ctx)` does that to every plan at once.
+`Cancel` ends what a plan is doing, a run still queued included, and keeps the plan.
+`Delete(ctx, id)` also forgets it, removing its cron entry first so no new run starts
+meanwhile, waits for its run until `ctx` ends, and returns its latest run. `Stop(ctx)` does
+that to every plan at once.
 
 - Canceling a command SIGTERMs its process group, and the command SIGKILLs the group once
   its `Grace` is up, so a command plan ends within its grace period whatever `ctx` allows.
@@ -190,8 +195,10 @@ was given: `entity.PlanRunManual`, `entity.PlanRunSchedule`, or a value of your 
 | `entity.PlanRunStarted` | `plan.run.started` | before the command starts |
 | `entity.PlanRunFinished` | `plan.run.finished` | after it ends: `succeeded`, `failed` or `canceled` |
 
-A retry or a requeue is a new run with a new ID. Consume the events with a
-`MessageHandler` on the bus ([pubsub.md](pubsub.md)):
+A retry or a requeue is a new run with a new ID. The ID `Trigger` returns always ends with
+a `PlanRunFinished`: a run that a `Cancel`, `Delete` or `Stop` drops while it is still queued
+is reported by that event alone, `canceled`, with the time of the `Trigger` as `StartedAt`
+and no log. Consume the events with a `MessageHandler` on the bus ([pubsub.md](pubsub.md)):
 
 ```go
 func (m *manager) HandleMessage(ctx context.Context, msg common.Message) error {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/xhanio/errors"
@@ -17,38 +17,46 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/plans"
 )
 
+// Add keeps a copy of the plan and its task: the caller's stay as they were.
 func (m *manager) Add(plan *entity.Plan) error {
 	if plan.ID == "" {
-		plan.ID = uuid.NewString()
+		return errors.InvalidArgument.Newf("a plan needs an ID")
 	}
-	reg := &registration{plan: plan}
-	if plan.Kind != "" {
-		if plan.Task == nil {
-			return errors.InvalidArgument.Newf("plan %s has no task", plan.ID)
+	if plan.Task == nil {
+		return errors.InvalidArgument.Newf("plan %s has no task", plan.ID)
+	}
+	if plan.Task.IsOneShot() {
+		return errors.InvalidArgument.Newf("plan %s needs a schedule or Manual: a plan stays until Delete", plan.ID)
+	}
+	p, task := *plan, *plan.Task
+	p.Task = &task
+	reg := &registration{plan: &p}
+	switch {
+	case p.Kind == "":
+		if !task.IsValid() {
+			return errors.InvalidArgument.Newf("plan %s has neither a kind nor a job", p.ID)
 		}
-		if plan.Kind != entity.PlanKindCommand {
-			return errors.InvalidArgument.Newf("plan %s has an unknown kind %q", plan.ID, plan.Kind)
-		}
-		// the plan manager passes each firing's run ID and source in Task.Params
-		if plan.Task.Params != nil {
-			return errors.InvalidArgument.Newf("plan %s: a %s plan takes its params in Plan.Params, and leaves Task.Params empty", plan.ID, plan.Kind)
-		}
-		cmd, err := plans.NewCommand(plan)
+	case p.Kind != entity.PlanKindCommand:
+		return errors.InvalidArgument.Newf("plan %s has an unknown kind %q", p.ID, p.Kind)
+	case task.Params != nil:
+		// Task.Params is where each firing of Trigger passes its run
+		return errors.InvalidArgument.Newf("plan %s: a %s plan takes its params in Plan.Params, and leaves Task.Params empty", p.ID, p.Kind)
+	default:
+		cmd, err := plans.NewCommand(&p)
 		if err != nil {
 			return err
 		}
-		plan.Task.Job = job.New(plan.ID, m.runJob(reg, cmd.Header(), cmd.Run), job.WithLabels(plan.Metadata), job.WithLogger(m.log))
+		task.Job = job.New(p.ID, m.runJob(reg, cmd.Header(), cmd.Run), job.WithLabels(p.Metadata), job.WithLogger(m.log))
 	}
 	m.Lock()
 	defer m.Unlock()
-	if !plan.Task.IsValid() {
-		return nil
+	if _, ok := m.plans[p.ID]; ok {
+		return errors.Conflict.Newf("plan %s already added", p.ID)
 	}
-	err := m.tm.Add(plan.Task)
-	if err != nil {
+	if err := m.tm.Add(&task); err != nil {
 		return errors.Wrap(err)
 	}
-	m.plans[plan.ID] = reg
+	m.plans[p.ID] = reg
 	return nil
 }
 
@@ -56,48 +64,37 @@ func (m *manager) Trigger(id string, source entity.PlanRunSource) (string, error
 	if source == "" {
 		return "", errors.InvalidArgument.Newf("failed to trigger plan %s: no source", id)
 	}
-	m.RLock()
-	defer m.RUnlock()
+	// the write lock, so that a Cancel comes before or after the firing is recorded
+	m.Lock()
+	defer m.Unlock()
 	reg, ok := m.plans[id]
 	if !ok {
 		return "", errors.NotFound.Newf("failed to trigger plan %s: plan not found", id)
 	}
 	plan := reg.plan
-	var (
-		runID  string
-		params any
-	)
-	if plan.Kind != "" {
-		runID = uuid.NewString()
-		params = &triggeredRun{id: runID, source: source}
+	if plan.Kind == "" {
+		return "", errors.Wrap(m.tm.Trigger(plan.Task.ID(), nil))
 	}
-	if err := m.tm.Trigger(plan.Task.ID(), params); err != nil {
+	tr := &triggered{id: uuid.NewString(), source: source, at: time.Now()}
+	if err := m.tm.Trigger(plan.Task.ID(), tr); err != nil {
 		return "", errors.Wrap(err)
 	}
-	return runID, nil
-}
-
-// triggeredRun goes with a firing of Trigger: all its runs take the source, only the first
-// the ID Trigger returned, as retries and requeues are runs of their own.
-type triggeredRun struct {
-	id      string
-	source  entity.PlanRunSource
-	claimed atomic.Bool
+	reg.setPending(tr)
+	return tr.id, nil
 }
 
 func (m *manager) Cancel(id string) error {
-	m.RLock()
-	defer m.RUnlock()
+	m.Lock()
+	defer m.Unlock()
 	reg, ok := m.plans[id]
 	if !ok {
 		return errors.NotFound.Newf("failed to cancel plan %s: plan not found", id)
 	}
-	err := m.tm.Cancel(reg.plan.Task.ID())
-	if errors.Is(err, errors.NotFound) {
-		// the plan is here, its one-shot task finished and left the task manager
-		return errors.Conflict.Newf("plan %s is not running", id)
+	if err := m.tm.Cancel(reg.plan.Task.ID()); err != nil {
+		return errors.Wrap(err)
 	}
-	return errors.Wrap(err)
+	m.endUnstarted(reg)
+	return nil
 }
 
 func (m *manager) Delete(ctx context.Context, id string) (*entity.PlanRun, error) {
@@ -109,7 +106,9 @@ func (m *manager) Delete(ctx context.Context, id string) (*entity.PlanRun, error
 	}
 	delete(m.plans, id)
 	m.Unlock()
-	if err := m.tm.Remove(ctx, reg.plan.Task); err != nil {
+	err := m.tm.Remove(ctx, reg.plan.Task)
+	m.endUnstarted(reg)
+	if err != nil {
 		return reg.lastRun(), errors.Wrapf(err, "plan %s deleted with its run still going", id)
 	}
 	return reg.lastRun(), nil

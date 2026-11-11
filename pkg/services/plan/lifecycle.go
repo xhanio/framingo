@@ -21,13 +21,19 @@ func (m *manager) Start(ctx context.Context) error {
 // SignalKill. It leaves the task manager running: other tasks may share it.
 func (m *manager) Stop(ctx context.Context) error {
 	m.Lock()
+	regs := make([]*registration, 0, len(m.plans))
 	tasks := make([]*entity.Task, 0, len(m.plans))
 	for _, reg := range m.plans {
+		regs = append(regs, reg)
 		tasks = append(tasks, reg.plan.Task)
 	}
 	clear(m.plans)
 	m.Unlock()
-	if err := m.tm.Remove(ctx, tasks...); err != nil {
+	err := m.tm.Remove(ctx, tasks...)
+	for _, reg := range regs {
+		m.endUnstarted(reg)
+	}
+	if err != nil {
 		return errors.Wrapf(err, "plan manager stopped with runs still going")
 	}
 	return nil

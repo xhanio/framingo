@@ -21,17 +21,24 @@ import (
 )
 
 func TestAddRejectsAnInvalidPlan(t *testing.T) {
+	command := jobs.Command{Argv: []string{"true"}}
+	manual := func() *entity.Task { return &entity.Task{Manual: true} }
 	cases := []struct {
 		name string
 		plan *entity.Plan
 	}{
-		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Params: jobs.Command{Argv: []string{"true"}}, Task: &entity.Task{}}},
+		{name: "no ID", plan: &entity.Plan{Kind: entity.PlanKindCommand, Params: command, Task: manual()}},
+		{name: "no task", plan: &entity.Plan{ID: "x"}},
+		{name: "a task without a job", plan: &entity.Plan{ID: "x", Task: manual()}},
+		{name: "a one-shot plan of a kind", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: command, Task: &entity.Task{}}},
+		{name: "a one-shot plan with its own job", plan: &entity.Plan{ID: "x", Task: &entity.Task{Job: job.New("x", func(job.Context) error { return nil })}}},
+		{name: "an unknown kind", plan: &entity.Plan{ID: "x", Kind: "nope", Params: command, Task: manual()}},
 		{name: "a kind without a task", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand}},
-		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: "true", Task: &entity.Task{}}},
-		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{}, Task: &entity.Task{}}},
-		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &entity.Task{Params: jobs.Command{Argv: []string{"true"}}}}},
-		{name: "a command with an output of its own", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: []string{"true"}, Out: io.Discard}, Task: &entity.Task{}}},
-		{name: "params on the task as well", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: []string{"true"}}, Task: &entity.Task{Params: "extra"}}},
+		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: "true", Task: manual()}},
+		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{}, Task: manual()}},
+		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &entity.Task{Manual: true, Params: command}}},
+		{name: "a command with an output of its own", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: []string{"true"}, Out: io.Discard}, Task: manual()}},
+		{name: "params on the task as well", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: command, Task: &entity.Task{Manual: true, Params: "extra"}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -43,6 +50,33 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 				t.Fatalf("a rejected plan stayed: Trigger = %v", err)
 			}
 		})
+	}
+}
+
+func TestAddOfAPlanIDAlreadyAddedConflicts(t *testing.T) {
+	m, _ := startedManager(t)
+	if err := m.Add(ownJobPlan("same", &entity.Task{}, func(job.Context) error { return nil })); err != nil {
+		t.Fatal(err)
+	}
+	other := &entity.Plan{ID: "same", Task: &entity.Task{Job: job.New("other-job", func(job.Context) error { return nil }), Manual: true}}
+	if err := m.Add(other); !errors.Is(err, errors.Conflict) {
+		t.Fatalf("Add = %v, want Conflict", err)
+	}
+	if st := m.tm.Stats("other-job"); st != nil {
+		t.Fatalf("the rejected plan's task stayed on the task manager: %+v", st)
+	}
+}
+
+func TestAddLeavesTheCallersPlanAsItWas(t *testing.T) {
+	m, _ := startedManager(t)
+	for _, want := range []error{nil, errors.Conflict} {
+		plan := commandPlan("mine", &entity.Task{}, "true")
+		if err := m.Add(plan); want == nil && err != nil || want != nil && !errors.Is(err, want) {
+			t.Fatalf("Add = %v, want %v", err, want)
+		}
+		if plan.Task.Job != nil {
+			t.Fatalf("Add with %v set a job on the caller's task", want)
+		}
 	}
 }
 
@@ -94,7 +128,7 @@ func TestTriggerAndCancelErrors(t *testing.T) {
 	if err := m.Cancel("busy"); !errors.Is(err, errors.Conflict) {
 		t.Fatalf("Cancel of an idle plan = %v, want Conflict", err)
 	}
-	triggered(t, m, "busy")
+	trigger(t, m, "busy")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
 	if _, err := m.Trigger("busy", entity.PlanRunManual); !errors.Is(err, errors.Conflict) {
 		t.Fatalf("Trigger of a busy plan = %v, want Conflict", err)
@@ -162,18 +196,23 @@ func TestTriggerRejectsAnEmptySource(t *testing.T) {
 	}
 }
 
-func TestCancelOfAFinishedOneShotPlanConflicts(t *testing.T) {
-	m, _ := startedManager(t)
-	var runs atomic.Int32
-	plan := &entity.Plan{ID: "once", Task: &entity.Task{
-		Job: job.New("once-job", func(job.Context) error { runs.Add(1); return nil }),
-	}}
-	if err := m.Add(plan); err != nil {
+func TestCancelOfAQueuedPlanEndsItsRunBeforeItStarts(t *testing.T) {
+	m, sender := startedManagerOn(t, startedTaskManager(t, task.MaxConcurrency(1)))
+	if err := m.Add(commandPlan("blocker", &entity.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the run", func() bool { return runs.Load() == 1 && m.tm.Stats("once-job") == nil })
-	if err := m.Cancel("once"); !errors.Is(err, errors.Conflict) {
-		t.Fatalf("Cancel = %v, want Conflict", err)
+	if err := m.Add(commandPlan("queued", &entity.Task{}, "true")); err != nil {
+		t.Fatal(err)
+	}
+	trigger(t, m, "blocker")
+	eventually(t, "the blocker to start", func() bool { return len(sender.started()) == 1 })
+	runID := trigger(t, m, "queued")
+	if err := m.Cancel("queued"); err != nil {
+		t.Fatal(err)
+	}
+	assertCanceledBeforeItStarted(t, sender, runID)
+	if run, err := m.LastRun("queued"); err != nil || run == nil || run.ID != runID || run.State != entity.PlanRunCanceled {
+		t.Fatalf("LastRun = %+v, %v, want the canceled run", run, err)
 	}
 }
 
@@ -189,7 +228,7 @@ func TestDeleteOfAnIdlePlanReturnsItsLastRunAtOnce(t *testing.T) {
 	if err := m.Add(commandPlan("idle", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	runID := triggered(t, m, "idle")
+	runID := trigger(t, m, "idle")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	eventually(t, "the run to settle", func() bool { return !m.plans["idle"].plan.Task.Job.IsExecuting() })
 	begin := time.Now()
@@ -228,7 +267,7 @@ func TestDeleteReturnsOnlyOnceTheCanceledRunHasEnded(t *testing.T) {
 	if err := m.Add(commandPlan("slow", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
-	runID := triggered(t, m, "slow")
+	runID := trigger(t, m, "slow")
 	eventually(t, "the command to get ready", func() bool { _, err := os.Stat(ready); return err == nil })
 	begin := time.Now()
 	run, err := m.Delete(context.Background(), "slow")
@@ -246,7 +285,7 @@ func TestDeleteReturnsOnlyOnceTheCanceledRunHasEnded(t *testing.T) {
 	}
 }
 
-func TestDeleteOfAQueuedPlanMeansItNeverRuns(t *testing.T) {
+func TestDeleteOfAQueuedPlanCancelsItsRunBeforeItStarts(t *testing.T) {
 	m, sender := startedManagerOn(t, startedTaskManager(t, task.MaxConcurrency(1)))
 	if err := m.Add(commandPlan("blocker", &entity.Task{}, "sleep", "30")); err != nil {
 		t.Fatal(err)
@@ -254,16 +293,18 @@ func TestDeleteOfAQueuedPlanMeansItNeverRuns(t *testing.T) {
 	if err := m.Add(commandPlan("queued", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "blocker")
+	blocker := trigger(t, m, "blocker")
 	eventually(t, "the blocker to start", func() bool { return len(sender.started()) == 1 })
-	triggered(t, m, "queued")
-	if run, err := m.Delete(context.Background(), "queued"); err != nil || run != nil {
-		t.Fatalf("Delete = %+v, %v", run, err)
+	runID := trigger(t, m, "queued")
+	run, err := m.Delete(context.Background(), "queued")
+	if err != nil || run == nil || run.ID != runID || run.State != entity.PlanRunCanceled {
+		t.Fatalf("Delete = %+v, %v, want the run Trigger returned, canceled", run, err)
 	}
+	assertCanceledBeforeItStarted(t, sender, runID)
 	if err := m.Cancel("blocker"); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the blocker to end", func() bool { return len(sender.finished()) == 1 })
+	eventually(t, "the blocker to end", func() bool { _, finished := sender.run(blocker); return finished != nil })
 	time.Sleep(50 * time.Millisecond)
 	for _, run := range sender.started() {
 		if run.PlanID == "queued" {
@@ -278,7 +319,7 @@ func TestDeleteDuringARequeueEndsIt(t *testing.T) {
 	if err := m.Add(plan); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "requeued")
+	trigger(t, m, "requeued")
 	eventually(t, "a requeue", func() bool { return len(sender.finished()) >= 2 })
 	run, err := m.Delete(context.Background(), "requeued")
 	if err != nil {
@@ -321,7 +362,7 @@ func TestDeleteReturnsTheRunStillGoingOnceItsContextEnds(t *testing.T) {
 	if err := m.Add(withGrace(commandPlan("stubborn", &entity.Task{}, "sh", "-c", stubbornCommand, pids), time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	runID := triggered(t, m, "stubborn")
+	runID := trigger(t, m, "stubborn")
 	child := waitPid(t, pids)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -357,7 +398,7 @@ func TestAForcedDeleteKillsACommandIgnoringTheSignalAtOnce(t *testing.T) {
 	if err := m.Add(withGrace(commandPlan("stubborn", &entity.Task{}, "sh", "-c", stubbornCommand, pids), time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	runID := triggered(t, m, "stubborn")
+	runID := trigger(t, m, "stubborn")
 	child := waitPid(t, pids)
 	if run := forcedDelete(t, m, "stubborn"); run == nil || run.ID != runID {
 		t.Fatalf("run = %+v", run)
@@ -375,7 +416,7 @@ func TestAForcedDeleteCutsTheGracePeriodOfACanceledRunShort(t *testing.T) {
 	if err := m.Add(withGrace(commandPlan("stubborn", &entity.Task{}, "sh", "-c", stubbornCommand, pids), time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "stubborn")
+	trigger(t, m, "stubborn")
 	child := waitPid(t, pids)
 	if err := m.Cancel("stubborn"); err != nil {
 		t.Fatal(err)
@@ -512,7 +553,7 @@ func TestARunLeftByADeleteStaysOffThePlanAddedAgain(t *testing.T) {
 	if err := m.Add(withGrace(commandPlan("same", &entity.Task{}, "sh", "-c", stubbornCommand, pids), time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "same")
+	trigger(t, m, "same")
 	waitPid(t, pids)
 	forcedDelete(t, m, "same")
 	if err := m.Add(commandPlan("same", &entity.Task{}, "true")); err != nil {
@@ -547,8 +588,11 @@ func TestDeleteUnderStress(t *testing.T) {
 					t.Errorf("Add = %v", err)
 					return
 				}
+				var promised []string
 				for range r.Intn(3) {
-					_, _ = m.Trigger(id, entity.PlanRunManual)
+					if runID, err := m.Trigger(id, entity.PlanRunManual); err == nil {
+						promised = append(promised, runID)
+					}
 					time.Sleep(time.Duration(r.Intn(2000)) * time.Microsecond)
 				}
 				if r.Intn(3) == 0 {
@@ -558,17 +602,26 @@ func TestDeleteUnderStress(t *testing.T) {
 				if forced {
 					ctx = canceled()
 				}
+				m.RLock()
+				own := m.plans[id].plan.Task
+				m.RUnlock()
 				if _, err := m.Delete(ctx, id); err != nil && !(forced && errors.Is(err, context.Canceled)) {
 					t.Errorf("Delete = %v", err)
 					return
 				}
 				if forced {
 					// a forced Delete returns before its run ends, maybe before it reports its start
-					_ = m.tm.Remove(context.Background(), plan.Task)
+					_ = m.tm.Remove(context.Background(), own)
 				}
-				if started, finished := sender.counts(id); started != finished {
-					t.Errorf("%d runs started and %d finished after Delete", started, finished)
+				if n := sender.unfinished(id); n > 0 {
+					t.Errorf("%d runs started and did not finish after Delete", n)
 					return
+				}
+				for _, runID := range promised {
+					if _, finished := sender.run(runID); finished == nil {
+						t.Errorf("run %s from Trigger never finished", runID)
+						return
+					}
 				}
 			}
 		}()
@@ -581,7 +634,7 @@ func TestResultOfACommandPlanIsNil(t *testing.T) {
 	if err := m.Add(commandPlan("ran", &entity.Task{}, "true")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "ran")
+	trigger(t, m, "ran")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	if res, err := m.Result("ran"); err != nil || res != nil {
 		t.Fatalf("Result = %+v, %v: a command plan's job keeps no result, its runs are LastRun's", res, err)
@@ -605,7 +658,7 @@ func TestLastRunFollowsTheLatestRun(t *testing.T) {
 	if run, err := m.LastRun("latest"); err != nil || run != nil {
 		t.Fatalf("LastRun before any run = %+v, %v", run, err)
 	}
-	runID := triggered(t, m, "latest")
+	runID := trigger(t, m, "latest")
 	eventually(t, "the run to start", func() bool { return len(sender.started()) == 1 })
 	run, err := m.LastRun("latest")
 	if err != nil {
@@ -721,7 +774,7 @@ func TestOpenRunLogOfARealRun(t *testing.T) {
 	if err := m.Add(commandPlan("logged", &entity.Task{}, "sh", "-c", "echo hello")); err != nil {
 		t.Fatal(err)
 	}
-	triggered(t, m, "logged")
+	trigger(t, m, "logged")
 	eventually(t, "the run to finish", func() bool { return len(sender.finished()) == 1 })
 	f, err := m.OpenRunLog(sender.finished()[0].LogPath, 6)
 	if err != nil {
