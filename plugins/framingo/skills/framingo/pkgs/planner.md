@@ -47,8 +47,8 @@ type PlannerStatsOptions struct {
 The `Task` decides when a plan runs: `Schedule` for cron, `Manual: true` to keep it
 registered until `Trigger` runs it (the two exclude each other), neither to run it
 once on `Add`. `Timeout`, `RetryAttempts`, `RequeueAttempts` and the rest apply as
-they do in the task manager, `pkg/services/task`. `GracePeriod` (default 10 seconds) is how long a stopped
-plan gets to end on its own; see [Stopping a plan](#stopping-a-plan).
+they do in the task manager, `pkg/services/task`. How a stopped plan ends is its job's:
+a command plan's `Command.Grace`, see [Stopping a plan](#stopping-a-plan).
 
 ## Construction
 
@@ -97,9 +97,8 @@ runID, err := pl.Trigger("backup", entity.PlanRunManual) // run it now as well
 
 A plan of a kind takes what the kind needs in `Plan.Params` and leaves `Task.Params` empty:
 the planner passes each firing's run ID and source there. A command plan's job is its
-`jobs.Command` (see below) with the run's bookkeeping around it. Leave the command's `Grace`
-and `Out` unset: `Grace` comes from `Task.GracePeriod`, and the planner sets `Out` for each
-run. The command runs in its own process group, so stopping it reaches
+`jobs.Command` (see below) with the run's bookkeeping around it. Leave the command's `Out`
+unset: the planner sets it for each run. The command runs in its own process group, so stopping it reaches
 its children, and one that ends on its own keeps any background children it left. Its
 output goes to `<log dir>/<plan ID>/<time>-<run>.log` and the tail of it into the run.
 
@@ -143,9 +142,9 @@ func(jc job.Context) error {
 }
 ```
 
-A command plan takes its `Command` from `Plan.Params` when it is added, with `Grace` from
-the plan's `Task.GracePeriod`, which says when the command gets its SIGKILL. Neither the planner nor
-the task manager waits by it: how long a stop waits is the caller's context.
+A command plan takes its `Command` from `Plan.Params` when it is added, and its `Grace` says
+when the command gets its SIGKILL. Neither the planner nor the task manager waits by it: how
+long a stop waits is the caller's context.
 
 `job.SignalKill` is one of a job's signals. `Job.Signal(sig)` sends a signal to the
 execution going on now, and a job's function reads `jc.Signaled(sig)`, a channel closed
@@ -159,12 +158,12 @@ removing its cron entry first so no new run starts meanwhile, waits for its run 
 ends, and returns its latest run. `Stop(ctx)` does that to every plan at once.
 
 - Canceling a command SIGTERMs its process group, and the command SIGKILLs the group once
-  its `GracePeriod` is up, so a command plan ends within its grace period whatever `ctx`
-  allows. A plan with its own job ends when its function returns.
+  its `Grace` is up, so a command plan ends within its grace period whatever `ctx` allows.
+  A plan with its own job ends when its function returns.
 - Once `ctx` ends, what still runs is sent `SignalKill` and the error wraps `ctx.Err()`:
   the run returned may then still be `running`, and its end comes as `PlanRunFinished`. An
-  ended `ctx` makes it a forced delete; to wait as the grace period says, give `Delete`
-  `context.WithTimeout(ctx, plan.Task.Grace())`.
+  ended `ctx` makes it a forced delete; to bound the wait, give `Delete` a `ctx` with a
+  deadline.
 - Go cannot kill a goroutine, so a job that ignores its context and signals goes on until
   it returns, whatever `Delete` did.
 - A process that left the group, with `setsid` say, is out of reach. If it holds the

@@ -109,6 +109,13 @@ func commandPlan(id string, tk *entity.Task, command ...string) *entity.Plan {
 	return &entity.Plan{ID: id, Metadata: labels.Set{"task": id}, Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: command}, Task: tk}
 }
 
+func withGrace(plan *entity.Plan, grace time.Duration) *entity.Plan {
+	cmd := plan.Params.(jobs.Command)
+	cmd.Grace = grace
+	plan.Params = cmd
+	return plan
+}
+
 func triggered(t *testing.T, m *manager, id string) string {
 	t.Helper()
 	runID, err := m.Trigger(id, entity.PlanRunManual)
@@ -536,7 +543,7 @@ func TestAddRejectsAnInvalidPlan(t *testing.T) {
 		{name: "params of the wrong type", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: "true", Task: &entity.Task{}}},
 		{name: "no command", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{}, Task: &entity.Task{}}},
 		{name: "params on the task instead of the plan", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Task: &entity.Task{Params: jobs.Command{Argv: []string{"true"}}}}},
-		{name: "a command with a grace of its own", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: []string{"true"}, Grace: time.Second}, Task: &entity.Task{}}},
+		{name: "a command with an output of its own", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: []string{"true"}, Out: io.Discard}, Task: &entity.Task{}}},
 		{name: "params on the task as well", plan: &entity.Plan{ID: "x", Kind: entity.PlanKindCommand, Params: jobs.Command{Argv: []string{"true"}}, Task: &entity.Task{Params: "extra"}}},
 	}
 	for _, tc := range cases {

@@ -14,8 +14,8 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/jobs"
 )
 
-// commandJob is the job of a command plan: each run is the plan's jobs.Command, with the grace
-// period of the plan's task, and its log is headed by the command line.
+// commandJob is the job of a command plan: each run is the plan's jobs.Command, and its log is
+// headed by the command line.
 func (m *manager) commandJob(plan *entity.Plan) (job.Func, error) {
 	cmd, ok := plan.Params.(jobs.Command)
 	if !ok {
@@ -24,10 +24,9 @@ func (m *manager) commandJob(plan *entity.Plan) (job.Func, error) {
 	if len(cmd.Argv) == 0 {
 		return nil, errors.InvalidArgument.Newf("plan %s has no command", plan.ID)
 	}
-	if cmd.Grace != 0 || cmd.Out != nil {
-		return nil, errors.InvalidArgument.Newf("plan %s: a command plan's Grace comes from Task.GracePeriod, and its Out from the planner", plan.ID)
+	if cmd.Out != nil {
+		return nil, errors.InvalidArgument.Newf("plan %s: a command plan's Out is the planner's, set for each run", plan.ID)
 	}
-	cmd.Grace = plan.Task.Grace()
 	timeout := plan.Task.Timeout
 	return m.runJob(plan, strings.Join(cmd.Argv, " "), func(jc job.Context, out io.Writer) (outcome, error) {
 		c := cmd // this run's copy
