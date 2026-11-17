@@ -2,11 +2,9 @@ package user
 
 import (
 	"context"
-	"sync"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/xhanio/errors"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
@@ -19,23 +17,6 @@ import (
 // validate is safe for concurrent use and caches struct metadata, so it is
 // built once per package rather than per call.
 var validate = validator.New()
-
-// dummyHash is compared against when the account lookup fails, so that path
-// costs the same as a wrong-password attempt. Returning early instead makes
-// "no such user" answer in ~1ms against bcrypt's ~80ms, which is a reliable
-// oracle for enumerating valid usernames.
-//
-// It is derived at the same cost the repository hashes real passwords at,
-// rather than pasted as a literal: a hardcoded hash silently stops masking
-// anything the day that cost changes. Computed once, on first use.
-var dummyHash = sync.OnceValue(func() []byte {
-	h, err := bcrypt.GenerateFromPassword([]byte("dummy"), bcrypt.DefaultCost)
-	if err != nil {
-		// Only possible on an invalid cost, which is a compile-time constant here.
-		panic(err)
-	}
-	return h
-})
 
 // POST /users/local-users
 // Create new user for all given organizations.
@@ -146,7 +127,7 @@ func (m *manager) ResetPassword(ctx context.Context, isResetOwnPwd bool, userID 
 			if err != nil {
 				return errors.Wrap(err)
 			}
-			if bcrypt.CompareHashAndPassword([]byte(hash), []byte(opts.OldPassword)) != nil {
+			if !checkPassword(hash, opts.OldPassword) {
 				return errors.Forbidden.Newf("Access Denied: Old password validation failed.")
 			}
 		}
@@ -196,22 +177,22 @@ func (m *manager) Authenticate(ctx context.Context, organization, username, pass
 	organizationID, err := m.organizationID(ctx, organization)
 	if err != nil {
 		// Result intentionally discarded: this runs for its cost, not its answer.
-		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
+		_ = checkPassword(dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	user, err := m.repository.GetUserByName(ctx, organizationID, username)
 	if err != nil {
 		// Result intentionally discarded: this runs for its cost, not its answer.
-		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
+		_ = checkPassword(dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	hash, err := m.repository.GetUserPasswordHash(ctx, user.ID)
 	if err != nil {
 		// Result intentionally discarded: this runs for its cost, not its answer.
-		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
+		_ = checkPassword(dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+	if !checkPassword(hash, password) {
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	return &entity.Credential{
