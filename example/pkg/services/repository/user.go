@@ -10,9 +10,10 @@ import (
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"
+	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
-func (m *manager) CreateUser(ctx context.Context, opts entity.UserCreateOptions, passwordHash string) (*entity.User, error) {
+func (m *manager) CreateUser(ctx context.Context, opts repo.UserCreateOptions) (*entity.User, error) {
 	tx := m.db.FromContext(ctx)
 	var user *orm.User
 	var contact *orm.Contact
@@ -37,7 +38,7 @@ func (m *manager) CreateUser(ctx context.Context, opts entity.UserCreateOptions,
 		user = &orm.User{
 			OrganizationID:       opts.OrganizationID,
 			Username:             opts.Username,
-			Password:             passwordHash,
+			Password:             opts.PasswordHash,
 			Role:                 opts.Role,
 			ContactID:            contact.ID,
 			Expired:              opts.ChangePassword,

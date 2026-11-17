@@ -5,9 +5,9 @@ import (
 
 	"github.com/xhanio/errors"
 
-	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
+	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
 func (m *manager) Init(ctx context.Context) error {
@@ -20,12 +20,13 @@ func (m *manager) Init(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	if _, err := m.repository.CreateUser(ctx, entity.UserCreateOptions{
+	if _, err := m.repository.CreateUser(ctx, repo.UserCreateOptions{
 		OrganizationID:       preset.DefaultOrganizationID,
 		Username:             preset.AdminUsername,
+		PasswordHash:         hash,
 		Role:                 rbac.RoleAdmin,
 		RequirePasswordReset: true,
-	}, hash); err != nil {
+	}); err != nil {
 		return errors.Wrap(err)
 	}
 	return nil

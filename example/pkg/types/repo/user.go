@@ -6,11 +6,26 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 )
 
+// UserCreateOptions is what the repository stores for a new user: the
+// password's hash, never the password - how it is hashed is the caller's. It
+// says what a user is made of, not how the rows lay it out: the repository
+// splits it into a user and a contact row.
+type UserCreateOptions struct {
+	OrganizationID       int32
+	Username             string
+	PasswordHash         string
+	Role                 string
+	FirstName            string
+	LastName             string
+	Email                string
+	Title                string
+	ChangePassword       bool
+	RequirePasswordReset bool
+}
+
 type User interface {
 	Repository
-	// CreateUser stores passwordHash as the user's password. How a password is
-	// hashed is the caller's: the repository never reads opts.Password.
-	CreateUser(ctx context.Context, opts entity.UserCreateOptions, passwordHash string) (*entity.User, error)
+	CreateUser(ctx context.Context, opts UserCreateOptions) (*entity.User, error)
 	GetUser(ctx context.Context, userID int32) (*entity.User, error)
 	ListUsers(ctx context.Context, opts entity.UserListOptions) ([]*entity.User, error)
 	UpdateUser(ctx context.Context, userID int32, opts entity.UserUpdateOptions) (*entity.User, error)

@@ -16,6 +16,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
+	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
 var (
@@ -235,11 +236,12 @@ func TestDeleteRefusesARoleInUse(t *testing.T) {
 	require.NoError(t, m.Create(ctx, createOpts))
 	role, err := m.GetByName(ctx, createOpts.Name)
 	require.NoError(t, err)
-	holder, err := m.repository.CreateUser(ctx, entity.UserCreateOptions{
+	holder, err := m.repository.CreateUser(ctx, repo.UserCreateOptions{
 		OrganizationID: preset.DefaultOrganizationID,
 		Username:       "holder",
+		PasswordHash:   "hash",
 		Role:           createOpts.Name,
-	}, "hash")
+	})
 	require.NoError(t, err)
 
 	err = m.Delete(ctx, role.ID)

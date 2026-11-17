@@ -12,6 +12,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/message"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
+	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
 // validate is safe for concurrent use and caches struct metadata, so it is
@@ -34,8 +35,19 @@ func (m *manager) Create(ctx context.Context, opts entity.UserCreateOptions) (*e
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	opts.Password = "" // the repository stores the hash, never the password
-	user, err := m.repository.CreateUser(ctx, opts, hash)
+	// the repository stores the hash, never the password
+	user, err := m.repository.CreateUser(ctx, repo.UserCreateOptions{
+		OrganizationID:       opts.OrganizationID,
+		Username:             opts.Username,
+		PasswordHash:         hash,
+		Role:                 opts.Role,
+		FirstName:            opts.FirstName,
+		LastName:             opts.LastName,
+		Email:                opts.Email,
+		Title:                opts.Title,
+		ChangePassword:       opts.ChangePassword,
+		RequirePasswordReset: opts.RequirePasswordReset,
+	})
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
