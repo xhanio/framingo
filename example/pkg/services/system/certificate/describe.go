@@ -11,18 +11,18 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 )
 
-// describe fills in what is read out of the certificate in c's bundle -
-// version, serial, issuer, subject, validity, fingerprint and extensions. The
-// repository hands the bundle over decoded; these are worked out from it.
-func describe(c *entity.Certificate) error {
+// describe fills in what can be read off the certificate itself - version,
+// serial, subject and issuer, validity, fingerprint, extensions - from the
+// bundle the repository decoded. It is derivation, not storage, so it lives
+// here rather than in the repository: it holds whatever the storage.
+func describe(c *entity.Certificate) (*entity.Certificate, error) {
 	if c.Bundle == nil {
-		return errors.Newf("certificate %s has no bundle", c.Name)
+		return nil, errors.Newf("certificate %s holds no bundle", c.Name)
 	}
 	cert := c.Bundle.Cert()
 	if cert == nil {
-		return errors.Newf("failed to get cert from bundle")
+		return nil, errors.Newf("failed to get cert from bundle of %s", c.Name)
 	}
-
 	c.Version = cert.Version
 	c.SerialNumber = strutil.FormatHex(cert.SerialNumber, false)
 	c.Issuer = cert.Issuer.String()
@@ -30,24 +30,23 @@ func describe(c *entity.Certificate) error {
 	c.StartsTime = cert.NotBefore.String()
 	c.ExpireTime = cert.NotAfter.String()
 
-	// Calculate fingerprint
-	fingerprintSum := md5.Sum(cert.Raw)
+	fingerprint := md5.Sum(cert.Raw)
 	c.Fingerprint = entity.CertificateFingerprint{
 		Algorithm: "MD5",
-		Value:     strings.ToUpper(strutil.FormatHex(fingerprintSum[:], false)),
+		Value:     strings.ToUpper(strutil.FormatHex(fingerprint[:], false)),
 	}
 
-	// Extract the extensions
-	var extensions []entity.CertificateExtension
+	c.Extensions = nil
 	for _, ext := range cert.Extensions {
 		extID := ext.Id.String()
-		extName := certutil.OIDStringToNameMap[extID]
-		extValue, err := certutil.GetExtensionValue(cert, extID)
+		value, err := certutil.GetExtensionValue(cert, extID)
 		if err != nil {
 			continue
 		}
-		extensions = append(extensions, entity.CertificateExtension{Name: extName, Value: extValue})
+		c.Extensions = append(c.Extensions, entity.CertificateExtension{
+			Name:  certutil.OIDStringToNameMap[extID],
+			Value: value,
+		})
 	}
-	c.Extensions = extensions
-	return nil
+	return c, nil
 }

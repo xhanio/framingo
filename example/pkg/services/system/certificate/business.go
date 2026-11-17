@@ -27,10 +27,7 @@ func (m *manager) Import(ctx context.Context, opts entity.CertCreateOptions) (*e
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	if err := describe(certificate); err != nil {
-		return nil, errors.Wrap(err)
-	}
-	return certificate, nil
+	return describe(certificate)
 }
 
 // Issue a certificate signed by a CA
@@ -40,13 +37,10 @@ func (m *manager) Issue(ctx context.Context, opts entity.CertIssueOptions) (*ent
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get the CA certificate %d", opts.CAID)
 	}
-
-	// The repository hands the bundle over decoded
-	caCert := ca.Bundle
-	if !caCert.IsCA() {
+	caBundle, ok := ca.Bundle.(certutil.CABundle)
+	if !ok || !ca.Bundle.IsCA() {
 		return nil, errors.BadRequest.Newf("The CA certificate %d is not a CA", opts.CAID)
 	}
-	caBundle := caCert.(certutil.CABundle)
 
 	// Parse common certName and subject alt certName to see if they are IP or domain certName
 	dns, ips, _, _ := x509util.SplitSANs([]string{
@@ -84,30 +78,28 @@ func (m *manager) Get(ctx context.Context, certID int32) (*entity.Certificate, e
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	if err := describe(cert); err != nil {
-		return nil, errors.Wrap(err)
-	}
-	return cert, nil
+	return describe(cert)
 }
 
+// List leaves out the default CA: it is the system's own, signs what Issue
+// produces, and is neither listed nor deleted (see Delete).
 func (m *manager) List(ctx context.Context, opts entity.CertListOptions) ([]*entity.Certificate, error) {
 	certs, err := m.repository.ListCertificates(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	var listed []*entity.Certificate
+	result := make([]*entity.Certificate, 0, len(certs))
 	for _, cert := range certs {
-		// The default CA is the system's own, the one Issue signs with; it
-		// is not listed, as Delete does not delete it.
 		if cert.Name == preset.CAName {
 			continue
 		}
-		if err := describe(cert); err != nil {
+		described, err := describe(cert)
+		if err != nil {
 			return nil, errors.Wrapf(err, "Failed to extract cert details for cert %s", cert.Name)
 		}
-		listed = append(listed, cert)
+		result = append(result, described)
 	}
-	return listed, nil
+	return result, nil
 }
 
 func (m *manager) Delete(ctx context.Context, certIDs []int32) error {
@@ -205,6 +197,9 @@ func (m *manager) defaultCA(ctx context.Context) (certutil.CABundle, error) {
 		}
 		return cm, nil
 	}
-	// The repository hands the bundle over decoded
-	return defaultCA.Bundle.(certutil.CABundle), nil
+	caBundle, ok := defaultCA.Bundle.(certutil.CABundle)
+	if !ok {
+		return nil, errors.Newf("default CA %s holds no CA bundle", preset.CAName)
+	}
+	return caBundle, nil
 }
