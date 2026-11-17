@@ -15,6 +15,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/wsutil"
 )
 
 // manager implements the Manager interface
@@ -458,25 +459,10 @@ func (m *manager) wrapWebSocket(fn func(echo.Context, *websocket.Conn) error) ec
 		// Once upgraded, the HTTP response is hijacked — errors cannot be
 		// returned to Echo. Handle closure directly.
 		err = fn(c, conn)
-		m.closeWebSocket(c.Request().Context(), conn, err)
+		if err := wsutil.Close(c.Request().Context(), conn, err); err != nil {
+			m.log.Error(errors.Wrap(err))
+		}
 		return nil
-	}
-}
-
-// closeWebSocket handles WebSocket connection closure after the handler returns.
-func (m *manager) closeWebSocket(ctx context.Context, conn *websocket.Conn, err error) {
-	if err == nil {
-		conn.Close(websocket.StatusNormalClosure, "")
-		return
-	}
-	switch status := websocket.CloseStatus(err); {
-	case status == websocket.StatusNormalClosure, status == websocket.StatusGoingAway:
-		// Client closed intentionally — not an error.
-	case ctx.Err() != nil:
-		conn.Close(websocket.StatusGoingAway, "server shutting down")
-	default:
-		m.log.Error(errors.Wrap(err))
-		conn.Close(websocket.StatusInternalError, err.Error())
 	}
 }
 

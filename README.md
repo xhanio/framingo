@@ -262,7 +262,7 @@ Interface contracts and shared types:
 | **[syncutil](pkg/utils/syncutil/)** | `WaitGroup` whose `Wait(ctx)` gives up once the context ends |
 | **[testutil](pkg/utils/testutil/)** | Test database setup helpers |
 | **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
-| **[wsutil](pkg/utils/wsutil/)** | WebSocket bridges: `Bridge` joins a connection to a bus Messenger both ways, with server-side pings tunable via `WithPing` |
+| **[wsutil](pkg/utils/wsutil/)** | WebSocket helpers: `Bridge` joins a connection to a bus Messenger both ways, with server-side pings tunable via `WithPing`; `Close` ends a connection with the status its handler's result calls for |
 
 ## Building Your First Application
 
