@@ -10,6 +10,10 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
+// The admin role is fixed: it holds every permission implicitly, so it is
+// neither edited, deleted nor handed a permission list. Those refusals live
+// here, where every caller meets them, not in the router.
+
 func (m *manager) Create(ctx context.Context, opts entity.RoleCreateOptions) error {
 	if _, err := m.repository.CreateRole(ctx, opts); err != nil {
 		return errors.Wrap(err)
@@ -26,6 +30,9 @@ func (m *manager) GetByName(ctx context.Context, roleName string) (*entity.Role,
 }
 
 func (m *manager) Update(ctx context.Context, roleID int32, opts entity.RoleUpdateOptions) error {
+	if roleID == rbac.RoleAdminID {
+		return errors.BadRequest.Newf("admin role cannot be modified")
+	}
 	if _, err := m.repository.UpdateRole(ctx, roleID, opts); err != nil {
 		return errors.Wrap(err)
 	}
@@ -44,6 +51,9 @@ func (m *manager) List(ctx context.Context) ([]*entity.Role, error) {
 // one transaction, though that does not stop another transaction assigning
 // the role meanwhile.
 func (m *manager) Delete(ctx context.Context, roleID int32) error {
+	if roleID == rbac.RoleAdminID {
+		return errors.BadRequest.Newf("admin role cannot be deleted")
+	}
 	err := m.repository.Transaction(ctx, func(tctx context.Context) error {
 		role, err := m.repository.GetRole(tctx, roleID)
 		if err != nil {
@@ -64,7 +74,23 @@ func (m *manager) Delete(ctx context.Context, roleID int32) error {
 	return nil
 }
 
+// checkPermissions refuses a permission name rbac does not define.
+func checkPermissions(permissions []string) error {
+	for _, p := range permissions {
+		if !rbac.IsPermissionValid(p) {
+			return errors.BadRequest.Newf("invalid permission: %s", p)
+		}
+	}
+	return nil
+}
+
 func (m *manager) SetPermissions(ctx context.Context, roleID int32, opts entity.PermissionSetOptions) error {
+	if roleID == rbac.RoleAdminID {
+		return errors.BadRequest.Newf("admin role already has all permissions")
+	}
+	if err := checkPermissions(opts.Permissions); err != nil {
+		return errors.Wrap(err)
+	}
 	if err := m.repository.SetRolePermissions(ctx, roleID, opts.Permissions); err != nil {
 		return errors.Wrap(err)
 	}
@@ -72,6 +98,12 @@ func (m *manager) SetPermissions(ctx context.Context, roleID int32, opts entity.
 }
 
 func (m *manager) SetPermissionsForRoleName(ctx context.Context, roleName string, opts entity.PermissionSetOptions) error {
+	if roleName == rbac.RoleAdmin {
+		return errors.BadRequest.Newf("admin role already has all permissions")
+	}
+	if err := checkPermissions(opts.Permissions); err != nil {
+		return errors.Wrap(err)
+	}
 	if err := m.repository.SetRolePermissionsByName(ctx, roleName, opts.Permissions); err != nil {
 		return errors.Wrap(err)
 	}

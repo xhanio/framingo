@@ -265,3 +265,37 @@ func TestDeleteRefusesARoleInUse(t *testing.T) {
 	_, err = m.GetByName(ctx, createOpts.Name)
 	assert.True(t, errors.Is(err, errors.NotFound), "got %v", err)
 }
+
+// The admin role is fixed whoever calls: the service refuses to edit it,
+// delete it or give it a permission list, and refuses permission names rbac
+// does not define - the router no longer checks either.
+func TestAdminRoleAndPermissionNamesAreGuarded(t *testing.T) {
+	m, db, err := setup()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Cleanup(true)) }()
+	ctx := context.Background()
+	isBadRequest := func(err error) bool { return err != nil && errors.Is(err, errors.BadRequest) }
+
+	name := "renamed"
+	err = m.Update(ctx, rbac.RoleAdminID, entity.RoleUpdateOptions{Name: &name})
+	assert.True(t, isBadRequest(err), "updating the admin role: got %v", err)
+	err = m.Delete(ctx, rbac.RoleAdminID)
+	assert.True(t, isBadRequest(err), "deleting the admin role: got %v", err)
+	err = m.SetPermissions(ctx, rbac.RoleAdminID, entity.PermissionSetOptions{})
+	assert.True(t, isBadRequest(err), "setting the admin role's permissions: got %v", err)
+	err = m.SetPermissionsForRoleName(ctx, rbac.RoleAdmin, entity.PermissionSetOptions{})
+	assert.True(t, isBadRequest(err), "setting the admin role's permissions by name: got %v", err)
+	admin, err := m.GetByName(ctx, rbac.RoleAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, rbac.RoleAdmin, admin.Name, "a refused update leaves the admin role as it was")
+
+	require.NoError(t, m.Create(ctx, createOpts))
+	bogus := entity.PermissionSetOptions{Permissions: []string{rbac.PermissionUserRead, "no_such_permission"}}
+	err = m.SetPermissions(ctx, testRoleID, bogus)
+	assert.True(t, isBadRequest(err), "setting an undefined permission: got %v", err)
+	err = m.SetPermissionsForRoleName(ctx, createOpts.Name, bogus)
+	assert.True(t, isBadRequest(err), "setting an undefined permission by name: got %v", err)
+	perms, err := m.GetPermissions(ctx, testRoleID)
+	require.NoError(t, err)
+	assert.Empty(t, perms, "a refused permission list is not partly stored")
+}

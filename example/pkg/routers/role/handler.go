@@ -7,7 +7,6 @@ import (
 
 	"github.com/xhanio/framingo/example/pkg/types/api"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
-	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
 func (r *router) Create(c api.Context) error {
@@ -34,9 +33,6 @@ func (r *router) Delete(c api.Context) error {
 	if err := c.BindPath().MustInt32("id", &roleID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
-	if roleID == rbac.RoleAdminID {
-		return errors.BadRequest.Newf("admin role cannot be deleted")
-	}
 	if err := r.rm.Delete(c, roleID); err != nil {
 		return errors.Wrap(err)
 	}
@@ -47,9 +43,6 @@ func (r *router) Update(c api.Context) error {
 	var roleID int32
 	if err := c.BindPath().MustInt32("id", &roleID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
-	}
-	if roleID == rbac.RoleAdminID {
-		return errors.BadRequest.Newf("admin role cannot be modified")
 	}
 	var opt entity.RoleUpdateOptions
 	if err := c.Bind(&opt); err != nil {
@@ -66,9 +59,6 @@ func (r *router) ListPermissions(c api.Context) error {
 	if err := c.BindPath().MustInt32("id", &roleID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
-	if roleID == rbac.RoleAdminID {
-		return c.JSON(http.StatusOK, rbac.PermissionsAll)
-	}
 	permissions, err := r.rm.GetPermissions(c, roleID)
 	if err != nil {
 		return errors.Wrap(err)
@@ -81,17 +71,9 @@ func (r *router) SetPermissions(c api.Context) error {
 	if err := c.BindPath().MustInt32("id", &roleID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
-	if roleID == rbac.RoleAdminID {
-		return errors.BadRequest.Newf("admin role already has all permissions")
-	}
 	var opts entity.PermissionSetOptions
 	if err := c.Bind(&opts); err != nil {
 		return errors.BadRequest.Wrap(err)
-	}
-	for _, p := range opts.Permissions {
-		if !rbac.IsPermissionValid(p) {
-			return errors.BadRequest.Newf("invalid permission: %s", p)
-		}
 	}
 	if err := r.rm.SetPermissions(c, roleID, opts); err != nil {
 		return errors.Wrap(err)
