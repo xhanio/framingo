@@ -38,7 +38,9 @@ type UserListOptions struct {
 	Desc   bool   // false for ascending order; true for descending order
 }
 
-// Pointer fields to differentiate between an empty string and a nil case
+// UserUpdateOptions is an edit of an account. Pointer fields tell "leave it"
+// (nil) from "set it", including set to empty or false: the repository writes
+// exactly the fields present.
 type UserUpdateOptions struct {
 	Username  *string `json:"username,omitempty"`
 	FirstName *string `json:"first_name,omitempty"`
@@ -46,7 +48,9 @@ type UserUpdateOptions struct {
 	Email     *string `json:"email,omitempty"`
 	Title     *string `json:"title,omitempty"` //Optional Param
 	Role      *string `json:"role,omitempty"`
-	Expired   bool    `json:"expired"`
+	// Expired flags the password for a change at next login; nil leaves the
+	// flag as it is. As a plain bool it was written false on every edit.
+	Expired *bool `json:"expired,omitempty"`
 }
 
 type UserResetPasswordOptions struct {

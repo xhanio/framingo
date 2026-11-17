@@ -483,3 +483,26 @@ func TestCreateDefaultsToDefaultOrganization(t *testing.T) {
 	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, opts.Username, opts.Password)
 	assert.NoError(t, err, "the new user can log in")
 }
+
+// An edit leaves every field it does not name alone - the password-change
+// flag included, which a non-pointer field cleared on every edit.
+func TestUpdateKeepsPasswordChangeFlag(t *testing.T) {
+	m, db, err := setup()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Cleanup(true)) }()
+	ctx := context.Background()
+
+	opts := createOpts
+	opts.ChangePassword = true
+	_, err = m.Create(ctx, opts) // ID 2
+	require.NoError(t, err)
+
+	user, err := m.Update(ctx, 2, entity.UserUpdateOptions{FirstName: stringPointer("Johnny")})
+	require.NoError(t, err)
+	assert.True(t, user.ChangePassword, "an edit that does not name the flag must keep it")
+
+	off := false
+	user, err = m.Update(ctx, 2, entity.UserUpdateOptions{Expired: &off})
+	require.NoError(t, err)
+	assert.False(t, user.ChangePassword, "an edit that names the flag sets it")
+}

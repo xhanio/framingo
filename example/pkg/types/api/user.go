@@ -34,7 +34,7 @@ type UserUpdateRequest struct {
 	LastName       *string `json:"last_name,omitempty"`
 	Email          *string `json:"email,omitempty"`
 	Role           *string `json:"role,omitempty"`
-	ChangePassword bool    `json:"change_password"`
+	ChangePassword *bool   `json:"change_password,omitempty"`
 }
 
 type UserResetPasswordRequest struct {
