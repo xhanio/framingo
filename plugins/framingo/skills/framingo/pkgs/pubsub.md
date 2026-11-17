@@ -77,8 +77,9 @@ import "github.com/xhanio/framingo/pkg/services/messagebus"
 
 mb := messagebus.New(ps, messagebus.WithLogger(logger))
 
-// Register any service: modules implementing common.MessageHandler /
-// common.RawMessageHandler are auto-subscribed; others are no-op.
+// Register any named module (a service is one): modules implementing
+// common.MessageHandler / common.RawMessageHandler are auto-subscribed under
+// their name; others are a no-op.
 mb.Register(someService)
 
 // Direct channel access (e.g. WebSocket bridge)
@@ -94,13 +95,14 @@ Defined in `pkg/types/common` (not in `pubsub`/`messagebus`):
 // Typed messages
 type Message interface { Kind() string }
 
-// Handlers — note each embeds Service, so a handler is always a service.
+// Handlers — each embeds Named, not Service: the handler is the module
+// Register takes, and its name is its subscription. It needs no Dependencies.
 type MessageHandler interface {
-    Service
+    Named
     HandleMessage(ctx context.Context, msg Message) error
 }
 type RawMessageHandler interface {
-    Service
+    Named
     HandleRawMessage(ctx context.Context, kind string, payload any) error
 }
 

@@ -22,8 +22,14 @@ type target struct {
 	raw   atomic.Int64
 }
 
-func (t *target) Name() string                   { return "msg_target" }
-func (t *target) Dependencies() []common.Service { return nil }
+// target is a handler and nothing more: a name and the two handle methods, no
+// Dependencies - a handler need not be a service.
+var (
+	_ common.MessageHandler    = (*target)(nil)
+	_ common.RawMessageHandler = (*target)(nil)
+)
+
+func (t *target) Name() string { return "msg_target" }
 
 func (t *target) HandleMessage(ctx context.Context, m common.Message) error {
 	if _, ok := m.(*msg); ok {
@@ -224,8 +230,7 @@ type hanging struct {
 	release chan struct{}
 }
 
-func (h *hanging) Name() string                   { return "msg_hanging" }
-func (h *hanging) Dependencies() []common.Service { return nil }
+func (h *hanging) Name() string { return "msg_hanging" }
 
 func (h *hanging) HandleMessage(ctx context.Context, m common.Message) error {
 	close(h.took)
