@@ -305,7 +305,9 @@ func (m *manager) Init(ctx context.Context) error {
 	if err := m.services.TopoSort(); err != nil {
 		return errors.Wrap(err)
 	}
-	// append api after topo sort to ensure the latest start
+	// append api after topo sort to ensure the latest start - an ordering,
+	// not a dependency: a failed dependency would keep the api's Init from
+	// running, and the health listener must come up regardless
 	if err := m.services.Register(m.api); err != nil {
 		return errors.Wrap(err)
 	}

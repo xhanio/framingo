@@ -56,7 +56,10 @@ func (m *manager) Init(ctx context.Context) error {
 		return errors.Wrap(err)
 	}
 
-	// append api & grpc after topo sort to ensure the latest start
+	// append api & grpc after topo sort to ensure the latest start. An
+	// ordering only, on purpose not a dependency: the listener (and the
+	// health listener with it) must come up even when a service behind some
+	// route failed its init, which a dependency would block
 	if err := m.services.Register(
 		m.api,
 	); err != nil {

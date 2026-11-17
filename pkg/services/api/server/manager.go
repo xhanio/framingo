@@ -69,8 +69,15 @@ func (m *manager) Name() string {
 	return m.name
 }
 
-// Dependencies is nil on purpose: the meter a listener carries is not one
-// - see WithMeter.
+// Dependencies is nil on purpose. To a supervisor a dependency is more than
+// an ordering: a dependency that fails its init keeps the dependent's Init
+// from ever running, and dependencies' failures roll up into the dependent's
+// healthcheck. The listener - the health listener with it - must come up
+// even when a service behind some route did not, so those routes answer
+// with errors while /healthz and /readyz report the truth. Starting it after
+// the services is an ordering only, which the wiring gives by registering
+// the server once the rest is sorted. Nor is the meter a listener carries a
+// dependency - see WithMeter.
 func (m *manager) Dependencies() []common.Service {
 	return nil
 }
