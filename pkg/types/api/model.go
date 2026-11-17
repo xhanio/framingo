@@ -40,6 +40,10 @@ type Middleware interface {
 
 type Router interface {
 	common.Service
+	// Config is the router's YAML: one handler group per document - a
+	// server, a prefix, group middlewares and handlers. Most routers have
+	// one; routes that need another prefix or middleware chain go in a
+	// further document after `---`, served by the same Handlers.
 	Config() []byte
 	Handlers() map[string]any // echo.HandlerFunc or WebSocketHandlerFunc
 }

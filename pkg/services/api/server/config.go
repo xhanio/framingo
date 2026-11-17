@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"path"
 
 	"github.com/xhanio/errors"
@@ -33,14 +35,44 @@ func newHandlerKey(g *handlerGroupConfig, h *handlerConfig) handlerKey {
 	}
 }
 
-// handlerGroupConfig is the schema of a router.yaml. It is private to the
-// server: routers hand their YAML over as bytes, middlewares receive theirs
-// the same way, and the parsed form never crosses the package boundary.
+// handlerGroupConfig is the schema of one document of a router.yaml - one
+// handler group: a server, a prefix, the group's middlewares and its
+// handlers. It is private to the server: routers hand their YAML over as
+// bytes, middlewares receive theirs the same way, and the parsed form never
+// crosses the package boundary.
 type handlerGroupConfig struct {
 	Server      string              `json:"server"` // default: http
 	Prefix      string              `json:"prefix"` // default: /
 	Handlers    []*handlerConfig    `json:"handlers"`
 	Middlewares []*middlewareConfig `json:"middlewares"`
+}
+
+// parseRouterConfig reads a router's YAML as a stream of documents, one
+// handler group each, so a router whose routes need more than one prefix -
+// or more than one group middleware chain - separates them with `---`. A
+// single-document file, the common case, reads exactly as it always has.
+// Empty documents (a leading or trailing `---`) are skipped; a stream with
+// no group at all is an error.
+func parseRouterConfig(data []byte) ([]*handlerGroupConfig, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var groups []*handlerGroupConfig
+	for doc := 1; ; doc++ {
+		var g *handlerGroupConfig
+		err := dec.Decode(&g)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, errors.Wrapf(err, "document %d", doc)
+		}
+		if g != nil {
+			groups = append(groups, g)
+		}
+	}
+	if len(groups) == 0 {
+		return nil, errors.Newf("no handler group in router config")
+	}
+	return groups, nil
 }
 
 type handlerConfig struct {

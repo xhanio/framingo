@@ -11,7 +11,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/xhanio/errors"
-	"gopkg.in/yaml.v3"
 
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -214,87 +213,105 @@ func (m *manager) List() []Server {
 // Router Registration
 // ============================================================================
 
-// registerRouter loads the router's configuration and registers its handlers
-func (m *manager) registerRouter(router api.Router) (*handlerGroupConfig, error) {
+// registerRouter loads the router's configuration - one handler group per
+// YAML document - and resolves every handler it declares. A mistake anywhere
+// fails here, naming the router and the group: registration is where a
+// router's config is checked, so the wiring fails startup on it.
+func (m *manager) registerRouter(router api.Router) ([]*handlerGroupConfig, error) {
 	// Get embedded router.yaml configuration
 	data := router.Config()
 	if len(data) == 0 {
 		return nil, errors.Newf("router %s has empty config", router.Name())
 	}
-	// Parse YAML config
-	var group *handlerGroupConfig
-	if err := yaml.Unmarshal(data, &group); err != nil {
-		return nil, errors.Wrapf(err, "failed to parse router config")
-	}
-	if group == nil {
-		return nil, errors.Newf("http configuration not found in router.yaml")
+	groups, err := parseRouterConfig(data)
+	if err != nil {
+		return nil, errors.Wrapf(err, "router %s: failed to parse config", router.Name())
 	}
 	// Get handler functions from router
 	handlers := router.Handlers()
 	if handlers == nil {
-		return nil, errors.Newf("router.Handlers() returned nil")
+		return nil, errors.Newf("router %s: Handlers() returned nil", router.Name())
 	}
-	// Register each handler function
+	count := 0
+	for _, group := range groups {
+		if err := m.resolveHandlers(group, handlers); err != nil {
+			return nil, errors.Wrapf(err, "router %s, handler group %s", router.Name(), group.Prefix)
+		}
+		count += len(group.Handlers)
+	}
+	m.log.Debugf("registered router %s with %d handler(s) in %d group(s)", router.Name(), count, len(groups))
+	return groups, nil
+}
+
+// resolveHandlers binds each handler a group declares to its function. A
+// route is one server, method and path wherever it is declared: a second
+// declaration - in another group of the same router or in another router -
+// would silently replace the first, so it fails registration instead.
+func (m *manager) resolveHandlers(group *handlerGroupConfig, handlers map[string]any) error {
 	for _, handler := range group.Handlers {
 		handler.Method = strings.ToUpper(handler.Method)
 		if !validHTTPMethod(handler.Method) {
-			return nil, errors.Newf("invalid HTTP method %q for handler %s", handler.Method, handler.Func)
+			return errors.Newf("invalid HTTP method %q for handler %s", handler.Method, handler.Func)
 		}
 		fn, ok := handlers[handler.Func]
 		if !ok {
-			return nil, errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
+			return errors.NotImplemented.Newf("handler function %s not found in router.Handlers()", handler.Func)
 		}
 		key := newHandlerKey(group, handler)
+		if _, taken := m.handlerFuncs[key]; taken {
+			return errors.Conflict.Newf("route %s is already registered", key)
+		}
 		switch f := fn.(type) {
 		case echo.HandlerFunc:
 			if handler.Method == api.MethodWS {
-				return nil, errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
+				return errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
 			}
 			m.handlerFuncs[key] = f
 		case func(echo.Context) error:
 			if handler.Method == api.MethodWS {
-				return nil, errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
+				return errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
 			}
 			m.handlerFuncs[key] = f
 		case func(echo.Context, *websocket.Conn) error:
 			if handler.Method != api.MethodWS {
-				return nil, errors.Newf("handler %s has WebSocket signature but method is %s", handler.Func, handler.Method)
+				return errors.Newf("handler %s has WebSocket signature but method is %s", handler.Func, handler.Method)
 			}
 			m.handlerFuncs[key] = m.wrapWebSocket(f)
 		default:
-			return nil, errors.Newf("handler %s has unsupported signature", handler.Func)
+			return errors.Newf("handler %s has unsupported signature", handler.Func)
 		}
 	}
-	m.log.Debugf("registered router %s with %d handlers", router.Name(), len(group.Handlers))
-	return group, nil
+	return nil
 }
 
 // RegisterRouters registers one or more routers with the server
 func (m *manager) RegisterRouters(routers ...api.Router) error {
 	for _, r := range routers {
-		// Register router and get handler group
-		g, err := m.registerRouter(r)
+		// Register router and get its handler groups
+		groups, err := m.registerRouter(r)
 		if err != nil {
 			return err
 		}
-		// Determine which server to use
-		serverName := g.Server
-		if serverName == "" {
-			return errors.Newf("server name not specified in router configuration")
-		}
+		for _, g := range groups {
+			// Determine which server to use
+			serverName := g.Server
+			if serverName == "" {
+				return errors.Newf("router %s: server name not specified in handler group %q", r.Name(), g.Prefix)
+			}
 
-		// Get the echo instance for this server
-		s, ok := m.servers[serverName]
-		if !ok {
-			return errors.Newf("server %s not found, please call AddServer first", serverName)
-		}
+			// Get the echo instance for this server
+			s, ok := m.servers[serverName]
+			if !ok {
+				return errors.Newf("server %s not found, please call AddServer first", serverName)
+			}
 
-		for _, h := range g.Handlers {
-			key := newHandlerKey(g, h)
-			s.groups[key] = g
-			s.handlers[key] = h
-			if err := m.installHandler(s, g, h); err != nil {
-				return err
+			for _, h := range g.Handlers {
+				key := newHandlerKey(g, h)
+				s.groups[key] = g
+				s.handlers[key] = h
+				if err := m.installHandler(s, g, h); err != nil {
+					return err
+				}
 			}
 		}
 	}

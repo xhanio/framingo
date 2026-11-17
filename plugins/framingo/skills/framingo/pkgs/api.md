@@ -247,6 +247,45 @@ handlers:
                           # DiscoverHandlers wraps it to the echo signature
 ```
 
+### Several groups in one router
+
+Each YAML **document** in a router's config is one handler group — its own
+`server`, `prefix`, group `middlewares` and `handlers` — so a router whose
+routes need a second prefix (or a different group middleware chain) adds a
+document after `---` instead of a second router. Every group resolves its
+`func:` names against the one `Handlers()` map. A single-document file is
+the common case and reads as it always has; empty documents are skipped,
+and a config with no group at all fails registration. A user router serving
+accounts by ID and the caller's own account, say:
+
+```yaml
+server: http
+prefix: /users            # accounts by ID
+middlewares: [authnuser, authz]
+handlers:
+  - {method: GET, path: /:id, func: GetUser, permission: user.manage}
+  # ...
+---
+server: http
+prefix: /user             # the caller's own account: no :id
+middlewares: [authnuser, authz]
+handlers:
+  - {method: GET, path: /, func: GetCurrentUser, permission: user.self}
+  # ...
+```
+
+A route is one server, method and path wherever it is declared: the same
+route twice — in two groups of one router, or in two routers — fails
+registration with `Conflict` rather than silently replacing the first.
+
+Registration is where a router's config is checked, as `supervisor.Register`
+is where a service's name is. A document that does not parse, an invalid
+method, a `func:` with no handler of a matching signature (handler
+discovery skips a mismatched signature silently, so this is where it
+surfaces) or a route declared twice fails `RegisterRouters` with an error
+naming the router and the handler group — and the wiring returns it, so
+startup fails on it.
+
 ## Handler Key Format
 
 The server uses a struct-based key to uniquely identify each handler:
