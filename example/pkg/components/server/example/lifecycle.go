@@ -19,31 +19,37 @@ func (m *manager) Init(ctx context.Context) error {
 		return errors.Wrap(err)
 	}
 
-	// register system services
-	m.services.Register(
+	// register system services; a name taken by another instance fails here
+	if err := m.services.Register(
 		m.repository,
 		m.user,
 		m.role,
 		m.organization,
 		m.certificate,
 		m.auth,
-	)
+	); err != nil {
+		return errors.Wrap(err)
+	}
 
 	// register business services
-	m.services.Register(
+	if err := m.services.Register(
 		m.example,
-	)
+	); err != nil {
+		return errors.Wrap(err)
+	}
 
 	// register infra last, telemetry at the end: the topo sort pops
 	// dependency-less services in reverse registration order, so telemetry
 	// inits first and, with stop reversed, flushes last
-	m.services.Register(
+	if err := m.services.Register(
 		m.db,
 		m.pubsub,
 		m.messagebus,
 		m.metrics,
 		m.tracing,
-	)
+	); err != nil {
+		return errors.Wrap(err)
+	}
 
 	// perform a topo sort to ensure the dependencies
 	if err := m.services.TopoSort(); err != nil {
@@ -51,9 +57,11 @@ func (m *manager) Init(ctx context.Context) error {
 	}
 
 	// append api & grpc after topo sort to ensure the latest start
-	m.services.Register(
+	if err := m.services.Register(
 		m.api,
-	)
+	); err != nil {
+		return errors.Wrap(err)
+	}
 
 	// register all services with messagebus; modules without MessageHandler /
 	// RawMessageHandler are skipped automatically.

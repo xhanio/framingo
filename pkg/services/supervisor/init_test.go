@@ -37,7 +37,7 @@ func TestInitWaitsForDependencyReadiness(t *testing.T) {
 	m := newTestManager(
 		WithInitPolicy(-1, time.Millisecond, 4*time.Millisecond),
 	)
-	m.Register(db, repo)
+	require.NoError(t, m.Register(db, repo))
 	require.NoError(t, m.TopoSort())
 
 	require.NoError(t, m.Init(context.Background()))
@@ -56,7 +56,7 @@ func TestInitRetriesOwnInit(t *testing.T) {
 	m := newTestManager(
 		WithInitPolicy(2, time.Millisecond, time.Millisecond),
 	)
-	m.Register(db, repo)
+	require.NoError(t, m.Register(db, repo))
 	require.NoError(t, m.TopoSort())
 
 	require.NoError(t, m.Init(context.Background()))
@@ -75,7 +75,7 @@ func TestInitPolicyExhausted(t *testing.T) {
 	m := newTestManager(
 		WithInitPolicy(2, time.Millisecond, time.Millisecond),
 	)
-	m.Register(db, repo)
+	require.NoError(t, m.Register(db, repo))
 	require.NoError(t, m.TopoSort())
 
 	start := time.Now()
@@ -100,7 +100,7 @@ func TestInitPolicyDisabledSkipsProbes(t *testing.T) {
 	repo.deps = []common.Service{db}
 
 	m := newTestManager()
-	m.Register(db, repo)
+	require.NoError(t, m.Register(db, repo))
 	require.NoError(t, m.TopoSort())
 
 	require.NoError(t, m.Init(context.Background()))
@@ -118,7 +118,7 @@ func TestInitWaitHonorsCancel(t *testing.T) {
 	m := newTestManager(
 		WithInitPolicy(-1, 50*time.Millisecond, 50*time.Millisecond),
 	)
-	m.Register(db, repo)
+	require.NoError(t, m.Register(db, repo))
 	require.NoError(t, m.TopoSort())
 
 	ctx, cancel := context.WithCancel(context.Background())

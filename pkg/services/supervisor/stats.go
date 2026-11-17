@@ -21,19 +21,19 @@ func newStatsStore() *statsStore {
 	}
 }
 
-// track adds a record for the service if none exists yet, reporting whether
-// one was added.
-func (s *statsStore) track(service common.Service) bool {
+// track adds a record for the service unless its name already has one, and
+// returns the service holding the name then - nil when the record is new.
+func (s *statsStore) track(service common.Service) common.Service {
 	s.Lock()
 	defer s.Unlock()
-	if _, ok := s.records[service.Name()]; ok {
-		return false
+	if record, ok := s.records[service.Name()]; ok {
+		return record.Source
 	}
 	s.records[service.Name()] = &entity.SupervisorStats{
 		Name:   service.Name(),
 		Source: service,
 	}
-	return true
+	return nil
 }
 
 // snapshot returns a copy of the named service's stats, or nil if the

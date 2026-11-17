@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
@@ -126,13 +127,13 @@ func TestRegister(t *testing.T) {
 		m := newTestManager()
 		a := newMockService("a")
 		b := newMockService("b")
-		m.Register(a, b)
+		require.NoError(t, m.Register(a, b))
 		assert.Len(t, m.c.stats.records, 2)
 	})
 
 	t.Run("skips nil services", func(t *testing.T) {
 		m := newTestManager()
-		m.Register(nil, newMockService("a"), nil)
+		require.NoError(t, m.Register(nil, newMockService("a"), nil))
 		assert.Len(t, m.c.stats.records, 1)
 	})
 
@@ -141,9 +142,51 @@ func TestRegister(t *testing.T) {
 		dep := newMockService("dep")
 		svc := newMockService("svc")
 		svc.deps = []common.Service{dep}
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		assert.NotNil(t, m.c.stats.records["dep"])
 		assert.NotNil(t, m.c.stats.records["svc"])
+	})
+
+	// A name stands for one instance. Meeting the same instance again -
+	// registered directly and again as someone's dependency - is routine.
+	t.Run("the same instance again is a no-op", func(t *testing.T) {
+		m := newTestManager()
+		dep := newMockService("dep")
+		svc := newMockService("svc")
+		svc.deps = []common.Service{dep}
+		require.NoError(t, m.Register(dep))
+		require.NoError(t, m.Register(svc, dep))
+		require.NoError(t, m.TopoSort())
+		assert.Len(t, m.Services(), 2)
+	})
+
+	// A second instance under a taken name used to vanish: the graph and the
+	// stats key on the name, so it was never initialized or started, and a
+	// service depending on it got an instance nobody ran.
+	t.Run("another instance under a taken name is refused", func(t *testing.T) {
+		m := newTestManager()
+		require.NoError(t, m.Register(newMockService("db")))
+		api := newMockService("api")
+		err := m.Register(api, newMockService("db"))
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, errors.Conflict), "got %v", err)
+	})
+
+	t.Run("a clash within one call is refused", func(t *testing.T) {
+		m := newTestManager()
+		err := m.Register(newMockService("x"), newMockService("x"))
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, errors.Conflict), "got %v", err)
+	})
+
+	t.Run("a dependency clashing with a registered service is refused", func(t *testing.T) {
+		m := newTestManager()
+		require.NoError(t, m.Register(newMockService("db")))
+		svc := newMockService("svc")
+		svc.deps = []common.Service{newMockService("db")}
+		err := m.Register(svc)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, errors.Conflict), "got %v", err)
 	})
 }
 
@@ -153,7 +196,7 @@ func TestTopoSort(t *testing.T) {
 		db := newMockService("db")
 		api := newMockService("api")
 		api.deps = []common.Service{db}
-		m.Register(db, api)
+		require.NoError(t, m.Register(db, api))
 		require.NoError(t, m.TopoSort())
 		services := m.Services()
 		require.Len(t, services, 2)
@@ -164,14 +207,14 @@ func TestTopoSort(t *testing.T) {
 	t.Run("register after TopoSort appends to service list", func(t *testing.T) {
 		m := newTestManager()
 		db := newMockService("db")
-		m.Register(db)
+		require.NoError(t, m.Register(db))
 		require.NoError(t, m.TopoSort())
 		require.Len(t, m.Services(), 1)
 
 		// register a new service after TopoSort — appended to end
 		api := newMockService("api")
 		api.deps = []common.Service{db}
-		m.Register(api)
+		require.NoError(t, m.Register(api))
 
 		services := m.Services()
 		require.Len(t, services, 2)
@@ -182,7 +225,7 @@ func TestTopoSort(t *testing.T) {
 	t.Run("register after TopoSort with new dependency appends both", func(t *testing.T) {
 		m := newTestManager()
 		a := newMockService("a")
-		m.Register(a)
+		require.NoError(t, m.Register(a))
 		require.NoError(t, m.TopoSort())
 		require.Len(t, m.Services(), 1)
 
@@ -190,7 +233,7 @@ func TestTopoSort(t *testing.T) {
 		dep := newMockService("dep")
 		svc := newMockService("svc")
 		svc.deps = []common.Service{dep}
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 
 		services := m.Services()
 		require.Len(t, services, 3)
@@ -203,7 +246,7 @@ func TestInitAndStart(t *testing.T) {
 		m := newTestManager()
 		a := newMockService("a")
 		b := newMockService("b")
-		m.Register(a, b)
+		require.NoError(t, m.Register(a, b))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 		assert.Equal(t, 1, a.initCalled)
@@ -222,7 +265,7 @@ func TestInitAndStart(t *testing.T) {
 		m := newTestManager()
 		svc := newMockService("bad")
 		svc.initErr = fmt.Errorf("init boom")
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 
 		err := m.Init(context.Background())
@@ -238,7 +281,7 @@ func TestInitAndStart(t *testing.T) {
 		m := newTestManager()
 		svc := newMockService("bad")
 		svc.startErr = fmt.Errorf("start boom")
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 
@@ -256,7 +299,7 @@ func TestInitAndStart(t *testing.T) {
 	t.Run("init-only service does not start", func(t *testing.T) {
 		m := newTestManager()
 		svc := &initOnlyService{name: "config"}
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 		assert.Equal(t, 1, svc.initCalled)
@@ -278,7 +321,7 @@ func TestDependencyInitOrder(t *testing.T) {
 		dep.initErr = fmt.Errorf("dep failed")
 		svc := newMockService("svc")
 		svc.deps = []common.Service{dep}
-		m.Register(dep, svc)
+		require.NoError(t, m.Register(dep, svc))
 		require.NoError(t, m.TopoSort())
 
 		err := m.Init(context.Background())
@@ -309,7 +352,7 @@ func TestStopOrder(t *testing.T) {
 		_ = dbStop
 		_ = apiStop
 
-		m.Register(db, api)
+		require.NoError(t, m.Register(db, api))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
@@ -335,7 +378,7 @@ func TestStopOrder(t *testing.T) {
 func TestPerServiceLifecycle(t *testing.T) {
 	m := newTestManager()
 	svc := newMockService("svc")
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 
 	t.Run("InitService", func(t *testing.T) {
@@ -375,7 +418,7 @@ func TestPerServiceLifecycle(t *testing.T) {
 func TestFailedRestartRecordsHealthcheckErr(t *testing.T) {
 	svc := newMockService("svc")
 	m := newTestManager()
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.StartService("svc"))
@@ -392,7 +435,7 @@ func TestStats(t *testing.T) {
 	m := newTestManager()
 	a := newMockService("a")
 	b := newMockService("b")
-	m.Register(a, b)
+	require.NoError(t, m.Register(a, b))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 
@@ -414,7 +457,7 @@ func TestStatsTopologicalOrder(t *testing.T) {
 	alpha := newMockService("alpha")
 	zeta := newMockService("zeta")
 	zeta.deps = []common.Service{alpha}
-	m.Register(zeta, alpha)
+	require.NoError(t, m.Register(zeta, alpha))
 	require.NoError(t, m.TopoSort())
 
 	stats, _ := m.Stats()
@@ -458,7 +501,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		m := newTestManager()
 		svc := newMockService("svc")
 		svc.aliveErr = fmt.Errorf("dead")
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
@@ -476,7 +519,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 		m := newTestManager()
 		svc := newMockService("svc")
 		svc.readyErr = fmt.Errorf("not ready")
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
@@ -494,7 +537,7 @@ func TestHealthcheckLivenessAndReadiness(t *testing.T) {
 	t.Run("readiness success sets Ready=true", func(t *testing.T) {
 		m := newTestManager()
 		svc := newMockService("svc")
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
@@ -516,7 +559,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 		)
 		svc := newMockService("svc")
 		svc.aliveErr = fmt.Errorf("dead")
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
@@ -534,7 +577,7 @@ func TestMonitorRestartsOnLivenessOnly(t *testing.T) {
 		)
 		svc := newMockService("svc")
 		svc.readyErr = fmt.Errorf("not ready")
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Init(context.Background()))
 		require.NoError(t, m.Start(context.Background()))
@@ -554,7 +597,7 @@ func TestMonitorMaxRetries(t *testing.T) {
 	)
 	svc := newMockService("svc")
 	svc.aliveErr = fmt.Errorf("dead")
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
@@ -570,7 +613,7 @@ func TestShutdownTimeout(t *testing.T) {
 	m := newTestManager(WithStopPolicy(50 * time.Millisecond))
 	svc := newMockService("slow")
 	svc.stopErr = nil
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
@@ -583,7 +626,7 @@ func TestShutdownTimeout(t *testing.T) {
 func TestDoubleStartStop(t *testing.T) {
 	m := newTestManager()
 	svc := newMockService("svc")
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 
@@ -601,7 +644,7 @@ func TestDoubleStartStop(t *testing.T) {
 func TestInfo(t *testing.T) {
 	m := newTestManager()
 	svc := newMockService("svc")
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 
@@ -616,7 +659,7 @@ func TestInfo(t *testing.T) {
 func TestReadyStateTransitions(t *testing.T) {
 	m := newTestManager()
 	svc := newMockService("svc")
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 
 	// before init: not ready
@@ -674,7 +717,7 @@ func TestHealthcheckDependencyRecursion(t *testing.T) {
 	dep.aliveErr = fmt.Errorf("dep dead")
 	svc := newMockService("svc")
 	svc.deps = []common.Service{dep}
-	m.Register(dep, svc)
+	require.NoError(t, m.Register(dep, svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 
@@ -694,7 +737,7 @@ func TestShutdownPastItsDeadlineForcesTheServicesLeft(t *testing.T) {
 	slow := newMockService("slow")
 	slow.deps = []common.Service{fast} // so it stops first
 	slow.stopFn = stuck
-	m.Register(slow, fast)
+	require.NoError(t, m.Register(slow, fast))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
@@ -711,7 +754,7 @@ func TestCancelingAShutdownGoingOnForcesIt(t *testing.T) {
 	m := newTestManager()
 	slow := newMockService("slow")
 	slow.stopFn = stuck
-	m.Register(slow)
+	require.NoError(t, m.Register(slow))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
@@ -737,7 +780,7 @@ func TestRestartOfAStuckServiceEndsAtTheStopDeadline(t *testing.T) {
 	m := newTestManager(WithStopPolicy(100 * time.Millisecond))
 	slow := newMockService("slow")
 	slow.stopFn = stuck
-	m.Register(slow)
+	require.NoError(t, m.Register(slow))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))

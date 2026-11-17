@@ -99,21 +99,27 @@ mgr := supervisor.New(confutil.New(config),
 )
 
 // Register services (order doesn't matter - topologically sorted)
-mgr.Register(dbService, apiServer, pubsubBus, myService)
+if err := mgr.Register(dbService, apiServer, pubsubBus, myService); err != nil {
+    return err // a name taken by another instance
+}
 
 // Sort, init, start
-mgr.TopoSort()
+if err := mgr.TopoSort(); err != nil {
+    return err
+}
 mgr.Init(ctx)
 mgr.Start(ctx)
 ```
 
-Full signature set — `Register` and `TopoSort` differ in whether they return an error, so don't guess:
+**A name stands for one instance.** The dependency graph, the stats and the by-name operations all key on `Name()`, so `Register` refuses another instance under a name already taken — registered before, or earlier in the same call, or brought in as a dependency — with a `Conflict`; it is a wiring mistake, so fail startup on it. Meeting the same instance again (registered directly and as someone's dependency) is fine. Two instances of one service type need distinct names: `WithName` on the framework services. Before this check the second instance was silently dropped from the graph and never initialized or started.
+
+Full signature set:
 
 ```go
 type Manager interface {          // = model.Supervisor + health + Initializable + Daemon + Debuggable
     Name() string
     Dependencies() []common.Service
-    Register(services ...common.Service)          // no return value
+    Register(services ...common.Service) error    // Conflict on a name another instance holds
     TopoSort() error
     Services() []common.Service
     Stats() ([]*entity.SupervisorStats, error)    // point-in-time copies, topological order: dependencies above dependents

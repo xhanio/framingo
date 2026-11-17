@@ -22,7 +22,7 @@ func TestSupervisorReady(t *testing.T) {
 	alpha := newMockService("alpha")
 	beta := newMockService("beta")
 	m := newTestManager()
-	m.Register(alpha, beta)
+	require.NoError(t, m.Register(alpha, beta))
 	require.NoError(t, m.TopoSort())
 
 	// Nothing has started: nothing is ready.
@@ -50,7 +50,7 @@ func TestSupervisorAlive(t *testing.T) {
 	t.Run("bounded retries escalate when exhausted", func(t *testing.T) {
 		svc := newMockService("omega")
 		m := newTestManager(WithMonitorPolicy(0, 3, 0))
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		require.NoError(t, m.Alive(context.Background()))
 
@@ -69,7 +69,7 @@ func TestSupervisorAlive(t *testing.T) {
 	t.Run("unlimited retries never escalate", func(t *testing.T) {
 		svc := newMockService("omega")
 		m := newTestManager(WithMonitorPolicy(0, -1, 0))
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		m.c.stats.update("omega", func(stat *entity.SupervisorStats) {
 			stat.LivenessErr = errors.Newf("dead")
@@ -81,7 +81,7 @@ func TestSupervisorAlive(t *testing.T) {
 	t.Run("restarts disabled escalate immediately", func(t *testing.T) {
 		svc := newMockService("omega")
 		m := newTestManager() // no restart policy: maxRetries 0
-		m.Register(svc)
+		require.NoError(t, m.Register(svc))
 		require.NoError(t, m.TopoSort())
 		m.c.stats.update("omega", func(stat *entity.SupervisorStats) { stat.LivenessErr = errors.Newf("dead") })
 		require.Error(t, m.Alive(context.Background()),
@@ -126,7 +126,7 @@ func TestHealthServesConcurrentlyWithMonitor(t *testing.T) {
 	m := newTestManager(
 		WithMonitorPolicy(time.Millisecond, -1, 0),
 	)
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
@@ -167,7 +167,7 @@ func TestInfoSharesOneSweep(t *testing.T) {
 	b := newMockService("svc-b")
 	b.deps = []common.Service{dep}
 	m := newTestManager()
-	m.Register(dep, a, b)
+	require.NoError(t, m.Register(dep, a, b))
 	require.NoError(t, m.TopoSort())
 
 	m.Info(io.Discard, false)

@@ -9,18 +9,24 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
-func (m *manager) Register(services ...common.Service) {
+func (m *manager) Register(services ...common.Service) error {
 	for _, service := range services {
 		if service == nil {
 			continue
 		}
-		m.c.register(service)
+		if err := m.c.register(service); err != nil {
+			return errors.Wrap(err)
+		}
 		for _, dep := range service.Dependencies() {
-			if dep != nil {
-				m.c.addDependency(service, dep)
+			if dep == nil {
+				continue
+			}
+			if err := m.c.addDependency(service, dep); err != nil {
+				return errors.Wrap(err)
 			}
 		}
 	}
+	return nil
 }
 
 func (m *manager) TopoSort() error {

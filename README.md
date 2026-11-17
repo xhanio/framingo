@@ -156,6 +156,7 @@ Production-ready service implementations:
   - Topologically sorts registered services by `Dependencies()`
   - Calls `Init(ctx)` and `Start(ctx)` in dependency order, `Stop()` in reverse
   - Monitors `Liveness`/`Readiness` probes and auto-restarts services that fail liveness
+  - A name stands for one instance: `Register` returns a `Conflict` for another instance under a name already taken (give each its own `WithName`)
   - Per-service runtime control (`InitService`, `StartService`, `StopService`, `RestartService`)
   - Whole-graph `Restart(ctx)`, `Stats()` per service, and a `Debuggable.Info` dump
   - Restart behavior is tunable: `WithMonitorInterval`, `WithRestartPolicy(maxRetries)`, `WithRestartDelay`, `WithShutdownTimeout`
@@ -505,13 +506,17 @@ func (m *manager) Init(ctx context.Context) error {
     }
 
     m.helloSvc = hello.New(hello.WithLogger(m.log))
-    m.services.Register(m.helloSvc)
+    if err := m.services.Register(m.helloSvc); err != nil {
+        return err
+    }
 
     if err := m.services.TopoSort(); err != nil {
         return err
     }
 
-    m.services.Register(m.api)
+    if err := m.services.Register(m.api); err != nil {
+        return err
+    }
 
     if err := m.services.Init(ctx); err != nil {
         return err

@@ -41,21 +41,34 @@ func newController(config confutil.Config) *controller {
 	}
 }
 
-// register is wiring-time only: readers iterate c.services unlocked, so
-// registering after Start races the monitor.
-func (c *controller) register(service common.Service) {
-	if c.stats.track(service) {
-		// append late-registered services to the end of the sorted list
-		if len(c.services) > 0 {
-			c.services = append(c.services, service)
+// register adds service, refusing it when another instance holds its name:
+// the graph and the stats key on the name, so a second instance under it
+// would be dropped - never initialized, never started. Meeting the same
+// instance again, registered directly and as someone's dependency, is a
+// no-op; services are pointers, so != tells two instances apart. It is
+// wiring-time only: readers iterate c.services unlocked, so registering
+// after Start races the monitor.
+func (c *controller) register(service common.Service) error {
+	if holder := c.stats.track(service); holder != nil {
+		if holder != service {
+			return errors.Conflict.Newf(
+				"service name %s is taken by another instance (%T, now %T): give each its own name, such as with WithName",
+				service.Name(), holder, service)
 		}
+	} else if len(c.services) > 0 {
+		// append late-registered services to the end of the sorted list
+		c.services = append(c.services, service)
 	}
 	c.graph.Add(service)
+	return nil
 }
 
-func (c *controller) addDependency(service, dep common.Service) {
-	c.register(dep)
+func (c *controller) addDependency(service, dep common.Service) error {
+	if err := c.register(dep); err != nil {
+		return err
+	}
 	c.graph.Add(service, dep)
+	return nil
 }
 
 func (c *controller) topoSort() error {

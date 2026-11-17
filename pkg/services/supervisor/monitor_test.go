@@ -25,7 +25,7 @@ func TestSweepProbesSharedDependencyOnce(t *testing.T) {
 	b.deps = []common.Service{repo}
 
 	m := newTestManager()
-	m.Register(db, repo, a, b)
+	require.NoError(t, m.Register(db, repo, a, b))
 	require.NoError(t, m.TopoSort())
 
 	m.monitor.checkAll(context.Background())
@@ -48,7 +48,7 @@ func TestSweepRollsUpMemoizedDependencyFailure(t *testing.T) {
 	b.deps = []common.Service{db}
 
 	m := newTestManager()
-	m.Register(db, a, b)
+	require.NoError(t, m.Register(db, a, b))
 	require.NoError(t, m.TopoSort())
 
 	m.monitor.checkAll(context.Background())
@@ -90,7 +90,7 @@ func TestHealthcheckSurvivesDependencyCycle(t *testing.T) {
 func TestMonitorRestartSkipsStoppedService(t *testing.T) {
 	svc := newMockService("svc")
 	m := newTestManager()
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.StartService("svc"))
@@ -112,7 +112,7 @@ func TestMonitorRestartSkipsStoppedService(t *testing.T) {
 func TestManualOpsSerializeWithRestart(t *testing.T) {
 	svc := newMockService("svc")
 	m := newTestManager()
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.StartService("svc"))
@@ -141,7 +141,7 @@ func TestRestartDelayHonorsCancel(t *testing.T) {
 	svc.aliveErr = errors.Newf("dead")
 
 	m := newTestManager(WithMonitorPolicy(0, -1, 2*time.Second))
-	m.Register(svc)
+	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 
 	ctx, cancel := context.WithCancel(context.Background())
