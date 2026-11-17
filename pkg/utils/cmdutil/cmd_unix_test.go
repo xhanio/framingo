@@ -64,6 +64,32 @@ func TestRunReportsTheExitStatus(t *testing.T) {
 	}
 }
 
+// A Command runs once and is waited for once, as with exec.Cmd. A second Wait
+// is misuse and says so; it used to return nil, so a Run that had failed read
+// as a success to whoever waited again.
+func TestASecondWaitIsAnErrorNotASuccess(t *testing.T) {
+	c := New("sh", []string{"-c", "exit 3"})
+	if err := c.Run(); err == nil {
+		t.Fatal("Run of a failing command = nil")
+	}
+	if err := c.Wait(); err == nil {
+		t.Fatal("a second Wait after a failed Run = nil, reading as a success")
+	}
+	if code := c.ExitCode(); code != 3 {
+		t.Fatalf("exit code = %d, want the first Wait's 3 kept", code)
+	}
+}
+
+func TestWaitBeforeStartIsAnError(t *testing.T) {
+	c := New("sh", []string{"-c", "true"})
+	if err := c.Wait(); err == nil {
+		t.Fatal("Wait before Start = nil")
+	}
+	if code := c.ExitCode(); code != -1 {
+		t.Fatalf("exit code before any run = %d, want -1", code)
+	}
+}
+
 func TestTerminateReachesTheWholeGroup(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	c := New("sh", []string{"-c", childScript, "sh", pidFile}, WithProcessGroup())

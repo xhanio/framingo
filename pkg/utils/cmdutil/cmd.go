@@ -111,10 +111,10 @@ func (c *cmd) Start() error {
 	return nil
 }
 
+// Wait is exec.Cmd's: once per run, never concurrently. A second call returns
+// exec's "Wait was already called" error rather than standing in for the first
+// one's result.
 func (c *cmd) Wait() error {
-	if c.p.ProcessState != nil {
-		return nil
-	}
 	return errors.Wrap(c.p.Wait())
 }
 

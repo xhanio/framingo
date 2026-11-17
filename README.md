@@ -238,7 +238,7 @@ Interface contracts and shared types:
 | Package | Purpose |
 | --- | --- |
 | **[certutil](pkg/utils/certutil/)** | X.509 CA/server/client cert generation and TLS config |
-| **[cmdutil](pkg/utils/cmdutil/)** | External command execution: `Start`/`Wait`/`Run`, `Terminate`/`Kill` of the process or its process group, output to writers or collected; plus `MergeArgs` for last-wins flag merging |
+| **[cmdutil](pkg/utils/cmdutil/)** | External command execution: `Start`/`Wait`/`Run`, `Terminate`/`Kill` of the process or its process group, output to writers or collected; plus `MergeArgs` for last-wins flag merging. Keeps `exec.Cmd`'s contract — wait once, read the collected output after `Wait` |
 | **[confutil](pkg/utils/confutil/)** | `Config` read-side over a Viper instance, propagated via `context.Context`; getters take format-string keys |
 | **[envutil](pkg/utils/envutil/)** | Env-var prefix derivation (`EnvPrefix`) and last-wins env merging (`Merge`) |
 | **[infra](pkg/utils/infra/)** | OS-level helpers (timezone detection and loading) |
