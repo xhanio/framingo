@@ -45,7 +45,7 @@ func mustFinish(t *testing.T, d time.Duration, what string, fn func()) {
 // holding the lease lock, and those callbacks take the manager lock; so any
 // manager method that calls into a lease must release its own lock first.
 func TestSessionOperationsDoNotInvertLockOrder(t *testing.T) {
-	m := newManager(nil, nil, nil)
+	m := newManager(nil, nil, nil, nil)
 	sess := newSession(t, m, "alice")
 
 	mustFinish(t, 5*time.Second, "repeated CloseSession", func() {
@@ -61,7 +61,7 @@ func TestSessionOperationsDoNotInvertLockOrder(t *testing.T) {
 }
 
 func TestConcurrentSessionOperations(t *testing.T) {
-	m := newManager(nil, nil, nil)
+	m := newManager(nil, nil, nil, nil)
 	sessions := make([]*entity.Session, 0, 4)
 	for _, u := range []string{"a", "b", "c", "d"} {
 		sessions = append(sessions, newSession(t, m, u))
@@ -95,7 +95,7 @@ func (discard) Write(p []byte) (int, error) { return len(p), nil }
 // -scoped state (permissions, say) is ever written back onto it, this test
 // starts failing under -race, which is the point.
 func TestSharedSessionAccessIsRaceFree(t *testing.T) {
-	m := newManager(nil, nil, nil)
+	m := newManager(nil, nil, nil, nil)
 	sess := newSession(t, m, "carol")
 
 	var wg sync.WaitGroup
@@ -118,7 +118,7 @@ func TestSharedSessionAccessIsRaceFree(t *testing.T) {
 }
 
 func TestLogoutClosesEverySessionForTheUser(t *testing.T) {
-	m := newManager(nil, nil, nil)
+	m := newManager(nil, nil, nil, nil)
 	s1 := newSession(t, m, "dave")
 	s2 := newSession(t, m, "dave") // same user, second device
 
@@ -138,7 +138,7 @@ func TestLogoutClosesEverySessionForTheUser(t *testing.T) {
 // matched by user ID - whatever organization or username the credential
 // carries - and leave everyone else's alone.
 func TestAccountEventsRevokeLocalUserSessions(t *testing.T) {
-	m := newManager(nil, nil, nil)
+	m := newManager(nil, nil, nil, nil)
 	open := func(userID int32, source string) *entity.Session {
 		m.Lock()
 		defer m.Unlock()

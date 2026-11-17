@@ -6,6 +6,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
+	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/model"
 )
@@ -23,11 +24,11 @@ type manager struct {
 	sessions map[string]*entity.Session
 }
 
-func New(um model.UserAuthN, lm model.LDAPAuthN, tm model.APITokenAuthN, opts ...Option) Manager {
-	return newManager(um, lm, tm, opts...)
+func New(platform platform.Platform, um model.UserAuthN, lm model.LDAPAuthN, tm model.APITokenAuthN, opts ...Option) Manager {
+	return newManager(platform, um, lm, tm, opts...)
 }
 
-func newManager(um model.UserAuthN, lm model.LDAPAuthN, tm model.APITokenAuthN, opts ...Option) *manager {
+func newManager(_ platform.Platform, um model.UserAuthN, lm model.LDAPAuthN, tm model.APITokenAuthN, opts ...Option) *manager {
 	m := &manager{
 		um:       um,
 		lm:       lm,

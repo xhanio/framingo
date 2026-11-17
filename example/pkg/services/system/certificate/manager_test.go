@@ -28,7 +28,8 @@ func setup(t *testing.T) *manager {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Cleanup(true)) })
 	require.NoError(t, db.ORM().AutoMigrate(&orm.Certificate{}))
-	m := newManager(repository.New(platform.New(db, nil, nil, nil)))
+	p := platform.New(db, nil, nil, nil)
+	m := newManager(p, repository.New(p))
 	require.NoError(t, m.Init(context.Background()))
 	return m
 }

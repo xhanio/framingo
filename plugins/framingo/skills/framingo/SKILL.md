@@ -223,3 +223,4 @@ For the full category rules, type-separation example, server component file stru
 10. **Layered Access** - the api level (routers, middlewares) calls services only; services persist through the repo level only; only `services/repository/` touches the database
 11. **Types First** - for a new feature, design `types/*` (api → entity/model → orm/repo) before implementing the router, service, or repo
 12. **Probe Split** - `Alive(ctx)` fails only if a restart would fix it; `Ready(ctx)` means "can it serve right now"; a dependency outage fails readiness, never liveness
+13. **Platform First** - every app service's constructor takes `platform.Platform` first (`New(platform, ...)`), whether it uses it yet or not; framework services excepted ([app/services.md](app/services.md))

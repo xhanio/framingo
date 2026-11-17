@@ -5,6 +5,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
+	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 )
 
 type manager struct {
@@ -14,12 +15,12 @@ type manager struct {
 	repository repository.Repository
 }
 
-func New(repo repository.Repository, opts ...Option) Manager {
-	return newManager(repo, opts...)
+func New(platform platform.Platform, repo repository.Repository, opts ...Option) Manager {
+	return newManager(platform, repo, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(repo repository.Repository, opts ...Option) *manager {
+func newManager(_ platform.Platform, repo repository.Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 	}

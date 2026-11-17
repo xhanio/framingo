@@ -173,9 +173,13 @@ backed by a supervised service.
 **The platform bundle.** The app bundles its framework plumbing in
 `services/system/platform`; a service imports it and takes
 `platform.Platform` as is — no per-consumer slice of it. The bundle rides
-first in every constructor (`New(platform, repo, ...)`); business
-dependencies like the repository stay explicit arguments — the bundle
-carries plumbing, not peers. The constructor plucks the handles it uses
+first in every app service's constructor (`New(platform, repo, ...)`),
+whether the service uses it yet or not: one constructor shape across the
+app, so a service that comes to need a handle changes neither its signature
+nor the wiring. One with no use for it names the parameter `_` in
+`newManager`. Framework services don't take it — they cannot know an app's
+bundle. Business dependencies like the repository stay explicit arguments —
+the bundle carries plumbing, not peers. The constructor plucks the handles it uses
 into ordinary fields, so `Dependencies()` stays as precise as ever, and a
 test builds a bundle with `platform.New(nil, meter, nil, mb)`, leaving nil
 whatever the service never calls. Getters return `model.*` handles

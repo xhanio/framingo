@@ -47,7 +47,8 @@ func setup() (*manager, model.DatabaseDebugger, error) {
 	); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}
-	m := newManager(repository.New(platform.New(db, nil, nil, nil)))
+	p := platform.New(db, nil, nil, nil)
+	m := newManager(p, repository.New(p))
 	if err := m.Init(context.Background()); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}

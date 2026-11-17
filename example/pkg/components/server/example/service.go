@@ -175,21 +175,25 @@ func (m *manager) initServices() error {
 	)
 
 	m.role = role.New(
+		m.platform,
 		m.repository,
 		role.WithLogger(m.log),
 	)
 
 	m.organization = organization.New(
+		m.platform,
 		m.repository,
 		organization.WithLogger(m.log),
 	)
 
 	m.certificate = certificate.New(
+		m.platform,
 		m.repository,
 		certificate.WithLogger(m.log),
 	)
 
 	m.auth = auth.New(
+		m.platform,
 		m.user,
 		nil, // LDAPAuthN is optional
 		nil, // APITokenAuthN is optional

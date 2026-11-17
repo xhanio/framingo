@@ -174,10 +174,11 @@ func (m *manager) initServices() error {
 	// the user service publishes the account changes the auth service ends
 	// sessions on
 	m.user = user.New(m.platform, m.repository, user.WithLogger(m.log))
-	m.role = role.New(m.repository, role.WithLogger(m.log))
-	m.organization = organization.New(m.repository, organization.WithLogger(m.log))
-	m.certificate = certificate.New(m.repository, certificate.WithLogger(m.log))
+	m.role = role.New(m.platform, m.repository, role.WithLogger(m.log))
+	m.organization = organization.New(m.platform, m.repository, organization.WithLogger(m.log))
+	m.certificate = certificate.New(m.platform, m.repository, certificate.WithLogger(m.log))
 	m.auth = auth.New(
+		m.platform,
 		m.user,
 		nil, // LDAPAuthN is optional
 		nil, // APITokenAuthN is optional
