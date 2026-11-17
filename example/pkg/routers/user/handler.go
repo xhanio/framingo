@@ -4,12 +4,15 @@ import (
 	"net/http"
 
 	"github.com/xhanio/errors"
-	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/api"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
-	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
+
+// --- /users: accounts by ID -----------------------------------------------
+//
+// authz has checked the route's local_user_manage_* permission before any of
+// these runs.
 
 func (r *router) Create(c api.Context) error {
 	credential, ok := c.Credential()
@@ -83,20 +86,9 @@ func (r *router) Delete(c api.Context) error {
 }
 
 func (r *router) Get(c api.Context) error {
-	credential, ok := c.Credential()
-	if !ok || credential == nil {
-		return errors.Unauthorized.New()
-	}
 	var userID int32
 	if err := c.BindPath().MustInt32("id", &userID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
-	}
-	perms, err := r.rm.GetPermissionsByName(c, credential.Role)
-	if err != nil {
-		return errors.Wrap(err)
-	}
-	if !sliceutil.In(rbac.PermissionUserManageRead, perms...) && credential.UserID != userID {
-		return errors.Forbidden.Newf("no access to other user's information")
 	}
 	user, err := r.um.Get(c, userID)
 	if err != nil {
@@ -113,9 +105,6 @@ func (r *router) Update(c api.Context) error {
 	var userID int32
 	if err := c.BindPath().MustInt32("id", &userID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
-	}
-	if credential.Role != rbac.RoleAdmin && credential.UserID != userID {
-		return errors.Forbidden.Newf("no access to other user's information")
 	}
 	var body api.UserUpdateRequest
 	if err := c.Bind(&body); err != nil {
@@ -164,10 +153,8 @@ func (r *router) ResetPassword(c api.Context) error {
 	if err := c.BindPath().MustInt32("id", &userID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
+	// one's own password takes the old one, even through /users/:id
 	isOwn := credential.UserID == userID
-	if credential.Role != rbac.RoleAdmin && !isOwn {
-		return errors.Forbidden.Newf("no access to other user's information")
-	}
 	var body api.UserResetPasswordRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
@@ -180,6 +167,82 @@ func (r *router) ResetPassword(c api.Context) error {
 		OldPassword: body.OldPassword,
 	}
 	if err := r.um.ResetPassword(c, isOwn, userID, opts); err != nil {
+		return errors.Wrap(err)
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+// --- /user: the caller's own account --------------------------------------
+
+// currentUserID is the account /user stands for: the caller's own, which only
+// a local user has.
+func currentUserID(c api.Context) (int32, error) {
+	cred, ok := c.Credential()
+	if !ok {
+		return 0, errors.Unauthorized.Newf("no credential to act for")
+	}
+	userID, ok := cred.LocalUserID()
+	if !ok {
+		return 0, errors.Forbidden.Newf("a %s credential has no local user account", cred.Source)
+	}
+	return userID, nil
+}
+
+func (r *router) GetCurrent(c api.Context) error {
+	userID, err := currentUserID(c)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	user, err := r.um.Get(c, userID)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	return c.JSON(http.StatusOK, user)
+}
+
+// UpdateCurrent takes contact details only: the request type has no username
+// or role, so the caller cannot change who they are through it.
+func (r *router) UpdateCurrent(c api.Context) error {
+	userID, err := currentUserID(c)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	var body api.UserProfileUpdateRequest
+	if err := c.Bind(&body); err != nil {
+		return errors.BadRequest.Wrap(err)
+	}
+	opts := entity.UserUpdateOptions{
+		FirstName: body.FirstName,
+		LastName:  body.LastName,
+		Email:     body.Email,
+		Title:     body.Title,
+	}
+	user, err := r.um.Update(c, userID, opts)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	return c.JSON(http.StatusOK, user)
+}
+
+// ChangePassword is the caller changing their own password, which takes the
+// old one.
+func (r *router) ChangePassword(c api.Context) error {
+	userID, err := currentUserID(c)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	var body api.UserResetPasswordRequest
+	if err := c.Bind(&body); err != nil {
+		return errors.BadRequest.Wrap(err)
+	}
+	if err := c.Validate(&body); err != nil {
+		return errors.Wrap(err)
+	}
+	opts := entity.UserResetPasswordOptions{
+		Password:    body.Password,
+		OldPassword: body.OldPassword,
+	}
+	if err := r.um.ResetPassword(c, true, userID, opts); err != nil {
 		return errors.Wrap(err)
 	}
 	return c.NoContent(http.StatusOK)

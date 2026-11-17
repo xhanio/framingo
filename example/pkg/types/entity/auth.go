@@ -7,6 +7,7 @@ import (
 
 	"github.com/xhanio/framingo/pkg/structs/lease"
 
+	"github.com/xhanio/framingo/example/pkg/types/preset"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
@@ -41,6 +42,16 @@ func (c *Credential) UID() string {
 		subject = fmt.Sprintf("%s/%s", c.OrganizationName, c.UserName)
 	}
 	return fmt.Sprintf("%s:%s", c.Source, subject)
+}
+
+// LocalUserID is the users-table row the credential stands for, and false
+// when it stands for none: only a local user has one - an API token or an
+// agent carries no user ID, and an LDAP user's ID is not one of ours.
+func (c *Credential) LocalUserID() (int32, bool) {
+	if c == nil || c.Source != preset.AuthSourceLocalUser {
+		return 0, false
+	}
+	return c.UserID, true
 }
 
 func (c *Credential) IsAdmin() bool {

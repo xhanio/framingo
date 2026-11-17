@@ -1,30 +1,62 @@
+# Two handler groups, one per document. /users manages accounts by ID; /user
+# is the caller's own account. Each route declares the permission authz
+# checks the caller's role against.
+# authz sits at group level, after authnuser: a handler-level entry wraps
+# outermost, so attached per handler it would run before authnuser had set
+# the credential and refuse every request.
 server: http
 prefix: /users
 middlewares:
   - throttle
   - authnuser
+  - authz
 handlers:
   - method: POST
     path: /
     func: Create
-    middlewares:
-      - authz
+    permission: local_user_manage_write
   - method: GET
     path: /
     func: List
-    middlewares:
-      - authz
+    permission: local_user_manage_read
   - method: DELETE
     path: /
     func: Delete
-    middlewares:
-      - authz
+    permission: local_user_manage_write
   - method: GET
     path: /:id
     func: Get
+    permission: local_user_manage_read
   - method: PATCH
     path: /:id
     func: Update
+    permission: local_user_manage_write
   - method: PUT
     path: /:id/passwords
     func: ResetPassword
+    permission: local_user_manage_write
+---
+# The caller's own account: no :id - the handler resolves it from the
+# credential, and only a local user has one.
+server: http
+prefix: /user
+middlewares:
+  - throttle
+  - authnuser
+  - authz
+handlers:
+  - method: GET
+    path: /
+    func: GetCurrent
+    permission: local_user_read
+  - method: PATCH
+    path: /
+    func: UpdateCurrent
+    permission: local_user_write
+  # authz also refuses a caller whose password must be reset, so it is
+  # switched off here, where that caller resets it.
+  - method: PUT
+    path: /passwords
+    func: ChangePassword
+    middlewares:
+      - authz: false
