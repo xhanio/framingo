@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
@@ -33,5 +34,19 @@ func TestNewWithoutAConcurrencyStillRunsTasks(t *testing.T) {
 			}
 			eventually(t, "the task to run", func() bool { return runs.Load() == 1 })
 		})
+	}
+}
+
+// Schedules are read in local time unless the manager is given a location.
+func TestWithLocationSetsTheScheduleZone(t *testing.T) {
+	if got := newManager().cm.Location(); got != time.Local {
+		t.Fatalf("default location = %v, want time.Local", got)
+	}
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Skip("no zoneinfo:", err)
+	}
+	if got := newManager(WithLocation(tokyo)).cm.Location(); got != tokyo {
+		t.Fatalf("location = %v, want %v", got, tokyo)
 	}
 }

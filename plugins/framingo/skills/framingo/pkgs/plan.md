@@ -61,7 +61,9 @@ import (
 )
 
 // tm runs the plans. It is yours: set the concurrency there (10 by default) and share it
-// with tasks of your own if you like. The plan manager takes it as a model.Task.
+// with tasks of your own if you like. The plan manager takes it as a model.Task. Cron
+// schedules are read in time.Local unless task.WithLocation(loc) says otherwise - pass
+// what osutil.Timezone() returns to follow the system's named setting.
 tm := task.New(task.WithLogger(logger))
 
 // the message sender: where run events are sent - typically the messagebus manager

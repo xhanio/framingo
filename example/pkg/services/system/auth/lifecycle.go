@@ -3,10 +3,10 @@ package auth
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/xhanio/framingo/pkg/structs/lease"
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/utils/infra"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
@@ -45,7 +45,7 @@ func (m *manager) Info(w io.Writer, debug bool) {
 	t.NewLine()
 	t.Title("SessionID", "Credential", "Expired", "ExpiresAt")
 	for _, r := range rows {
-		t.Row(r.sid, r.cred, r.lease.Expired(), r.lease.ExpiresAt().In(infra.Timezone).Format(common.TimeFormat))
+		t.Row(r.sid, r.cred, r.lease.Expired(), r.lease.ExpiresAt().In(time.Local).Format(common.TimeFormat))
 	}
 	t.NewLine()
 	t.Flush()

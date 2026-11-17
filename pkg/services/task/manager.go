@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 
@@ -20,8 +21,9 @@ type manager struct {
 
 	name string
 
-	cm *cron.Cron
-	pq staque.Priority[*registration]
+	loc *time.Location // the zone cron schedules are read in
+	cm  *cron.Cron
+	pq  staque.Priority[*registration]
 
 	concurrent int
 	el         *sync.RWMutex // lock for registered and running

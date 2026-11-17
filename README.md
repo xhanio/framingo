@@ -243,7 +243,7 @@ Interface contracts and shared types:
 | **[cmdutil](pkg/utils/cmdutil/)** | External command execution: `Start`/`Wait`/`Run`, `Terminate`/`Kill` of the process or its process group, output to writers or collected; plus `MergeArgs` for last-wins flag merging. Keeps `exec.Cmd`'s contract — wait once, read the collected output after `Wait` |
 | **[confutil](pkg/utils/confutil/)** | `Config` read-side over a Viper instance, propagated via `context.Context`; getters take format-string keys |
 | **[envutil](pkg/utils/envutil/)** | Env-var prefix derivation (`EnvPrefix`) and last-wins env merging (`Merge`) |
-| **[infra](pkg/utils/infra/)** | OS-level helpers (timezone detection and loading) |
+| **[osutil](pkg/utils/osutil/)** | Queries about the operating system, no process-wide state: `Timezone` is the system's configured zone as timedatectl reports it |
 | **[ioutil](pkg/utils/ioutil/)** | File copy/compress/encrypt with progress tracking, plus `LimitWriter`/`LimitReader` for bounding untrusted streams (the reader fails past its limit rather than truncating) |
 | **[job](pkg/utils/job/)** | Job model with state, labels, results, statistics, and signals |
 | **[jobs](pkg/utils/jobs/)** | Predefined job functions: `jobs.Command` runs a command in its own process group, stopping it on the job's cancel and `SignalKill` |
@@ -640,7 +640,8 @@ example/
 │   │   └── system/                  # auth, user, role, organization, certificate
 │   ├── routers/                     # auth, certificate, example, messagebus, role, user
 │   ├── middlewares/                 # authnagent, authnuser, authz, deflate, feature
-│   └── types/                       # api, entity, model, orm, message, rbac, preset, repo, infra
+│   ├── types/                       # api, entity, model, orm, message, rbac, preset, repo
+│   └── utils/infra/                 # process-wide facts set at startup
 ├── build/                           # GoPro build templates (binary, image)
 ├── env/local/                       # local-env config, docker-compose, kubernetes
 ├── dist/                            # generated outputs (configs, migrations, manifests)
