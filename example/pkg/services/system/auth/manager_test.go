@@ -10,7 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/message"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
+	"github.com/xhanio/framingo/pkg/types/common"
 )
 
 func newSession(t *testing.T, m *manager, username string) *entity.Session {
@@ -171,4 +173,20 @@ func TestAccountEventsRevokeLocalUserSessions(t *testing.T) {
 	}
 	assert.True(t, alive(bystander), "an unrelated user's session was ended")
 	assert.True(t, alive(token), "a non-local credential with a matching number was ended")
+}
+
+// fakeLDAP is an LDAP source the auth service can be wired with; only its
+// name matters here.
+type fakeLDAP struct{ model.LDAPAuthN }
+
+func (fakeLDAP) Name() string { return "ldap" }
+
+// An optional credential source is a dependency once it is wired, so the
+// supervisor starts it before the auth service; one that is not wired is a
+// nil entry the supervisor skips.
+func TestOptionalSourcesAreDependencies(t *testing.T) {
+	ldap := fakeLDAP{}
+	deps := newManager(nil, nil, ldap, nil).Dependencies()
+	assert.Contains(t, deps, common.Service(ldap), "a wired LDAP source")
+	assert.Contains(t, deps, common.Service(nil), "the unwired API-token source, skipped by the supervisor")
 }

@@ -160,18 +160,16 @@ disables pings, and post-apply defaulting would undo that.
 
 ```go
 func (m *manager) Dependencies() []common.Service {
-	deps := []common.Service{m.repository}
-	if s, ok := m.mb.(common.Service); ok {
-		deps = append(deps, s)
-	}
-	return deps
+	// mb is nil on a platform without a messagebus; the supervisor skips a
+	// nil dependency
+	return []common.Service{m.repository, m.mb}
 }
 ```
 
 Note the dependency shapes: the service asks for the **narrowest interface
-that serves it** — `common.RawMessageSender`, not `messagebus.Manager` — and
-`Dependencies()` type-asserts, because a narrow interface may or may not be
-backed by a supervised service.
+that serves it** — `common.RawMessageSender`, not `messagebus.Manager` —
+and lists it as is. An optional dependency the app did not wire is nil, and
+the supervisor skips a nil entry, so `Dependencies()` filters nothing out.
 
 **The platform bundle.** The app bundles its framework plumbing in
 `services/system/platform`; a service imports it and takes

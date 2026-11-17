@@ -47,6 +47,8 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	// m.lm, m.tm are optional
-	return []common.Service{m.um}
+	// The LDAP and API-token sources are optional: nil when the app wires
+	// none, which the supervisor skips, and a dependency like any other when
+	// it does, so they are initialized and started before the auth service.
+	return []common.Service{m.um, m.lm, m.tm}
 }

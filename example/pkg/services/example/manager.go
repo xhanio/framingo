@@ -51,9 +51,7 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	deps := []common.Service{m.repository}
-	if s, ok := m.mb.(common.Service); ok {
-		deps = append(deps, s)
-	}
-	return deps
+	// mb is nil on a platform without a messagebus; the supervisor skips a
+	// nil dependency
+	return []common.Service{m.repository, m.mb}
 }
