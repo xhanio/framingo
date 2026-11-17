@@ -368,7 +368,7 @@ entity — fires an event, and counts the call:
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error) {
 	ctx, span := traceutil.Start(ctx, m.name, "HelloWorld")
 
-	credential, ok := ctx.Value(api.ContextKeyCredential).(*entity.Credential)
+	credential, ok := entity.CredentialFrom(ctx)
 	if !ok {
 		return nil, traceutil.Fail(span, errors.Unauthorized.Newf("credential not found in context"))
 	}

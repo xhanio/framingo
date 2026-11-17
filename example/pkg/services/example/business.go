@@ -5,7 +5,6 @@ import (
 
 	"github.com/xhanio/errors"
 
-	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/utils/traceutil"
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
@@ -15,7 +14,7 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 	// child of the middleware's request span; every return Fails or Ends it
 	ctx, span := traceutil.Start(ctx, m.name, "HelloWorld")
 
-	credential, ok := ctx.Value(api.ContextKeyCredential).(*entity.Credential)
+	credential, ok := entity.CredentialFrom(ctx)
 	if !ok {
 		return nil, traceutil.Fail(span, errors.Unauthorized.Newf("credential not found in context"))
 	}

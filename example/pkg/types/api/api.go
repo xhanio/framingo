@@ -80,15 +80,7 @@ func (c *ctx) Value(key any) any {
 }
 
 func (c *ctx) Credential() (*entity.Credential, bool) {
-	credential := c.Get(api.ContextKeyCredential)
-	if credential == nil {
-		return nil, false
-	}
-	cred, ok := credential.(*entity.Credential)
-	if !ok {
-		return nil, false
-	}
-	return cred, true
+	return entity.CredentialFrom(c)
 }
 
 func (c *ctx) Session() (*entity.Session, bool) {
