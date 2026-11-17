@@ -68,9 +68,12 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 		if !ok || req == nil {
 			return errors.Forbidden.Newf("no handler info for request %s %s", c.Request().Method, c.Request().URL.EscapedPath())
 		}
+		// Fail closed: authz on a route that names no permission is a
+		// forgotten declaration, not an open door. A route every signed-in
+		// user may call says so with `- authz: false`.
 		required := req.Permission
 		if required == "" {
-			return next(c) // public endpoint
+			return errors.Forbidden.Newf("%s %s declares no permission", c.Request().Method, c.Request().URL.EscapedPath())
 		}
 		allowed, err := m.role.HasPermission(c.Request().Context(), cred.Role, required)
 		if err != nil {

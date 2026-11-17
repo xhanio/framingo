@@ -203,10 +203,15 @@ if !ok || req == nil {
 }
 required := req.Permission // declared as `permission:` in router.yaml
 if required == "" {
-	return next(c) // public endpoint
+	return errors.Forbidden.Newf("%s %s declares no permission", c.Request().Method, c.Request().URL.EscapedPath())
 }
 allowed, err := m.role.HasPermission(c.Request().Context(), cred.Role, required)
 ```
+
+`authz` fails closed: attached to a route that declares no permission, it
+refuses rather than lets everyone through, so a forgotten `permission:` is
+a 403 in testing, not an open endpoint in production. A route every
+signed-in user may call says so explicitly with `- authz: false`.
 
 The permission names themselves are constants in the project's `types/rbac/`
 ([types.md](types.md)).

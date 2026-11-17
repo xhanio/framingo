@@ -4,25 +4,36 @@ middlewares:
   - throttle
   - authnuser
   - authz
+# authz refuses a role that lacks the handler's permission, and fails closed:
+# a handler that declares none is refused too. A route open to every
+# signed-in user switches it off with `- authz: false`.
 handlers:
   - method: POST
     path: /
     func: Upload
+    permission: certificate_write
   - method: GET
     path: /
     func: List
+    permission: certificate_read
   - method: DELETE
     path: /
     func: Delete
+    permission: certificate_write
   - method: GET
     path: /:id
     func: Get
+    permission: certificate_read
   - method: PATCH
     path: /:id
     func: Update
+    permission: certificate_write
   - method: POST
     path: /:id/download
     func: Download
+    # write, not read: the download carries a local certificate's private key
+    permission: certificate_write
   - method: POST
     path: /generate
     func: Generate
+    permission: certificate_write
