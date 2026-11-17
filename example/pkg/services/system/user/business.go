@@ -24,6 +24,12 @@ func (m *manager) Create(ctx context.Context, opts entity.UserCreateOptions) (*e
 	if opts.Username == "" || opts.Password == "" {
 		return nil, errors.InvalidArgument.Newf("Invalid Arguments: Username, Password cannot be empty")
 	}
+	// A user named into no organization joins the default one - what the
+	// HTTP API sends. Left at zero it would land in an organization login
+	// never looks in.
+	if opts.OrganizationID == 0 {
+		opts.OrganizationID = preset.DefaultOrganizationID
+	}
 	hash, err := hashPassword(opts.Password)
 	if err != nil {
 		return nil, errors.Wrap(err)

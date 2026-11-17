@@ -464,3 +464,22 @@ func TestAccountChangesArePublished(t *testing.T) {
 	require.Error(t, m.Delete(ctx, []int32{preset.AdminUserID}))
 	assert.Empty(t, sent.msgs)
 }
+
+// A user created without an organization - what the HTTP API sends - joins
+// the default one, so it can log in. It used to land in organization 0, where
+// no login ever looks.
+func TestCreateDefaultsToDefaultOrganization(t *testing.T) {
+	m, db, err := setup()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Cleanup(true)) }()
+	ctx := context.Background()
+
+	opts := createOpts2 // no OrganizationID
+	require.Zero(t, opts.OrganizationID)
+	user, err := m.Create(ctx, opts)
+	require.NoError(t, err)
+	assert.Equal(t, preset.DefaultOrganizationID, user.OrganizationID)
+
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, opts.Username, opts.Password)
+	assert.NoError(t, err, "the new user can log in")
+}
