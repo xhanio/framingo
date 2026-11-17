@@ -17,9 +17,9 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 
-	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
 // With the gopro-injected ProjectPath in place, service names are
@@ -38,10 +38,12 @@ func TestServiceNamesAreProjectRelative(t *testing.T) {
 	assert.Equal(t, "services/supervisor/manager", sv.Name())
 }
 
-// fakeRepo embeds the nil interface so only the one method HelloWorld
-// touches needs a body - any other call is a test bug and panics.
+// fakeRepo stands in for the service's whole data layer: repo.HelloWorld is
+// one method wide, so that method is all a fake needs, with Name and
+// Dependencies left to the embedded nil interface - a call to either is a
+// test bug and panics.
 type fakeRepo struct {
-	repository.Repository
+	repo.HelloWorld
 }
 
 func (fakeRepo) CreateHelloWorld(_ context.Context, message string) (*entity.HelloWorld, error) {

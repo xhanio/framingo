@@ -173,6 +173,8 @@ func (m *manager) initServices() error {
 
 	// the user service publishes the account changes the auth service ends
 	// sessions on
+	// one repository instance; each service takes it as its own Repository,
+	// the repo contracts declared in the service's model.go
 	m.user = user.New(m.platform, m.repository, user.WithLogger(m.log))
 	m.role = role.New(m.platform, m.repository, role.WithLogger(m.log))
 	m.organization = organization.New(m.platform, m.repository, organization.WithLogger(m.log))
@@ -243,7 +245,8 @@ Three details that matter:
   packages with `_` imports; a binary that skips one fails at Init with
   "not registered".
 - **The repository service sits in the infra tier.** System and business
-  services take `repository.Repository`, never `db.Manager` — only the
+  services take their own `Repository` interface — the `repo.*` contracts
+  they use, declared in their `model.go` — never `db.Manager`: only the
   repository touches the database.
 - **The platform bundle (`services/system/platform`) is a combiner, not a
   builder.** It holds the `model.*` handles business constructors consume —

@@ -31,7 +31,8 @@ repo level       services/repository/                 owns: types/orm  types/rep
   service they lean on (`authz` → the role service). None of them imports
   `services/repository/`, `types/orm/`, or `db`.
 - **Services call the repo level, nothing lower.** They persist through
-  `repository.Repository` / `repo.*` interfaces and hand `entity` values
+  their own `Repository` interface — the `repo.*` contracts declared in
+  their `model.go` — and hand `entity` values
   upward. No system or business service imports `db.Manager` or GORM —
   grep the example: only `services/repository/` does. Peer services compose
   through `model.*` interfaces (auth is built on `model.UserAuthN`), never

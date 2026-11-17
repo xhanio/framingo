@@ -293,7 +293,7 @@ span (tracing disabled, unit tests) yields a noop:
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error) {
 	ctx, span := traceutil.Start(ctx, m.name, "HelloWorld")
 
-	thing, err := m.repository.Create(ctx, ...)
+	thing, err := m.things.Create(ctx, ...)
 	if err != nil {
 		return nil, traceutil.Fail(span, errors.Wrap(err))
 	}

@@ -2,8 +2,11 @@
 // aggregate. They speak entity: the orm models behind them never cross this
 // boundary, so mapping a row to its entity is the repository's job and a
 // service never meets a GORM tag - nor the database: services reach
-// persistence only through these contracts. One repository instance
-// implements them all.
+// persistence only through these contracts.
+//
+// One repository instance implements them all. Each service declares, as
+// its own Repository interface in its model.go, the contracts it reads and
+// writes through, so what it may touch is named in one place.
 package repo
 
 import (

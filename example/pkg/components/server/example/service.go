@@ -159,6 +159,9 @@ func (m *manager) initServices() error {
 	// combine the services business constructors consume
 	m.platform = platform.New(m.db, m.metrics, m.pubsub, m.messagebus)
 
+	// One repository instance implements every repo contract; each service
+	// takes it as its own Repository interface, which names the contracts it
+	// reads and writes through.
 	m.repository = repository.New(
 		m.platform,
 		repository.WithLogger(m.log),

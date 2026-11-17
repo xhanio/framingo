@@ -88,7 +88,8 @@ func setupWithBus(mb model.MessageBus) (*manager, model.DatabaseDebugger, error)
 	); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}
-	m := newManager(platform.New(db, nil, nil, mb), repository.New(platform.New(db, nil, nil, nil)))
+	r := repository.New(platform.New(db, nil, nil, nil))
+	m := newManager(platform.New(db, nil, nil, mb), r)
 	if err := m.Init(context.Background()); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}

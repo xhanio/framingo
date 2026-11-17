@@ -24,12 +24,15 @@ registration layers ([components-server.md](components-server.md)):
 `Ready()` pings the database, `Alive()` guards only its own wiring —
 [supervisor.md](../pkgs/supervisor.md)), `services/system/` (auth, user,
 role, organization, certificate), and business services such as
-`services/example/` on top. System and business services take
-`repository.Repository`, never `db.Manager` — only the repository touches
-the database.
+`services/example/` on top. System and business services take their own
+`Repository` interface — declared in the service's `model.go`, composing
+the `repo.*` contracts it reads and writes through — never `db.Manager`:
+only the repository touches the database. One repository instance
+implements every contract, so the wiring hands it to each service once, as
+is; what a service may touch is named in its `model.go`.
 
 **Stay in your layer.** A service reaches down only to the repo level —
-`repository.Repository` / `repo.*` interfaces — and its currency is the
+the `repo.*` contracts its `Repository` names — and its currency is the
 service level's own types: the `repo` contracts hand it entities — the
 repository maps its `orm` rows before they leave it — so a service never
 meets a GORM model, and `api` DTOs never come down either — routers unpack
@@ -49,7 +52,7 @@ with different consumers. Templates:
 | File | Declares | Who depends on it |
 |---|---|---|
 | `pkg/types/model/example.go` | `model.Example` — business methods + `common.Service`, **no lifecycle** | Routers and other services |
-| `pkg/services/example/model.go` | `example.Manager` = `model.Example` + the lifecycle interfaces | Only `pkg/components/server/` wiring |
+| `pkg/services/example/model.go` | `example.Manager` = `model.Example` + the lifecycle interfaces; `example.Repository` = the `repo.*` contracts the service reads and writes through | Only `pkg/components/server/` wiring |
 
 The real pair:
 
@@ -90,7 +93,7 @@ type manager struct {
 	log  log.Logger
 	name string
 
-	repository repository.Repository
+	repository Repository
 	mb         common.RawMessageSender
 	meter      fmodel.Meter
 
@@ -104,12 +107,12 @@ type manager struct {
 	inst *instruments // built once at Init
 }
 
-func New(platform platform.Platform, repo repository.Repository, opts ...Option) Manager {
+func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(platform platform.Platform, repo repository.Repository, opts ...Option) *manager {
+func newManager(platform platform.Platform, repo Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 		mb:         platform.MessageBus(),

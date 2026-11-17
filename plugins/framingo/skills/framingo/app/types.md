@@ -86,8 +86,8 @@ type HelloWorld interface {
 ```
 
 **The flow**: the router binds `api.HelloWorldCreateRequest` → calls
-`model.Example` → the service calls `repo.HelloWorld` (through
-`repository.Repository`) → the repository persists `orm.HelloWorld`, maps
+`model.Example` → the service calls `repo.HelloWorld`, the contract it was
+constructed with → the repository persists `orm.HelloWorld`, maps
 it to `entity.HelloWorld` and returns that → the service returns it on.
 
 ## The two `api` packages

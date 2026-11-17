@@ -4,7 +4,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
-	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 )
 
@@ -13,7 +12,7 @@ type manager struct {
 	log  log.Logger
 	name string
 
-	repository repository.Repository
+	repository Repository
 	sender     common.MessageSender
 }
 
@@ -21,12 +20,12 @@ type manager struct {
 // changes on - deletions, password resets, identity changes - which the auth
 // service ends sessions on. A platform without one drops them, and a session
 // then outlives the change until its lease expires.
-func New(platform platform.Platform, repo repository.Repository, opts ...Option) Manager {
+func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
 
 // newManager returns the concrete manager, the form package tests construct.
-func newManager(platform platform.Platform, repo repository.Repository, opts ...Option) *manager {
+func newManager(platform platform.Platform, repo Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 		sender:     platform.MessageBus(),

@@ -33,9 +33,17 @@ var (
 // database's debug side, which the tests clean up through; the service only
 // ever sees model.Database.
 func setup() (*manager, model.DatabaseDebugger, error) {
+	m, db, _, err := setupWithUsers()
+	return m, db, err
+}
+
+// setupWithUsers is setup that also hands back the same repository as
+// repo.User, for a test that needs users the role service cannot write - it
+// only ever sees repo.Role.
+func setupWithUsers() (*manager, model.DatabaseDebugger, repo.User, error) {
 	db, err := testutil.SetupDB()
 	if err != nil {
-		return nil, nil, errors.Wrap(err)
+		return nil, nil, nil, errors.Wrap(err)
 	}
 	if err := db.ORM().AutoMigrate(
 		&orm.Organization{},
@@ -45,14 +53,15 @@ func setup() (*manager, model.DatabaseDebugger, error) {
 		&orm.User{},
 		&orm.Certificate{},
 	); err != nil {
-		return nil, nil, errors.Wrap(err)
+		return nil, nil, nil, errors.Wrap(err)
 	}
 	p := platform.New(db, nil, nil, nil)
-	m := newManager(p, repository.New(p))
+	r := repository.New(p)
+	m := newManager(p, r)
 	if err := m.Init(context.Background()); err != nil {
-		return nil, nil, errors.Wrap(err)
+		return nil, nil, nil, errors.Wrap(err)
 	}
-	return m, db, nil
+	return m, db, r, nil
 }
 
 func TestCreateList(t *testing.T) {
@@ -229,7 +238,7 @@ func TestSetPermission(t *testing.T) {
 // A role a user still holds is not deleted. That is the role service's rule;
 // the repository only counts the holders.
 func TestDeleteRefusesARoleInUse(t *testing.T) {
-	m, db, err := setup()
+	m, db, users, err := setupWithUsers()
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Cleanup(true)) }()
 	ctx := context.Background()
@@ -237,7 +246,7 @@ func TestDeleteRefusesARoleInUse(t *testing.T) {
 	require.NoError(t, m.Create(ctx, createOpts))
 	role, err := m.GetByName(ctx, createOpts.Name)
 	require.NoError(t, err)
-	holder, err := m.repository.CreateUser(ctx, repo.UserCreateOptions{
+	holder, err := users.CreateUser(ctx, repo.UserCreateOptions{
 		OrganizationID: preset.DefaultOrganizationID,
 		Username:       "holder",
 		PasswordHash:   "hash",
@@ -251,7 +260,7 @@ func TestDeleteRefusesARoleInUse(t *testing.T) {
 	_, err = m.GetByName(ctx, createOpts.Name)
 	assert.NoError(t, err, "a refused delete leaves the role")
 
-	require.NoError(t, m.repository.DeleteUsers(ctx, []int32{holder.ID}))
+	require.NoError(t, users.DeleteUsers(ctx, []int32{holder.ID}))
 	require.NoError(t, m.Delete(ctx, role.ID))
 	_, err = m.GetByName(ctx, createOpts.Name)
 	assert.True(t, errors.Is(err, errors.NotFound), "got %v", err)
