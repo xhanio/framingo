@@ -369,7 +369,9 @@ func (r *router) Feed(c api.Context, conn *websocket.Conn) error {
 }
 ```
 
-**Lifecycle**: Middleware stack runs before upgrade (auth, logging, throttle all apply). Once upgraded, the server invokes the handler; on return, it closes the connection with `wsutil.Close`: a normal close on `nil`, nothing more when the client closed the connection or dropped it (EOF), `StatusGoingAway` if the request context was cancelled, `StatusInternalError` otherwise - the one case logged via the server logger.
+**Lifecycle**: Middleware stack runs before upgrade (auth, logging, throttle all apply). Once upgraded, the server invokes the handler; on return, it closes the connection with `wsutil.Close`: a normal close on `nil`, nothing more when the client closed the connection or dropped it (EOF), `StatusGoingAway` once the server is stopping, `StatusInternalError` otherwise - the one case logged via the server logger.
+
+**On Stop** the server closes every open WebSocket connection with `StatusGoingAway` ("server shutting down") — net/http's `Shutdown` neither closes nor waits for an upgraded connection — and waits for the handlers to return until the stop's context ends. A handler need only return once its reads or writes fail; one that blocks on something else outlives the stop, which reports it. A connection upgraded after the stop began is closed the same way, its handler never invoked.
 
 ## Middleware Resolution
 

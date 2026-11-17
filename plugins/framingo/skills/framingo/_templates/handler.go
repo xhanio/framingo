@@ -65,7 +65,9 @@ func (r *router) Health(c api.Context) error {
 // Events backs `method: WS`. WebSocket handlers take the extra *websocket.Conn
 // (github.com/coder/websocket, not gorilla). The middleware stack still runs
 // before the upgrade; once upgraded, returning nil closes the connection
-// normally and returning an error closes it with StatusInternalError.
+// normally and returning an error closes it with StatusInternalError. When the
+// server stops it closes the connection with StatusGoingAway, so the handler's
+// reads and writes fail and it returns.
 func (r *router) Events(c api.Context, conn *websocket.Conn) error {
 	return conn.Write(c, websocket.MessageText, []byte(`{"hello":"world"}`))
 }

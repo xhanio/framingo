@@ -12,6 +12,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/syncutil"
 )
 
 var _ Server = (*server)(nil)
@@ -39,6 +40,14 @@ type server struct {
 	handlers map[handlerKey]*handlerConfig
 
 	err error // why the serve loop exited; nil while serving or after a graceful shutdown
+
+	// net/http's Shutdown neither closes nor waits for an upgraded connection,
+	// so the WebSocket handlers go by these: wsCtx ends when stop begins, which
+	// closes their connections going away - each echo gets its own - and wsWG
+	// counts them, whichever echo they came from, for stop to wait on.
+	wsCtx    context.Context
+	wsCancel context.CancelFunc
+	wsWG     syncutil.WaitGroup
 }
 
 // serve runs the listener until it stops and remembers why. The record is
@@ -92,10 +101,16 @@ func (s *server) start() error {
 	return s.echo.StartServer(s.echo.TLSServer)
 }
 
-// stop gracefully shuts down the server
+// stop gracefully shuts down the server, its WebSocket handlers included
 func (s *server) stop(ctx context.Context) error {
+	s.Lock()
+	s.wsCancel()
+	s.Unlock()
 	err := s.echo.Shutdown(ctx)
 	if err == nil {
+		if err := s.wsWG.Wait(ctx); err != nil {
+			return errors.Wrapf(err, "server %s stopped with websocket handlers still running", s.name)
+		}
 		return nil
 	}
 	if ctx.Err() != nil {

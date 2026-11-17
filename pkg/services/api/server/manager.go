@@ -6,7 +6,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/coder/websocket"
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -15,7 +14,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
-	"github.com/xhanio/framingo/pkg/utils/wsutil"
 )
 
 // manager implements the Manager interface
@@ -26,7 +24,7 @@ type manager struct {
 
 	servers map[string]*server // map of server name to server instance
 
-	handlerFuncs map[handlerKey]echo.HandlerFunc
+	handlerFuncs map[handlerKey]any // an echo.HandlerFunc, or a wsHandler for a WS route
 	middlewares  map[string]api.Middleware
 }
 
@@ -38,7 +36,7 @@ func New(opts ...Option) Manager {
 func newManager(opts ...Option) *manager {
 	m := &manager{
 		servers:      make(map[string]*server),
-		handlerFuncs: make(map[handlerKey]echo.HandlerFunc),
+		handlerFuncs: make(map[handlerKey]any),
 		middlewares:  make(map[string]api.Middleware),
 	}
 	m.applyOptions(opts...)
@@ -165,6 +163,7 @@ func (m *manager) buildEcho(s *server) error {
 	funcs = append(funcs, mw.Logger, mw.Info, mw.Error)
 	e.Use(funcs...)
 	s.echo = e
+	s.resetWebSocket()
 	return nil
 }
 
@@ -269,25 +268,23 @@ func (m *manager) resolveHandlers(group *handlerGroupConfig, handlers map[string
 		if _, taken := m.handlerFuncs[key]; taken {
 			return errors.Conflict.Newf("route %s is already registered", key)
 		}
+		ws := false
 		switch f := fn.(type) {
 		case echo.HandlerFunc:
-			if handler.Method == api.MethodWS {
-				return errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
-			}
-			m.handlerFuncs[key] = f
 		case func(echo.Context) error:
-			if handler.Method == api.MethodWS {
-				return errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
-			}
-			m.handlerFuncs[key] = f
-		case func(echo.Context, *websocket.Conn) error:
-			if handler.Method != api.MethodWS {
-				return errors.Newf("handler %s has WebSocket signature but method is %s", handler.Func, handler.Method)
-			}
-			m.handlerFuncs[key] = m.wrapWebSocket(f)
+			fn = echo.HandlerFunc(f)
+		case wsHandler:
+			ws = true
 		default:
 			return errors.Newf("handler %s has unsupported signature", handler.Func)
 		}
+		if ws && handler.Method != api.MethodWS {
+			return errors.Newf("handler %s has WebSocket signature but method is %s", handler.Func, handler.Method)
+		}
+		if !ws && handler.Method == api.MethodWS {
+			return errors.Newf("handler %s declared as WS but signature is not WebSocket", handler.Func)
+		}
+		m.handlerFuncs[key] = fn
 	}
 	return nil
 }
@@ -348,19 +345,19 @@ func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerCon
 	routePath := strings.TrimSuffix(h.Path, "/")
 	m.log.Infof("register handler %s %s", h.Method, path.Join(prefix, h.Path))
 
-	hf, ok := m.handlerFuncs[key]
+	fn, ok := m.handlerFuncs[key]
 	if !ok {
 		return nil
 	}
 
 	switch h.Method {
 	case api.MethodWS:
-		// WebSocket handshake comes in as HTTP GET; the handler upgrades.
-		group.Add(http.MethodGet, routePath, hf, mwfuncs...)
+		// WebSocket handshake comes in as HTTP GET; webSocket upgrades it.
+		group.Add(http.MethodGet, routePath, m.webSocket(s, fn.(wsHandler)), mwfuncs...)
 	case api.MethodAny:
-		group.Any(routePath, hf, mwfuncs...)
+		group.Any(routePath, fn.(echo.HandlerFunc), mwfuncs...)
 	default:
-		group.Add(h.Method, routePath, hf, mwfuncs...)
+		group.Add(h.Method, routePath, fn.(echo.HandlerFunc), mwfuncs...)
 	}
 	return nil
 }
@@ -445,27 +442,6 @@ func resolveMiddleware(h, g *middlewareConfig, serverSwitches map[string]bool, s
 	return enabled, cfg
 }
 
-// wrapWebSocket wraps a WebSocketHandlerFunc into an echo.HandlerFunc
-// that upgrades the HTTP connection and delegates to the WS handler.
-func (m *manager) wrapWebSocket(fn func(echo.Context, *websocket.Conn) error) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
-			InsecureSkipVerify: m.debug,
-		})
-		if err != nil {
-			return errors.BadRequest.Wrap(err)
-		}
-
-		// Once upgraded, the HTTP response is hijacked — errors cannot be
-		// returned to Echo. Handle closure directly.
-		err = fn(c, conn)
-		if err := wsutil.Close(c.Request().Context(), conn, err); err != nil {
-			m.log.Error(errors.Wrap(err))
-		}
-		return nil
-	}
-}
-
 // RegisterMiddlewares registers middlewares with the server. The middleware
 // itself is kept, not a function: functions are minted per attachment point
 // once router.yaml configs are known.
@@ -493,7 +469,8 @@ func (m *manager) Start(ctx context.Context) error {
 }
 
 // Stop shuts the servers down, waiting for the requests going on until ctx ends; then it closes
-// their connections, though a handler that ignores its request's context runs on.
+// their connections, though a handler that ignores its request's context runs on. WebSocket
+// connections are closed going away, and their handlers waited for the same way.
 func (m *manager) Stop(ctx context.Context) error {
 	var errs []error
 	for _, s := range m.servers {

@@ -55,14 +55,30 @@ func freePort(t *testing.T) uint {
 // the base URL and a cleanup function.
 func startServer(t *testing.T, routers ...*mockRouter) (baseURL string, cleanup func()) {
 	t.Helper()
+	m, baseURL := startManager(t, routers...)
+	cleanup = func() { require.NoError(t, m.Stop(context.Background())) }
+	return baseURL, cleanup
+}
+
+// startManager sets up a manager with routers, starts it, and returns it with
+// the base URL once it serves; stopping it is the caller's.
+func startManager(t *testing.T, routers ...*mockRouter) (m *manager, baseURL string) {
+	t.Helper()
 	port := freePort(t)
-	m := testManager()
+	m = testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", port, "/")))
 	for _, r := range routers {
 		require.NoError(t, m.RegisterRouters(r))
 	}
 	require.NoError(t, m.Start(context.Background()))
 	baseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
+	waitServing(t, baseURL)
+	return m, baseURL
+}
+
+// waitServing waits until the server at baseURL answers.
+func waitServing(t *testing.T, baseURL string) {
+	t.Helper()
 	require.Eventually(t, func() bool {
 		resp, err := http.Get(baseURL + "/")
 		if err != nil {
@@ -71,8 +87,6 @@ func startServer(t *testing.T, routers ...*mockRouter) (baseURL string, cleanup 
 		resp.Body.Close()
 		return true
 	}, 2*time.Second, 10*time.Millisecond)
-	cleanup = func() { require.NoError(t, m.Stop(context.Background())) }
-	return
 }
 
 // httpDo makes an HTTP request and returns status code and body.
