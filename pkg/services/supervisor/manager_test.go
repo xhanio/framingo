@@ -798,3 +798,25 @@ func TestRestartOfAStuckServiceEndsAtTheStopDeadline(t *testing.T) {
 	slow.stopFn = nil
 	require.NoError(t, m.Stop(context.Background()))
 }
+
+// An optional dependency the app did not wire is a nil entry in
+// Dependencies: registering, initialising and probing the service all skip
+// it, and the service runs as one without that dependency.
+func TestNilDependencyIsSkipped(t *testing.T) {
+	db := newMockService("db")
+	svc := newMockService("svc")
+	svc.deps = []common.Service{db, nil}
+
+	m := newTestManager()
+	require.NoError(t, m.Register(svc))
+	require.NoError(t, m.TopoSort())
+	assert.Len(t, m.Services(), 2, "the nil entry is not a service")
+
+	require.NotPanics(t, func() { require.NoError(t, m.Init(context.Background())) })
+	require.NotPanics(t, func() { m.monitor.checkAll(context.Background()) })
+	stats, err := m.Stats()
+	require.NoError(t, err)
+	for _, s := range stats {
+		assert.True(t, s.Initialized, "%s initialized", s.Name)
+	}
+}

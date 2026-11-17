@@ -7,6 +7,9 @@ import (
 
 type Service interface {
 	Named
+	// Dependencies are the services this one needs initialized and started
+	// first. A nil entry is skipped, so an optional dependency the app may
+	// not have wired is listed as is, set or not.
 	Dependencies() []Service
 }
 

@@ -115,6 +115,9 @@ func (mon *monitor) check(ctx context.Context, service common.Service, sw *sweep
 	defer delete(sw.inflight, name)
 	var errs []error
 	for _, dep := range service.Dependencies() {
+		if dep == nil {
+			continue // an optional dependency the app did not wire: nothing to probe
+		}
 		errs = append(errs, mon.check(ctx, dep, sw))
 	}
 	stat := mon.c.stats.snapshot(name)

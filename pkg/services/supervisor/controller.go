@@ -338,7 +338,7 @@ func (c *controller) initTurn(ctx context.Context, service common.Service) (bool
 func (c *controller) depsInitReady(ctx context.Context, service common.Service) (blocked error, transient bool) {
 	for _, dep := range service.Dependencies() {
 		if dep == nil {
-			panic(errors.Newf("%s dependency should not be nil, pls remove optional service from Dependencies()", service.Name()))
+			continue // an optional dependency the app did not wire: nothing to wait for
 		}
 		if stat := c.stats.snapshot(dep.Name()); stat != nil && !stat.Initialized {
 			c.log.Debugf("%s dependency %s is not initialized", service.Name(), dep.Name())

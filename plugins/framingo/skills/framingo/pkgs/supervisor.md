@@ -12,7 +12,7 @@ All services compose from interfaces in `pkg/types/common`:
 // Required - every service must implement this
 type Service interface {
     Named                       // Name() string
-    Dependencies() []Service    // declare startup dependencies
+    Dependencies() []Service    // declare startup dependencies; a nil entry is skipped
 }
 
 // Optional lifecycle interfaces - implement as needed
