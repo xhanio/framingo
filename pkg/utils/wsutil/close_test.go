@@ -2,6 +2,7 @@ package wsutil
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,11 +16,14 @@ import (
 )
 
 // closeAfter serves one connection whose handler returned handlerErr under
-// ctx, and reports what Close returned and the close status the client saw;
-// read is false when the client is not to read (the handler's error was the
-// peer's own close, so Close sends nothing to wait for).
-func closeAfter(t *testing.T, ctx context.Context, handlerErr error, read bool) (returned error, status websocket.StatusCode, reason string) {
+// ctx, and reports what Close returned and, when read is set, the error the
+// client's next read ended with; read is unset when the handler's error was
+// the peer's own close, which leaves Close nothing to send. The handler holds
+// its connection open until the client has read, so whatever ended that read
+// was Close's doing.
+func closeAfter(t *testing.T, ctx context.Context, handlerErr error, read bool) (returned, readErr error) {
 	t.Helper()
+	release := make(chan struct{})
 	done := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer close(done)
@@ -31,6 +35,7 @@ func closeAfter(t *testing.T, ctx context.Context, handlerErr error, read bool) 
 		//nolint:errcheck // a no-op once Close has closed it
 		defer conn.CloseNow()
 		returned = Close(ctx, conn, handlerErr)
+		<-release
 	}))
 	t.Cleanup(server.Close)
 
@@ -42,44 +47,63 @@ func closeAfter(t *testing.T, ctx context.Context, handlerErr error, read bool) 
 	defer conn.CloseNow()
 
 	if read {
-		_, _, err = conn.Read(dialCtx)
-		var ce websocket.CloseError
-		require.True(t, errors.As(err, &ce), "the client sees a close frame, got %v", err)
-		status, reason = ce.Code, ce.Reason
+		_, _, readErr = conn.Read(dialCtx)
+		require.Error(t, readErr)
+		require.NotErrorIs(t, readErr, context.DeadlineExceeded, "Close left the connection open")
 	}
+	close(release)
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the handler did not return")
 	}
-	return returned, status, reason
+	return returned, readErr
+}
+
+// closeFrame is the close frame a client's read ended with.
+func closeFrame(t *testing.T, readErr error) websocket.CloseError {
+	t.Helper()
+	var ce websocket.CloseError
+	require.True(t, errors.As(readErr, &ce), "the client sees a close frame, got %v", readErr)
+	return ce
 }
 
 func TestClose_NilIsANormalClosure(t *testing.T) {
-	returned, status, _ := closeAfter(t, context.Background(), nil, true)
+	returned, readErr := closeAfter(t, context.Background(), nil, true)
 	assert.NoError(t, returned)
-	assert.Equal(t, websocket.StatusNormalClosure, status)
+	assert.Equal(t, websocket.StatusNormalClosure, closeFrame(t, readErr).Code)
 }
 
 func TestClose_HandlerErrorIsAnInternalErrorAndReturned(t *testing.T) {
 	handlerErr := errors.Newf("handler broke")
-	returned, status, reason := closeAfter(t, context.Background(), handlerErr, true)
+	returned, readErr := closeAfter(t, context.Background(), handlerErr, true)
 	assert.Equal(t, handlerErr, returned, "the failure is returned for the caller to log")
-	assert.Equal(t, websocket.StatusInternalError, status)
-	assert.Equal(t, "handler broke", reason)
+	frame := closeFrame(t, readErr)
+	assert.Equal(t, websocket.StatusInternalError, frame.Code)
+	assert.Equal(t, "handler broke", frame.Reason)
 }
 
 func TestClose_EndedContextIsGoingAway(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	returned, status, _ := closeAfter(t, ctx, errors.Newf("read: context canceled"), true)
+	returned, readErr := closeAfter(t, ctx, errors.Newf("read: context canceled"), true)
 	assert.NoError(t, returned, "a shutdown is not a failure")
-	assert.Equal(t, websocket.StatusGoingAway, status)
+	assert.Equal(t, websocket.StatusGoingAway, closeFrame(t, readErr).Code)
 }
 
 func TestClose_PeerCloseIsNotAFailure(t *testing.T) {
 	for _, code := range []websocket.StatusCode{websocket.StatusNormalClosure, websocket.StatusGoingAway} {
-		returned, _, _ := closeAfter(t, context.Background(), websocket.CloseError{Code: code}, false)
+		returned, _ := closeAfter(t, context.Background(), websocket.CloseError{Code: code}, false)
 		assert.NoError(t, returned, "a close the peer began (%d) is not a failure", code)
+	}
+}
+
+// A peer that dropped the connection is gone, not failed: Close only releases
+// the connection - the client's read ends on it closing, not on a frame.
+func TestClose_PeerDropIsReleasedNotAFailure(t *testing.T) {
+	for _, dropped := range []error{io.EOF, io.ErrUnexpectedEOF, errors.Wrap(io.EOF)} {
+		returned, readErr := closeAfter(t, context.Background(), dropped, true)
+		assert.NoError(t, returned, "a dropped connection (%v) is not a failure", dropped)
+		assert.Equal(t, websocket.StatusCode(-1), websocket.CloseStatus(readErr), "nothing is sent to a dropped peer")
 	}
 }
