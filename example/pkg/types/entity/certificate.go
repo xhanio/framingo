@@ -67,10 +67,6 @@ type CertUpdateOptions struct {
 	Comments string
 }
 
-type CertUpdateBundleOptions struct {
-	Bundle []byte
-}
-
 type CertListOptions struct {
 	IsCA    *bool //If nil, return all certificates; if true, return only CA certificates; if false, return only non-CA certificates
 	IsLocal bool  // filter only certificates with key stored locally

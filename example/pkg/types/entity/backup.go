@@ -33,8 +33,3 @@ type BackupMetadata struct {
 	Assets        []Asset  `yaml:"assets"`
 	Database      Database `yaml:"database"`
 }
-
-type BackupDatabaseOptions struct {
-	Type          string
-	WithoutTables []string
-}
