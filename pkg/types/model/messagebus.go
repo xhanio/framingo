@@ -3,8 +3,6 @@ package model
 import (
 	"context"
 
-	"github.com/coder/websocket"
-
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
@@ -34,15 +32,10 @@ type MessageBus interface {
 
 	// NewMessenger creates a Messenger subscribed to the bus topic under the
 	// given (unique) name. Use this when you need raw channel access — e.g.,
-	// to bridge the bus to a WebSocket, SSE stream, or custom dispatcher.
-	// The caller is responsible for calling Close on the returned Messenger.
+	// to bridge the bus to a WebSocket (wsutil.Bridge does), SSE
+	// stream, or custom dispatcher. The caller is responsible for calling
+	// Close on the returned Messenger.
 	NewMessenger(name string) (Messenger, error)
-
-	// AttachWebSocket pumps messages between the Messenger and the WebSocket
-	// connection: outbound (bus → ws) writes each message as JSON; inbound
-	// (ws → bus) decodes JSON frames and republishes them. The call blocks
-	// until the connection closes and then closes the Messenger.
-	AttachWebSocket(messenger Messenger, ws *websocket.Conn)
 }
 
 // Messenger is a subscriber handle backed by a raw pubsub channel. Unlike

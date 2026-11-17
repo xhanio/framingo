@@ -154,9 +154,10 @@ said nothing" from "the caller passed a zero" — `WithLogger(nil)` overwrites
 it and panics at the first log call, and the same holds for any interface or
 string field. `setDefaults` runs after, so a zero field is unambiguously
 unset. It is also the one place to look for what a service falls back to.
-The exception is a field whose zero value is *meaningful*: messagebus seeds
-its ping interval in the literal because `WithPing(0, ...)` deliberately
-disables pings, and post-apply defaulting would undo that.
+The exception is a field whose zero value is *meaningful*: seed it in the
+literal, before the options, because post-apply defaulting would undo a
+deliberate zero — `wsutil` seeds its ping interval that way, since
+`WithPing(0, ...)` disables pings.
 
 ```go
 func (m *manager) Dependencies() []common.Service {

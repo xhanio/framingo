@@ -191,7 +191,7 @@ Production-ready service implementations:
 - **[messagebus](pkg/services/messagebus/)** — Higher-level dispatch on top of `pubsub`
   - Single well-known topic with module-centric routing — `Register(module)` picks up `common.MessageHandler` / `common.RawMessageHandler` and skips modules implementing neither
   - Typed (`common.Message`) and raw (`kind`, payload) handlers
-  - `NewMessenger(name)` for direct channel access, `AttachWebSocket(messenger, ws)` to bridge a connection (with server-side pings, tunable via `WithPing`)
+  - `NewMessenger(name)` for direct channel access; [`wsutil.Bridge(conn, messenger)`](pkg/utils/wsutil/) bridges one to a WebSocket connection
 
 - **[task](pkg/services/task/)** — Task manager (`model.Task` + `Daemon`)
   - Runs `entity.Task`s by schedule, by `Trigger` or once, in priority then arrival order, within a concurrency limit
@@ -262,6 +262,7 @@ Interface contracts and shared types:
 | **[syncutil](pkg/utils/syncutil/)** | `WaitGroup` whose `Wait(ctx)` gives up once the context ends |
 | **[testutil](pkg/utils/testutil/)** | Test database setup helpers |
 | **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
+| **[wsutil](pkg/utils/wsutil/)** | WebSocket bridges: `Bridge` joins a connection to a bus Messenger both ways, with server-side pings tunable via `WithPing` |
 
 ## Building Your First Application
 

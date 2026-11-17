@@ -210,7 +210,7 @@ func TestNewMessenger_CloseClosesChannel(t *testing.T) {
 }
 
 func TestNewMessenger_JSONRoundTrip(t *testing.T) {
-	// Verifies the wire format used by AttachWebSocket.
+	// Verifies the wire format wsutil.Bridge puts on a WebSocket.
 	original := entity.PubsubMessage{From: "a", Topic: "/t", Kind: "k", Payload: "p"}
 	data, err := json.Marshal(original)
 	require.NoError(t, err)

@@ -3,7 +3,6 @@ package messagebus
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
@@ -22,9 +21,6 @@ type manager struct {
 	bus   model.Pubsub
 	topic string
 
-	pingInterval time.Duration
-	pingTimeout  time.Duration
-
 	ctx    context.Context // the latest Start's, for modules registered while it runs
 	cancel context.CancelFunc
 	wg     syncutil.WaitGroup // listeners, whichever Start they came from
@@ -40,10 +36,8 @@ func New(bus model.Pubsub, opts ...Option) Manager {
 
 func newManager(bus model.Pubsub, opts ...Option) *manager {
 	m := &manager{
-		bus:          bus,
-		pingInterval: DefaultPingInterval,
-		pingTimeout:  DefaultPingTimeout,
-		modules:      make(map[string]common.Named),
+		bus:     bus,
+		modules: make(map[string]common.Named),
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()

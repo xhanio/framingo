@@ -7,6 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/utils/wsutil"
+
 	"github.com/xhanio/framingo/example/pkg/types/api"
 )
 
@@ -26,8 +28,8 @@ func (r *router) Stream(c api.Context, conn *websocket.Conn) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	// AttachWebSocket blocks until the connection closes and closes the
+	// Bridge blocks until the connection closes and closes the
 	// messenger on return — no extra cleanup needed here.
-	r.mb.AttachWebSocket(messenger, conn)
+	wsutil.Bridge(conn, messenger, wsutil.WithLogger(r.log))
 	return nil
 }

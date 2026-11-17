@@ -84,7 +84,9 @@ mb.Register(someService)
 
 // Direct channel access (e.g. WebSocket bridge)
 messenger, _ := mb.NewMessenger("ws:user-123")
-mb.AttachWebSocket(messenger, wsConn) // blocks until conn closes
+// pkg/utils/wsutil: blocks until conn closes, then closes the messenger;
+// server-side pings tunable via wsutil.WithPing
+wsutil.Bridge(wsConn, messenger)
 ```
 
 ## Message Interfaces
