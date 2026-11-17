@@ -23,6 +23,9 @@ type migrationConfig struct {
 type Manager interface {
 	// business
 	model.Database
+	// debug: the destructive operations, which consumers holding a
+	// model.Database do not see
+	model.DatabaseDebugger
 	// health.go: Alive guards the manager's own wiring (Init reconnects, so
 	// a restart is the remedy); Ready pings the database - an unreachable
 	// server is not-ready, never a liveness failure.

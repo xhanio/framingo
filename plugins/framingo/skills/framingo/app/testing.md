@@ -78,7 +78,7 @@ When a feature spans several source files and none owns it, name the file after 
 
 | Helper | Gives you |
 |---|---|
-| `SetupDB()` | an initialized `db.Manager` on in-memory SQLite, so a test exercises real SQL instead of a repository double (needs `CGO_ENABLED=1`) |
+| `SetupDB()` | an initialized `db.Manager` on in-memory SQLite, so a test exercises real SQL instead of a repository double (needs `CGO_ENABLED=1`). The manager also carries `model.DatabaseDebugger` — `Cleanup`/`Reload` — which a test cleans up through; the services under test get it as a plain `model.Database` and cannot |
 | `NewTracer(provider)` + `Swap(provider)` | a `model.Tracer` whose provider can be replaced mid-flight, standing in for a tracing-service restart |
 | `NewRecorder()` | in-memory exporter + synchronous provider, so a span is readable the moment it ends |
 

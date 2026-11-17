@@ -73,11 +73,15 @@ type Manager interface {
     DB() *sql.DB                                                                // raw sql.DB access
     FromContext(ctx context.Context) *gorm.DB                                   // context-aware (extracts TX if present)
     FromContextTimeout(ctx context.Context, timeout time.Duration) (*gorm.DB, context.CancelFunc)
-    Cleanup(schema bool) error                                                  // truncate tables (schema=true drops schema)
-    Reload() error                                                              // drop + re-migrate
     Transaction(ctx context.Context, fn func(ctx context.Context) error, opts ...*sql.TxOptions) error
+
+    // model.DatabaseDebugger - on Manager, not on model.Database
+    Cleanup(schema bool) error                                                  // truncate tables (schema=true drops and recreates the schema)
+    Reload() error                                                              // drop the schema + re-migrate
 }
 ```
+
+The methods above split across two contracts. `model.Database` is what consumers hold — connections, queries, transactions — and the platform bundle hands it to repositories. `model.DatabaseDebugger` carries the destructive pair, `Cleanup` and `Reload`, for tests and dev tooling only; nothing holding a `model.Database` can reach them. Tests get both from `testutil.SetupDB()`, which returns the `db.Manager`, and a test helper that only needs to clean up can return the narrower `model.DatabaseDebugger`.
 
 ## Context-Aware Queries and Transactions
 

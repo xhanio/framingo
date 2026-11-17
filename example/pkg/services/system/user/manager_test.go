@@ -59,8 +59,10 @@ func stringPointer(s string) *string {
 	return &s
 }
 
-// The following tests using actual test database
-func setup() (*manager, model.Database, error) {
+// The following tests using actual test database. setup hands back the
+// database's debug side, which the tests clean up through; the service only
+// ever sees model.Database.
+func setup() (*manager, model.DatabaseDebugger, error) {
 	db, err := testutil.SetupDB()
 	if err != nil {
 		return nil, nil, errors.Wrap(err)

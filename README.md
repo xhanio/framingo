@@ -176,6 +176,7 @@ Production-ready service implementations:
   - Migrations via `WithMigration(dir, version)`
   - Context-aware queries: `FromContext(ctx)` auto-extracts an active transaction
   - `Transaction(ctx, fn, opts...)` wraps `fn` in a TX with rollback-on-error, and nests on a transaction already in `ctx` via a savepoint instead of opening a second one
+  - Two contracts: `model.Database` (connections, queries, transactions) is what consumers hold; `model.DatabaseDebugger` (`Cleanup`, `Reload` — truncate, or drop and re-migrate) is only on the `db.Manager` itself, for tests and dev tooling
 
 - **[pubsub](pkg/services/pubsub/)** — Publish-subscribe primitive
   - Hierarchical topic subscriptions, non-self-delivery
