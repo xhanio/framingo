@@ -38,7 +38,11 @@ repo level       services/repository/                 owns: types/orm  types/rep
   by reaching past each other into the repo.
 - **The repo level owns persistence.** `services/repository/` implements
   every `types/repo/` interface over `types/orm/` models; SQL, GORM, and
-  transactions live there and nowhere else.
+  transactions live there and nowhere else, and rows become `entity`
+  values before they leave it. It decides nothing: what a list leaves out,
+  what may not be deleted, how a password is hashed are the services' rules
+  — the repository counts, filters by the options it is given, and stores
+  what it is handed.
 
 Design in the same shape: the types are each layer's contract, so **write
 `types/*` first** — the order is in [types.md](types.md).
@@ -85,7 +89,7 @@ still applies to them.
 | `types/api/` | Request/response DTOs, middleware config blocks, the project `api.Context` | Tags: `json`, `form`, `query`, `validate`. NO gorm tags |
 | `types/entity/` | Pure business domain models | Tags: `json` only. Returned from services to callers |
 | `types/model/` | Service **business** interfaces (`example.go` declares `model.Example`) | Imported by routers and other services so implementations stay package-private. Pairs with the service's own `Manager` — see below |
-| `types/orm/` | Database table models | Tags: `gorm` only. Must implement `TableName()`. Never exposed outside repository/services |
+| `types/orm/` | Database table models | Tags: `gorm` only. Must implement `TableName()`. Never exposed outside the repository: `types/repo` contracts speak `entity` |
 | `types/repo/` | Repository interfaces, one file per domain | Implemented by `services/repository/`; services depend on the interface, never a concrete repo |
 | `utils/` | Shared helpers | Stateless — with `utils/infra` as the one deliberate exception: process-wide facts (`Debug`, `StartTime`, `ConfigDir`, `EnvPrefix`) set once at startup by the server component |
 
@@ -115,8 +119,9 @@ The example's helloworld walks all of them in ~30 lines of real code:
 [types.md](types.md).
 
 **Data flows**: router binds `api.HelloWorldCreateRequest` → calls
-`model.Example` → service persists via `repo.HelloWorld`/`orm.HelloWorld` →
-returns `entity.HelloWorld` → router sends it as JSON.
+`model.Example` → service persists via `repo.HelloWorld` → repository
+writes `orm.HelloWorld` and returns `entity.HelloWorld` → service returns it
+→ router sends it as JSON.
 
 ## Server Component — Application Daemon
 

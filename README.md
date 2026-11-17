@@ -911,7 +911,7 @@ WantedBy=multi-user.target
 ## Best Practices
 
 1. **Architecture & Types**
-   - Separate `api/`, `entity/`, `orm/` and convert between them in the service layer
+   - Separate `api/`, `entity/`, `orm/`; handlers convert `api` ↔ `entity`, repositories convert `orm` → `entity`, and services stay entity-only
    - Pass required dependencies as constructor arguments, optional config as `Option`s
    - Keep business logic independent of HTTP and persistence
 

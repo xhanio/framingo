@@ -11,7 +11,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 )
 
-func (m *manager) CreateRole(ctx context.Context, opts entity.RoleCreateOptions) (*orm.Role, error) {
+func (m *manager) CreateRole(ctx context.Context, opts entity.RoleCreateOptions) (*entity.Role, error) {
 	tx := m.db.FromContext(ctx)
 	role := &orm.Role{
 		Name:        opts.Name,
@@ -25,7 +25,7 @@ func (m *manager) CreateRole(ctx context.Context, opts entity.RoleCreateOptions)
 			return nil, errors.DBFailed.Wrap(err)
 		}
 	}
-	return role, nil
+	return toRole(role), nil
 }
 
 func (m *manager) getRole(tx *gorm.DB, roleID int32) (*orm.Role, error) {
@@ -41,9 +41,12 @@ func (m *manager) getRole(tx *gorm.DB, roleID int32) (*orm.Role, error) {
 	return role, nil
 }
 
-func (m *manager) GetRole(ctx context.Context, roleID int32) (*orm.Role, error) {
-	tx := m.db.FromContext(ctx)
-	return m.getRole(tx, roleID)
+func (m *manager) GetRole(ctx context.Context, roleID int32) (*entity.Role, error) {
+	role, err := m.getRole(m.db.FromContext(ctx), roleID)
+	if err != nil {
+		return nil, err
+	}
+	return toRole(role), nil
 }
 
 func (m *manager) getRoleByName(tx *gorm.DB, roleName string) (*orm.Role, error) {
@@ -59,18 +62,25 @@ func (m *manager) getRoleByName(tx *gorm.DB, roleName string) (*orm.Role, error)
 	return role, nil
 }
 
-func (m *manager) GetRoleByName(ctx context.Context, roleName string) (*orm.Role, error) {
-	tx := m.db.FromContext(ctx)
-	return m.getRoleByName(tx, roleName)
+func (m *manager) GetRoleByName(ctx context.Context, roleName string) (*entity.Role, error) {
+	role, err := m.getRoleByName(m.db.FromContext(ctx), roleName)
+	if err != nil {
+		return nil, err
+	}
+	return toRole(role), nil
 }
 
-func (m *manager) ListRoles(ctx context.Context) ([]*orm.Role, error) {
+func (m *manager) ListRoles(ctx context.Context) ([]*entity.Role, error) {
 	tx := m.db.FromContext(ctx)
 	var roles []*orm.Role
 	if err := tx.Model(&orm.Role{}).Find(&roles).Error; err != nil {
 		return nil, errors.DBFailed.Wrapf(err, "failed to list roles")
 	}
-	return roles, nil
+	results := make([]*entity.Role, 0, len(roles))
+	for _, role := range roles {
+		results = append(results, toRole(role))
+	}
+	return results, nil
 }
 
 func roleUpdateOptionsToMap(opts entity.RoleUpdateOptions) (map[string]any, error) {
@@ -85,7 +95,7 @@ func roleUpdateOptionsToMap(opts entity.RoleUpdateOptions) (map[string]any, erro
 	return result, nil
 }
 
-func (m *manager) UpdateRole(ctx context.Context, roleID int32, opts entity.RoleUpdateOptions) (*orm.Role, error) {
+func (m *manager) UpdateRole(ctx context.Context, roleID int32, opts entity.RoleUpdateOptions) (*entity.Role, error) {
 	tx := m.db.FromContext(ctx)
 	var role *orm.Role
 	err := tx.Transaction(func(itx *gorm.DB) error {
@@ -106,23 +116,26 @@ func (m *manager) UpdateRole(ctx context.Context, roleID int32, opts entity.Role
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to update role %d", roleID)
 	}
-	return role, nil
+	return toRole(role), nil
 }
 
+// CountRoleUsers is how many users hold the role.
+func (m *manager) CountRoleUsers(ctx context.Context, roleName string) (int64, error) {
+	var n int64
+	tx := m.db.FromContext(ctx)
+	if err := tx.Model(&orm.User{}).Where("role = ?", roleName).Count(&n).Error; err != nil {
+		return 0, errors.DBFailed.Wrapf(err, "failed to count users of role %s", roleName)
+	}
+	return n, nil
+}
+
+// DeleteRole deletes the role and its permissions, in one transaction.
 func (m *manager) DeleteRole(ctx context.Context, roleID int32) error {
 	tx := m.db.FromContext(ctx)
 	err := tx.Transaction(func(itx *gorm.DB) error {
 		r, err := m.getRole(itx, roleID)
 		if err != nil {
 			return errors.Wrap(err)
-		}
-		// Check if the role has any users assigned to it
-		var users []*orm.User
-		if err := itx.Model(&users).Where("role = ?", r.Name).Find(&users).Error; err != nil {
-			return errors.DBFailed.Wrapf(err, "failed to get users for role %s", r.Name)
-		}
-		if len(users) > 0 {
-			return errors.BadRequest.Newf("Role %s has users assigned to it. Cannot delete it.", r.Name)
 		}
 		// Delete the role
 		if err := itx.Model(&r).Where("id = ?", roleID).Delete(&r).Error; err != nil {

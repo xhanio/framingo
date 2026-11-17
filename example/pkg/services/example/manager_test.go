@@ -20,7 +20,6 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
-	"github.com/xhanio/framingo/example/pkg/types/orm"
 )
 
 // With the gopro-injected ProjectPath in place, service names are
@@ -45,8 +44,8 @@ type fakeRepo struct {
 	repository.Repository
 }
 
-func (fakeRepo) CreateHelloWorld(_ context.Context, message string) (*orm.HelloWorld, error) {
-	return &orm.HelloWorld{ID: 1, Message: message}, nil
+func (fakeRepo) CreateHelloWorld(_ context.Context, message string) (*entity.HelloWorld, error) {
+	return &entity.HelloWorld{ID: 1, Message: message}, nil
 }
 
 // fakeMB embeds the nil interface the same way: SendRawMessage is the one

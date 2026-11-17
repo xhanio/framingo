@@ -43,11 +43,16 @@ func (m *manager) Create(ctx context.Context, opts entity.UserCreateOptions) (*e
 	if opts.Username == "" || opts.Password == "" {
 		return nil, errors.InvalidArgument.Newf("Invalid Arguments: Username, Password cannot be empty")
 	}
-	user, contact, err := m.repository.CreateUser(ctx, opts)
+	hash, err := hashPassword(opts.Password)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	return toEntity(user, contact), nil
+	opts.Password = "" // the repository stores the hash, never the password
+	user, err := m.repository.CreateUser(ctx, opts, hash)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	return user, nil
 }
 
 // GET /users/local-users
@@ -59,18 +64,11 @@ func (m *manager) List(ctx context.Context, opts entity.UserListOptions) ([]*ent
 	if err := validate.Struct(opts); err != nil {
 		return nil, errors.InvalidArgument.Wrap(err)
 	}
-	users, contacts, err := m.repository.ListUsers(ctx, opts)
+	users, err := m.repository.ListUsers(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	if len(users) != len(contacts) {
-		return nil, errors.Newf("failed to list users: contact number mismatch")
-	}
-	var results []*entity.User
-	for i, user := range users {
-		results = append(results, toEntity(user, contacts[i]))
-	}
-	return results, nil
+	return users, nil
 }
 
 // DEL /users/local-users
@@ -103,11 +101,11 @@ func (m *manager) Delete(ctx context.Context, userIDs []int32) error {
 
 // GET /users/local-users/{userID}
 func (m *manager) Get(ctx context.Context, userID int32) (*entity.User, error) {
-	user, contact, err := m.repository.GetUser(ctx, userID)
+	user, err := m.repository.GetUser(ctx, userID)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	return toEntity(user, contact), nil
+	return user, nil
 }
 
 // PATCH /users/local-users/{userID}
@@ -118,11 +116,11 @@ func (m *manager) Update(ctx context.Context, userID int32, opts entity.UserUpda
 	if userID == preset.AdminUserID && opts.Role != nil && *opts.Role != rbac.RoleAdmin {
 		return nil, errors.Forbidden.Newf("Cannot update the built-in admin role to non-admin.")
 	}
-	user, contact, err := m.repository.UpdateUser(ctx, userID, opts)
+	user, err := m.repository.UpdateUser(ctx, userID, opts)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	return toEntity(user, contact), nil
+	return user, nil
 }
 
 // PUT /users/local-users/{userID}/reset-password
@@ -131,17 +129,29 @@ func (m *manager) ResetPassword(ctx context.Context, isResetOwnPwd bool, userID 
 	if isResetOwnPwd && opts.OldPassword == "" {
 		return errors.InvalidArgument.Newf("Invalid Arguments: Old password length should not be empty")
 	}
+	// Hashed before the transaction opens, so bcrypt's time is not spent
+	// holding it.
+	newHash, err := hashPassword(opts.Password)
+	if err != nil {
+		return errors.Wrap(err)
+	}
 	msg := message.ResetLocalUserPassword{}
-	err := m.repository.Transaction(ctx, func(tctx context.Context) error {
-		user, _, err := m.repository.GetUser(tctx, userID)
+	err = m.repository.Transaction(ctx, func(tctx context.Context) error {
+		user, err := m.repository.GetUser(tctx, userID)
 		if err != nil {
 			return errors.Wrap(err)
 		}
-		if isResetOwnPwd && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(opts.OldPassword)) != nil {
-			return errors.Forbidden.Newf("Access Denied: Old password validation failed.")
+		if isResetOwnPwd {
+			hash, err := m.repository.GetUserPasswordHash(tctx, userID)
+			if err != nil {
+				return errors.Wrap(err)
+			}
+			if bcrypt.CompareHashAndPassword([]byte(hash), []byte(opts.OldPassword)) != nil {
+				return errors.Forbidden.Newf("Access Denied: Old password validation failed.")
+			}
 		}
 		msg.Username = user.Username
-		return m.repository.ResetUserPassword(tctx, userID, opts.Password)
+		return m.repository.SetUserPasswordHash(tctx, userID, newHash)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "failed to reset user password")
@@ -170,7 +180,7 @@ func (m *manager) ResetPassword(ctx context.Context, isResetOwnPwd bool, userID 
 
 // Validate the existance of the user with given username.
 func (m *manager) Validate(ctx context.Context, organization, username string) (bool, error) {
-	organizationID, err := m.repository.GetOrganizationID(ctx, organization)
+	organizationID, err := m.organizationID(ctx, organization)
 	if err != nil {
 		return false, errors.Unauthorized.Newf("Failed to validate username")
 	}
@@ -183,7 +193,7 @@ func (m *manager) Validate(ctx context.Context, organization, username string) (
 func (m *manager) Authenticate(ctx context.Context, organization, username, password string) (*entity.Credential, error) {
 	const authFailed = "Failed to auth user %s, username & password pair does not match any record"
 
-	organizationID, err := m.repository.GetOrganizationID(ctx, organization)
+	organizationID, err := m.organizationID(ctx, organization)
 	if err != nil {
 		// Result intentionally discarded: this runs for its cost, not its answer.
 		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
@@ -195,7 +205,13 @@ func (m *manager) Authenticate(ctx context.Context, organization, username, pass
 		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
-	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) != nil {
+	hash, err := m.repository.GetUserPasswordHash(ctx, user.ID)
+	if err != nil {
+		// Result intentionally discarded: this runs for its cost, not its answer.
+		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
+		return nil, errors.Unauthorized.Newf(authFailed, username)
+	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	return &entity.Credential{

@@ -30,10 +30,10 @@ the database.
 
 **Stay in your layer.** A service reaches down only to the repo level —
 `repository.Repository` / `repo.*` interfaces — and its currency is the
-service level's own types: it receives `orm` values at the repo boundary and
-maps them to `entity` right there (`business.go` below does exactly this);
-`orm` never travels further up, and `api` DTOs never come down — routers
-unpack those first. Peer services compose through `model.*` interfaces
+service level's own types: the `repo` contracts hand it entities — the
+repository maps its `orm` rows before they leave it — so a service never
+meets a GORM model, and `api` DTOs never come down either — routers unpack
+those first. Peer services compose through `model.*` interfaces
 (auth is built on `model.UserAuthN`), never by reaching into each other's
 persistence. And before writing the five files, write the contracts —
 `model.X`, the entities, the `repo`/`orm` pair if it persists: the order is
@@ -361,8 +361,8 @@ split table, monitor semantics, and the escalation ladder:
 The business method opens its own child span (handle-free — see
 [tracing.md](../pkgs/tracing.md) "Spans in App Code"; every return path
 must either `traceutil.Fail` or `span.End()`), reads auth state from the
-context, delegates persistence to the repository, maps ORM → entity, fires
-an event, and counts the call:
+context, delegates persistence to the repository — which hands back the
+entity — fires an event, and counts the call:
 
 ```go
 func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error) {
@@ -378,15 +378,9 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 	}
 	m.log.Infof("%s %s from %s", greeting, message, credential.UserName)
 
-	ormModel, err := m.repository.CreateHelloWorld(ctx, message)
+	result, err := m.repository.CreateHelloWorld(ctx, message)
 	if err != nil {
 		return nil, traceutil.Fail(span, errors.Wrap(err))
-	}
-	result := &entity.HelloWorld{
-		ID:        ormModel.ID,
-		Message:   ormModel.Message,
-		CreatedAt: ormModel.CreatedAt,
-		UpdatedAt: ormModel.UpdatedAt,
 	}
 	m.mb.SendRawMessage(ctx, m, "helloworld", result) // no return value — fire and forget
 	m.inst.hello.Add(ctx, 1)

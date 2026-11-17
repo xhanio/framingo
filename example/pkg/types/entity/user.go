@@ -9,6 +9,9 @@ type User struct {
 	Email          string `json:"email"`
 	Role           string `json:"role"`
 	ChangePassword bool   `json:"change_password"`
+	// What a credential is built from, kept out of the response body.
+	OrganizationID       int32 `json:"-"`
+	RequirePasswordReset bool  `json:"-"`
 }
 
 type UserCreateOptions struct {

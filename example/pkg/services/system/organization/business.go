@@ -20,7 +20,7 @@ func (m *manager) Get(ctx context.Context, organizationID int32) (*entity.Organi
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	return toEntity(organization), nil
+	return organization, nil
 }
 
 func (m *manager) Update(ctx context.Context, organizationID int32, opts entity.OrganizationUpdateOptions) error {

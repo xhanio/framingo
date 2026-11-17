@@ -25,18 +25,12 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 	}
 	m.log.Infof("%s %s from %s", greeting, message, credential.UserName)
 
-	ormModel, err := m.repository.CreateHelloWorld(ctx, message)
+	result, err := m.repository.CreateHelloWorld(ctx, message)
 	if err != nil {
 		return nil, traceutil.Fail(span, errors.Wrap(err))
 	}
-	m.log.Infof("saved helloworld message %s to database with ID: %d", message, ormModel.ID)
+	m.log.Infof("saved helloworld message %s to database with ID: %d", message, result.ID)
 
-	result := &entity.HelloWorld{
-		ID:        ormModel.ID,
-		Message:   ormModel.Message,
-		CreatedAt: ormModel.CreatedAt,
-		UpdatedAt: ormModel.UpdatedAt,
-	}
 	m.mb.SendRawMessage(ctx, m, "helloworld", result)
 	m.inst.hello.Add(ctx, 1)
 	span.End()

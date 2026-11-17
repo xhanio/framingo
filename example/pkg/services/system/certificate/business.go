@@ -23,12 +23,11 @@ func (m *manager) Import(ctx context.Context, opts entity.CertCreateOptions) (*e
 	if opts.Source != entity.CertSourceUser && opts.Source != entity.CertSourceFactory {
 		return nil, errors.InvalidArgument.Newf("Invalid source %s", opts.Source)
 	}
-	ormCertificate, err := m.repository.CreateCertificate(ctx, opts)
+	certificate, err := m.repository.CreateCertificate(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	certificate, err := toEntity(ormCertificate)
-	if err != nil {
+	if err := describe(certificate); err != nil {
 		return nil, errors.Wrap(err)
 	}
 	return certificate, nil
@@ -37,16 +36,13 @@ func (m *manager) Import(ctx context.Context, opts entity.CertCreateOptions) (*e
 // Issue a certificate signed by a CA
 func (m *manager) Issue(ctx context.Context, opts entity.CertIssueOptions) (*entity.Certificate, error) {
 	// Get the CA certificate
-	ormCA, err := m.repository.GetCertificate(ctx, opts.CAID)
+	ca, err := m.repository.GetCertificate(ctx, opts.CAID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get the CA certificate %d", opts.CAID)
 	}
 
-	// Decode the CA certificate
-	caCert, err := certutil.Decode(ormCA.CertBundle)
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
+	// The repository hands the bundle over decoded
+	caCert := ca.Bundle
 	if !caCert.IsCA() {
 		return nil, errors.BadRequest.Newf("The CA certificate %d is not a CA", opts.CAID)
 	}
@@ -84,32 +80,34 @@ func (m *manager) Issue(ctx context.Context, opts entity.CertIssueOptions) (*ent
 
 // Get the certificate with all parsed details
 func (m *manager) Get(ctx context.Context, certID int32) (*entity.Certificate, error) {
-	ormCert, err := m.repository.GetCertificate(ctx, certID)
+	cert, err := m.repository.GetCertificate(ctx, certID)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	entityCert, err := toEntity(ormCert)
-	if err != nil {
+	if err := describe(cert); err != nil {
 		return nil, errors.Wrap(err)
 	}
-	return entityCert, nil
+	return cert, nil
 }
 
 func (m *manager) List(ctx context.Context, opts entity.CertListOptions) ([]*entity.Certificate, error) {
-	ormCerts, err := m.repository.ListCertificates(ctx, opts)
+	certs, err := m.repository.ListCertificates(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-
-	var entityCerts []*entity.Certificate
-	for _, ormCert := range ormCerts {
-		entityCert, err := toEntity(ormCert)
-		if err != nil {
-			return nil, errors.Wrapf(err, "Failed to extract cert details for cert %s", ormCert.Name)
+	var listed []*entity.Certificate
+	for _, cert := range certs {
+		// The default CA is the system's own, the one Issue signs with; it
+		// is not listed, as Delete does not delete it.
+		if cert.Name == preset.CAName {
+			continue
 		}
-		entityCerts = append(entityCerts, entityCert)
+		if err := describe(cert); err != nil {
+			return nil, errors.Wrapf(err, "Failed to extract cert details for cert %s", cert.Name)
+		}
+		listed = append(listed, cert)
 	}
-	return entityCerts, nil
+	return listed, nil
 }
 
 func (m *manager) Delete(ctx context.Context, certIDs []int32) error {
@@ -183,7 +181,7 @@ func (m *manager) DefaultCA() (certutil.CABundle, error) {
 
 // Get the default CA from the database, if not found, generate it
 func (m *manager) defaultCA(ctx context.Context) (certutil.CABundle, error) {
-	ormDefaultCA, err := m.repository.GetCertificateByName(ctx, preset.CAName)
+	defaultCA, err := m.repository.GetCertificateByName(ctx, preset.CAName)
 	if err != nil {
 		if !errors.Is(err, errors.NotFound) {
 			return nil, errors.Wrap(err)
@@ -207,10 +205,6 @@ func (m *manager) defaultCA(ctx context.Context) (certutil.CABundle, error) {
 		}
 		return cm, nil
 	}
-	// Decode the default CA certificate bundle to get the CA bundle
-	caCert, err := certutil.Decode(ormDefaultCA.CertBundle)
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	return caCert.(certutil.CABundle), nil
+	// The repository hands the bundle over decoded
+	return defaultCA.Bundle.(certutil.CABundle), nil
 }

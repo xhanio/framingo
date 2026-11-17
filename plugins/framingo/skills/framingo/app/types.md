@@ -16,10 +16,10 @@ list grows with the app: the example adds three more.
 | `types/repo/` | repo | Repository interfaces, one file per domain — all implemented by `services/repository/` | Services, at their lower boundary |
 
 The layer column is a boundary rule, not a label: `api` DTOs stop at the
-router (services never see them), and `orm` models surface only at the repo
-boundary — a service maps `orm` → `entity` the moment data arrives
-(`business.go` in [services.md](services.md)), so nothing above the service
-level ever meets a GORM tag.
+router (services never see them), and `orm` models never leave the repo
+level — the repository maps each row to its `entity` before returning it,
+and the `repo` contracts speak entity only, so nothing above the repository
+ever meets a GORM tag.
 
 The example's grown categories:
 
@@ -42,8 +42,8 @@ order is:
 2. `types/entity/` — the domain shape the service will return
 3. `types/model/` — the service's business interface (what the router calls)
 4. `types/orm/` + `types/repo/` — the table model and the data-access contract
-5. Only then implement, bottom-up: the repository method, then the service
-   (mapping `orm` → `entity`), then the router (binding the DTO, calling
+5. Only then implement, bottom-up: the repository method (mapping `orm` →
+   `entity`), then the service, then the router (binding the DTO, calling
    `model.*`).
 
 That is exactly the helloworld trail below — every one of its types exists
@@ -81,14 +81,14 @@ func (HelloWorld) TableName() string { return "helloworld_messages" }
 
 // types/repo/example.go — the data-access contract
 type HelloWorld interface {
-	CreateHelloWorld(ctx context.Context, message string) (*orm.HelloWorld, error)
+	CreateHelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error)
 }
 ```
 
 **The flow**: the router binds `api.HelloWorldCreateRequest` → calls
 `model.Example` → the service calls `repo.HelloWorld` (through
-`repository.Repository`), which persists `orm.HelloWorld` → the service maps
-it to `entity.HelloWorld` and returns that.
+`repository.Repository`) → the repository persists `orm.HelloWorld`, maps
+it to `entity.HelloWorld` and returns that → the service returns it on.
 
 ## The two `api` packages
 

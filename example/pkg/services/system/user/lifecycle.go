@@ -16,13 +16,16 @@ func (m *manager) Init(ctx context.Context) error {
 	} else if !errors.Is(err, errors.NotFound) {
 		return errors.Wrap(err)
 	}
-	if _, _, err := m.repository.CreateUser(ctx, entity.UserCreateOptions{
+	hash, err := hashPassword(preset.AdminPassword)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	if _, err := m.repository.CreateUser(ctx, entity.UserCreateOptions{
 		OrganizationID:       preset.DefaultOrganizationID,
 		Username:             preset.AdminUsername,
-		Password:             preset.AdminPassword,
 		Role:                 rbac.RoleAdmin,
 		RequirePasswordReset: true,
-	}); err != nil {
+	}, hash); err != nil {
 		return errors.Wrap(err)
 	}
 	return nil

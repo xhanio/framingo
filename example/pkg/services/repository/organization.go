@@ -8,10 +8,9 @@ import (
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"
-	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
-func (m *manager) CreateOrganization(ctx context.Context, opts entity.OrganizationCreateOptions) (*orm.Organization, error) {
+func (m *manager) CreateOrganization(ctx context.Context, opts entity.OrganizationCreateOptions) (*entity.Organization, error) {
 	tx := m.db.FromContext(ctx)
 	organization := &orm.Organization{Name: opts.Name}
 	if err := tx.Create(&organization).Error; err != nil {
@@ -22,7 +21,7 @@ func (m *manager) CreateOrganization(ctx context.Context, opts entity.Organizati
 			return nil, errors.DBFailed.Wrap(err)
 		}
 	}
-	return organization, nil
+	return toOrganization(organization), nil
 }
 
 func (m *manager) getOrganization(tx *gorm.DB, organizationID int32) (*orm.Organization, error) {
@@ -38,15 +37,15 @@ func (m *manager) getOrganization(tx *gorm.DB, organizationID int32) (*orm.Organ
 	return organization, nil
 }
 
-func (m *manager) GetOrganization(ctx context.Context, organizationID int32) (*orm.Organization, error) {
-	tx := m.db.FromContext(ctx)
-	return m.getOrganization(tx, organizationID)
+func (m *manager) GetOrganization(ctx context.Context, organizationID int32) (*entity.Organization, error) {
+	organization, err := m.getOrganization(m.db.FromContext(ctx), organizationID)
+	if err != nil {
+		return nil, err
+	}
+	return toOrganization(organization), nil
 }
 
 func (m *manager) GetOrganizationID(ctx context.Context, organizationName string) (int32, error) {
-	if organizationName == preset.DefaultOrganizationName {
-		return preset.DefaultOrganizationID, nil
-	}
 	tx := m.db.FromContext(ctx)
 	var org *orm.Organization
 	if err := tx.Model(&org).Where("name = ?", organizationName).First(&org).Error; err != nil {
@@ -60,7 +59,7 @@ func (m *manager) GetOrganizationID(ctx context.Context, organizationName string
 	return org.ID, nil
 }
 
-func (m *manager) UpdateOrganization(ctx context.Context, organizationID int32, opts entity.OrganizationUpdateOptions) (*orm.Organization, error) {
+func (m *manager) UpdateOrganization(ctx context.Context, organizationID int32, opts entity.OrganizationUpdateOptions) (*entity.Organization, error) {
 	tx := m.db.FromContext(ctx)
 	var organization *orm.Organization
 	err := tx.Transaction(func(itx *gorm.DB) error {
@@ -83,7 +82,7 @@ func (m *manager) UpdateOrganization(ctx context.Context, organizationID int32, 
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to update organization %d", organizationID)
 	}
-	return organization, nil
+	return toOrganization(organization), nil
 }
 
 func (m *manager) DeleteOrganization(ctx context.Context, organizationID int32) error {

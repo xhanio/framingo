@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/testutil"
@@ -12,6 +14,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"
+	"github.com/xhanio/framingo/example/pkg/types/preset"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
@@ -219,4 +222,34 @@ func TestSetPermission(t *testing.T) {
 		t.Errorf("Expected number of roles: got = %v; expected %v", len(perms), 1)
 	}
 
+}
+
+// A role a user still holds is not deleted. That is the role service's rule;
+// the repository only counts the holders.
+func TestDeleteRefusesARoleInUse(t *testing.T) {
+	m, db, err := setup()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Cleanup(true)) }()
+	ctx := context.Background()
+
+	require.NoError(t, m.Create(ctx, createOpts))
+	role, err := m.GetByName(ctx, createOpts.Name)
+	require.NoError(t, err)
+	holder, err := m.repository.CreateUser(ctx, entity.UserCreateOptions{
+		OrganizationID: preset.DefaultOrganizationID,
+		Username:       "holder",
+		Role:           createOpts.Name,
+	}, "hash")
+	require.NoError(t, err)
+
+	err = m.Delete(ctx, role.ID)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, errors.BadRequest), "got %v", err)
+	_, err = m.GetByName(ctx, createOpts.Name)
+	assert.NoError(t, err, "a refused delete leaves the role")
+
+	require.NoError(t, m.repository.DeleteUsers(ctx, []int32{holder.ID}))
+	require.NoError(t, m.Delete(ctx, role.ID))
+	_, err = m.GetByName(ctx, createOpts.Name)
+	assert.True(t, errors.Is(err, errors.NotFound), "got %v", err)
 }

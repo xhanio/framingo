@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	"github.com/xhanio/errors"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 )
 
-func (m *manager) CreateUser(ctx context.Context, opts entity.UserCreateOptions) (*orm.User, *orm.Contact, error) {
+func (m *manager) CreateUser(ctx context.Context, opts entity.UserCreateOptions, passwordHash string) (*entity.User, error) {
 	tx := m.db.FromContext(ctx)
 	var user *orm.User
 	var contact *orm.Contact
@@ -35,14 +34,10 @@ func (m *manager) CreateUser(ctx context.Context, opts entity.UserCreateOptions)
 			}
 		}
 		// Create user record
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(opts.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return errors.Wrap(err)
-		}
 		user = &orm.User{
 			OrganizationID:       opts.OrganizationID,
 			Username:             opts.Username,
-			Password:             string(hashedPassword),
+			Password:             passwordHash,
 			Role:                 opts.Role,
 			ContactID:            contact.ID,
 			Expired:              opts.ChangePassword,
@@ -59,9 +54,9 @@ func (m *manager) CreateUser(ctx context.Context, opts entity.UserCreateOptions)
 		return nil
 	})
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to create user")
+		return nil, errors.Wrapf(err, "failed to create user")
 	}
-	return user, contact, nil
+	return toUser(user, contact), nil
 }
 
 func (m *manager) getUser(tx *gorm.DB, userID int32) (*orm.User, *orm.Contact, error) {
@@ -91,12 +86,15 @@ func (m *manager) getUser(tx *gorm.DB, userID int32) (*orm.User, *orm.Contact, e
 	return user, contact, nil
 }
 
-func (m *manager) GetUser(ctx context.Context, userID int32) (*orm.User, *orm.Contact, error) {
-	tx := m.db.FromContext(ctx)
-	return m.getUser(tx, userID)
+func (m *manager) GetUser(ctx context.Context, userID int32) (*entity.User, error) {
+	user, contact, err := m.getUser(m.db.FromContext(ctx), userID)
+	if err != nil {
+		return nil, err
+	}
+	return toUser(user, contact), nil
 }
 
-func (m *manager) ListUsers(ctx context.Context, opts entity.UserListOptions) ([]*orm.User, []*orm.Contact, error) {
+func (m *manager) ListUsers(ctx context.Context, opts entity.UserListOptions) ([]*entity.User, error) {
 	tx := m.db.FromContext(ctx)
 	var users []*orm.User
 	var contacts []*orm.Contact
@@ -139,9 +137,13 @@ func (m *manager) ListUsers(ctx context.Context, opts entity.UserListOptions) ([
 		return nil
 	})
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to list users")
+		return nil, errors.Wrapf(err, "failed to list users")
 	}
-	return users, contacts, nil
+	results := make([]*entity.User, 0, len(users))
+	for i, user := range users {
+		results = append(results, toUser(user, contacts[i]))
+	}
+	return results, nil
 }
 
 func (m *manager) deleteUser(tx *gorm.DB, userID int32) error {
@@ -213,11 +215,6 @@ func (m *manager) getContact(tx *gorm.DB, contactID int32) (*orm.Contact, error)
 	return contact, nil
 }
 
-func (m *manager) GetContact(ctx context.Context, contactID int32) (*orm.Contact, error) {
-	tx := m.db.FromContext(ctx)
-	return m.getContact(tx, contactID)
-}
-
 func (m *manager) updateUser(tx *gorm.DB, user *orm.User, updateMap map[string]any) error {
 	if err := tx.Model(&user).Select("username", "role", "expired").Updates(updateMap).Error; err != nil {
 		switch err {
@@ -249,7 +246,7 @@ func updateOptionsToMap(opts entity.UserUpdateOptions) (map[string]any, error) {
 	return result, nil
 }
 
-func (m *manager) UpdateUser(ctx context.Context, userID int32, opts entity.UserUpdateOptions) (*orm.User, *orm.Contact, error) {
+func (m *manager) UpdateUser(ctx context.Context, userID int32, opts entity.UserUpdateOptions) (*entity.User, error) {
 	tx := m.db.FromContext(ctx)
 	var user *orm.User
 	var contact *orm.Contact
@@ -279,23 +276,21 @@ func (m *manager) UpdateUser(ctx context.Context, userID int32, opts entity.User
 		return nil
 	})
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to update user %d", userID)
+		return nil, errors.Wrapf(err, "failed to update user %d", userID)
 	}
-	return user, contact, nil
+	return toUser(user, contact), nil
 }
 
-func (m *manager) ResetUserPassword(ctx context.Context, userID int32, plainPassword string) error {
+// SetUserPasswordHash stores the hash it is given, and clears the
+// password-reset requirement.
+func (m *manager) SetUserPasswordHash(ctx context.Context, userID int32, passwordHash string) error {
 	tx := m.db.FromContext(ctx)
 	err := tx.Transaction(func(itx *gorm.DB) error {
 		user, _, err := m.getUser(itx, userID)
 		if err != nil {
 			return errors.Wrap(err)
 		}
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(plainPassword), bcrypt.DefaultCost)
-		if err != nil {
-			return errors.Internal.Wrap(err)
-		}
-		user.Password = string(hashedPassword)
+		user.Password = passwordHash
 		user.RequirePasswordReset = false
 		if err := itx.Save(&user).Error; err != nil {
 			return errors.DBFailed.Wrap(err)
@@ -303,12 +298,12 @@ func (m *manager) ResetUserPassword(ctx context.Context, userID int32, plainPass
 		return nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to reset password for user %d", userID)
+		return errors.Wrapf(err, "failed to set password for user %d", userID)
 	}
 	return nil
 }
 
-func (m *manager) GetUserByName(ctx context.Context, organizationID int32, username string) (*orm.User, error) {
+func (m *manager) GetUserByName(ctx context.Context, organizationID int32, username string) (*entity.User, error) {
 	var user *orm.User
 	tx := m.db.FromContext(ctx)
 	if err := tx.Model(&user).Where("username = ? AND organization_id = ?", username, organizationID).First(&user).Error; err != nil {
@@ -319,5 +314,25 @@ func (m *manager) GetUserByName(ctx context.Context, organizationID int32, usern
 			return nil, errors.DBFailed.Wrap(err)
 		}
 	}
-	return user, nil
+	contact, err := m.getContact(tx, user.ContactID)
+	if err != nil && !errors.Is(err, errors.NotFound) {
+		return nil, errors.Wrap(err)
+	}
+	return toUser(user, contact), nil
+}
+
+// GetUserPasswordHash reads the stored hash alone: entity.User does not carry
+// it, so it never reaches a response.
+func (m *manager) GetUserPasswordHash(ctx context.Context, userID int32) (string, error) {
+	var user orm.User
+	tx := m.db.FromContext(ctx)
+	if err := tx.Model(&orm.User{}).Select("password").Where("id = ?", userID).First(&user).Error; err != nil {
+		switch err {
+		case gorm.ErrRecordNotFound:
+			return "", errors.NotFound.Wrapf(err, "user %d not found", userID)
+		default:
+			return "", errors.DBFailed.Wrap(err)
+		}
+	}
+	return user.Password, nil
 }

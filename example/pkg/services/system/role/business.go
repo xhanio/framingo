@@ -18,15 +18,11 @@ func (m *manager) Create(ctx context.Context, opts entity.RoleCreateOptions) err
 }
 
 func (m *manager) GetByName(ctx context.Context, roleName string) (*entity.Role, error) {
-	ormRole, err := m.repository.GetRoleByName(ctx, roleName)
+	role, err := m.repository.GetRoleByName(ctx, roleName)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	return &entity.Role{
-		ID:          ormRole.ID,
-		Name:        ormRole.Name,
-		Description: ormRole.Description,
-	}, nil
+	return role, nil
 }
 
 func (m *manager) Update(ctx context.Context, roleID int32, opts entity.RoleUpdateOptions) error {
@@ -37,23 +33,32 @@ func (m *manager) Update(ctx context.Context, roleID int32, opts entity.RoleUpda
 }
 
 func (m *manager) List(ctx context.Context) ([]*entity.Role, error) {
-	ormRoles, err := m.repository.ListRoles(ctx)
+	roles, err := m.repository.ListRoles(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err)
-	}
-	var roles []*entity.Role
-	for _, ormRole := range ormRoles {
-		roles = append(roles, &entity.Role{
-			ID:          ormRole.ID,
-			Name:        ormRole.Name,
-			Description: ormRole.Description,
-		})
 	}
 	return roles, nil
 }
 
+// Delete refuses a role still held by a user. The check and the delete share
+// one transaction, though that does not stop another transaction assigning
+// the role meanwhile.
 func (m *manager) Delete(ctx context.Context, roleID int32) error {
-	if err := m.repository.DeleteRole(ctx, roleID); err != nil {
+	err := m.repository.Transaction(ctx, func(tctx context.Context) error {
+		role, err := m.repository.GetRole(tctx, roleID)
+		if err != nil {
+			return errors.Wrap(err)
+		}
+		users, err := m.repository.CountRoleUsers(tctx, role.Name)
+		if err != nil {
+			return errors.Wrap(err)
+		}
+		if users > 0 {
+			return errors.BadRequest.Newf("Role %s has users assigned to it. Cannot delete it.", role.Name)
+		}
+		return m.repository.DeleteRole(tctx, roleID)
+	})
+	if err != nil {
 		return errors.Wrap(err)
 	}
 	return nil

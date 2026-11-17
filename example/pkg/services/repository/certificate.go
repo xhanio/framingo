@@ -10,10 +10,9 @@ import (
 
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/orm"
-	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
-func (m *manager) CreateCertificate(ctx context.Context, opts entity.CertCreateOptions) (*orm.Certificate, error) {
+func (m *manager) CreateCertificate(ctx context.Context, opts entity.CertCreateOptions) (*entity.Certificate, error) {
 	bundleBytes, err := certutil.Encode(opts.Bundle)
 	if err != nil {
 		return nil, errors.Wrap(err)
@@ -36,7 +35,7 @@ func (m *manager) CreateCertificate(ctx context.Context, opts entity.CertCreateO
 			return nil, errors.DBFailed.Wrap(err)
 		}
 	}
-	return cert, nil
+	return toCertificate(cert)
 }
 
 func (m *manager) getCertificate(tx *gorm.DB, certID int32) (*orm.Certificate, error) {
@@ -52,12 +51,15 @@ func (m *manager) getCertificate(tx *gorm.DB, certID int32) (*orm.Certificate, e
 	return cert, nil
 }
 
-func (m *manager) GetCertificate(ctx context.Context, certID int32) (*orm.Certificate, error) {
-	tx := m.db.FromContext(ctx)
-	return m.getCertificate(tx, certID)
+func (m *manager) GetCertificate(ctx context.Context, certID int32) (*entity.Certificate, error) {
+	cert, err := m.getCertificate(m.db.FromContext(ctx), certID)
+	if err != nil {
+		return nil, err
+	}
+	return toCertificate(cert)
 }
 
-func (m *manager) GetCertificateByName(ctx context.Context, certName string) (*orm.Certificate, error) {
+func (m *manager) GetCertificateByName(ctx context.Context, certName string) (*entity.Certificate, error) {
 	tx := m.db.FromContext(ctx)
 	var cert *orm.Certificate
 	if err := tx.Model(&orm.Certificate{}).Where("name = ?", certName).First(&cert).Error; err != nil {
@@ -68,10 +70,10 @@ func (m *manager) GetCertificateByName(ctx context.Context, certName string) (*o
 			return nil, errors.DBFailed.Wrap(err)
 		}
 	}
-	return cert, nil
+	return toCertificate(cert)
 }
 
-func (m *manager) ListCertificates(ctx context.Context, opts entity.CertListOptions) ([]*orm.Certificate, error) {
+func (m *manager) ListCertificates(ctx context.Context, opts entity.CertListOptions) ([]*entity.Certificate, error) {
 	tx := m.db.FromContext(ctx)
 	var certs []*orm.Certificate
 
@@ -86,13 +88,18 @@ func (m *manager) ListCertificates(ctx context.Context, opts entity.CertListOpti
 	if opts.IsLocal {
 		query = query.Where("is_local = ?", true)
 	}
-	// Exclude the default CA
-	query = query.Where("name != ?", preset.CAName)
-
 	if err := query.Find(&certs).Error; err != nil {
 		return nil, errors.DBFailed.Wrapf(err, "failed to list certificates")
 	}
-	return certs, nil
+	results := make([]*entity.Certificate, 0, len(certs))
+	for _, cert := range certs {
+		c, err := toCertificate(cert)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, c)
+	}
+	return results, nil
 }
 
 func (m *manager) UpdateCertificateComments(ctx context.Context, certID int32, comments string) error {
