@@ -1,5 +1,9 @@
 package orm
 
+import form "github.com/xhanio/framingo/pkg/types/orm"
+
+var _ form.Record[int32] = User{}
+
 type User struct {
 	BaseModel
 	Username             string `gorm:"column:username;type:character varying(250);not null"`

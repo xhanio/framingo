@@ -1,5 +1,9 @@
 package orm
 
+import form "github.com/xhanio/framingo/pkg/types/orm"
+
+var _ form.Record[int32] = Contact{}
+
 type Contact struct {
 	BaseModel
 	Email          string `gorm:"column:email;type:varchar(500)"`

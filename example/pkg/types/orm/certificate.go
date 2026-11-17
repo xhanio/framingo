@@ -1,5 +1,9 @@
 package orm
 
+import form "github.com/xhanio/framingo/pkg/types/orm"
+
+var _ form.Record[int32] = Certificate{}
+
 type Certificate struct {
 	BaseModel
 	Name       string `gorm:"column:name;type:character varying(250);not null"`
