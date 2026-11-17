@@ -11,6 +11,9 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 )
 
+// manager has no lifecycle of its own: to the supervisor it is a name and an
+// edge to the database, whose probes already report health to everything
+// downstream - there is nothing for the repository to probe on top.
 type manager struct {
 	name string
 	log  log.Logger

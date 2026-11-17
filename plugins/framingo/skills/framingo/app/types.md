@@ -13,7 +13,7 @@ list grows with the app: the example adds three more.
 | `types/entity/` | service | Domain entities (business data, no ORM tags) — what services hand upward | Services; routers serialize them as responses |
 | `types/model/` | service | Service business interfaces (`model.Example` — methods + `common.Service`, no lifecycle) | Routers and other services — see [services.md](services.md) |
 | `types/orm/` | repo | DB models implementing the framework's ORM base interfaces ([types.md](../pkgs/types.md)) | `services/repository/`, [db.md](../pkgs/db.md) |
-| `types/repo/` | repo | Repository interfaces, one file per domain — all implemented by `services/repository/` | Services, at their lower boundary |
+| `types/repo/` | repo | Repository interfaces, one file per domain — all implemented by `services/repository/`, each embedding `repo.Repository` (`common.Service` + `Transaction`) | Services, at their lower boundary; a service opens a transaction through a contract it holds |
 
 The layer column is a boundary rule, not a label: `api` DTOs stop at the
 router (services never see them), and `orm` models never leave the repo

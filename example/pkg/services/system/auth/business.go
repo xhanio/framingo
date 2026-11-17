@@ -206,6 +206,36 @@ func (m *manager) Logout(ctx context.Context, credential *entity.Credential) boo
 	return len(leases) > 0
 }
 
+// revokeLocalUsers ends every session held by the given local users and
+// reports how many it ended. It matches on the user ID, not on
+// Credential.UID: the UID is built from the organization and user names, so
+// it misses a renamed user and cannot be rebuilt from an ID alone.
+func (m *manager) revokeLocalUsers(userIDs ...int32) int {
+	ids := make(map[int32]struct{}, len(userIDs))
+	for _, id := range userIDs {
+		ids[id] = struct{}{}
+	}
+	// Collect the leases under the lock, cancel them after releasing it; each
+	// lease's OnCancel takes the lock to unindex its session.
+	m.RLock()
+	var leases []lease.Lease
+	for _, session := range m.sessions {
+		cred := session.Credential
+		if cred == nil || cred.Source != preset.AuthSourceLocalUser {
+			continue
+		}
+		if _, ok := ids[cred.UserID]; ok {
+			leases = append(leases, session.Lease)
+		}
+	}
+	m.RUnlock()
+
+	for _, l := range leases {
+		l.Cancel()
+	}
+	return len(leases)
+}
+
 // // PAM related
 // func (m *manager) Validate(ctx context.Context, organization, username string) (bool, error) {
 // 	ok, err := m.um.Validate(ctx, organization, username)

@@ -57,26 +57,19 @@ func (m *manager) Delete(ctx context.Context, userIDs []int32) error {
 	if sliceutil.In(preset.AdminUserID, userIDs...) {
 		return errors.Forbidden.Newf("Cannot delete system built-in default admin user")
 	}
-	msg := message.DeleteLocalUsers{Usernames: []string{}}
 	err := m.repository.Transaction(ctx, func(tctx context.Context) error {
 		for _, userID := range userIDs {
-			user, err := m.Get(tctx, userID)
-			if err != nil {
-				return errors.Wrap(err)
-			}
 			if err := m.repository.DeleteUser(tctx, userID); err != nil {
 				return errors.Wrap(err)
 			}
-			msg.Usernames = append(msg.Usernames, user.Username)
 		}
 		return nil
 	})
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	if m.sender != nil {
-		m.sender.SendMessage(ctx, m, msg)
-	}
+	// the auth service ends the deleted users' sessions on this
+	m.publish(ctx, message.LocalUsersDeleted{UserIDs: userIDs})
 	return nil
 }
 
@@ -97,11 +90,26 @@ func (m *manager) Update(ctx context.Context, userID int32, opts entity.UserUpda
 	if userID == preset.AdminUserID && opts.Role != nil && *opts.Role != rbac.RoleAdmin {
 		return nil, errors.Forbidden.Newf("Cannot update the built-in admin role to non-admin.")
 	}
-	user, err := m.repository.UpdateUser(ctx, userID, opts)
+	var before, after *entity.User
+	err := m.repository.Transaction(ctx, func(tctx context.Context) error {
+		var err error
+		if before, err = m.repository.GetUser(tctx, userID); err != nil {
+			return errors.Wrap(err)
+		}
+		if after, err = m.repository.UpdateUser(tctx, userID, opts); err != nil {
+			return errors.Wrap(err)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	return user, nil
+	// A session's credential carries the username and role it was issued
+	// with; once either changes, the auth service ends those sessions.
+	if before.Username != after.Username || before.Role != after.Role {
+		m.publish(ctx, message.LocalUserIdentityChanged{UserID: userID})
+	}
+	return after, nil
 }
 
 // PUT /users/local-users/{userID}/reset-password
@@ -116,12 +124,7 @@ func (m *manager) ResetPassword(ctx context.Context, isResetOwnPwd bool, userID 
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	msg := message.ResetLocalUserPassword{}
 	err = m.repository.Transaction(ctx, func(tctx context.Context) error {
-		user, err := m.repository.GetUser(tctx, userID)
-		if err != nil {
-			return errors.Wrap(err)
-		}
 		if isResetOwnPwd {
 			hash, err := m.repository.GetUserPasswordHash(tctx, userID)
 			if err != nil {
@@ -131,16 +134,13 @@ func (m *manager) ResetPassword(ctx context.Context, isResetOwnPwd bool, userID 
 				return errors.Forbidden.Newf("Access Denied: Old password validation failed.")
 			}
 		}
-		msg.Username = user.Username
 		return m.repository.SetUserPasswordHash(tctx, userID, newHash)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "failed to reset user password")
 	}
-	// Send event to auth service to logout the user's active sessions
-	if m.sender != nil {
-		m.sender.SendMessage(ctx, m, msg)
-	}
+	// the auth service ends the user's sessions on this
+	m.publish(ctx, message.LocalUserPasswordReset{UserID: userID})
 	return nil
 }
 

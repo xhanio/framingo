@@ -23,19 +23,17 @@ type router struct {
 
 	um model.User
 	rm model.Role
-	am model.Auth
 }
 
-func New(um model.User, rm model.Role, am model.Auth, log log.Logger) fapi.Router {
-	return newRouter(um, rm, am, log)
+func New(um model.User, rm model.Role, log log.Logger) fapi.Router {
+	return newRouter(um, rm, log)
 }
 
 // newRouter returns the concrete router, the form package tests construct.
-func newRouter(um model.User, rm model.Role, am model.Auth, log log.Logger) *router {
+func newRouter(um model.User, rm model.Role, log log.Logger) *router {
 	r := &router{
 		um:  um,
 		rm:  rm,
-		am:  am,
 		log: log,
 	}
 	r.name = nameutil.Name(r)
@@ -50,7 +48,6 @@ func (r *router) Dependencies() []common.Service {
 	return []common.Service{
 		r.um,
 		r.rm,
-		r.am,
 	}
 }
 

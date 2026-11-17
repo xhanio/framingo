@@ -7,6 +7,7 @@ import (
 )
 
 type Role interface {
+	Repository
 	CreateRole(ctx context.Context, opts entity.RoleCreateOptions) (*entity.Role, error)
 	GetRole(ctx context.Context, roleID int32) (*entity.Role, error)
 	GetRoleByName(ctx context.Context, roleName string) (*entity.Role, error)

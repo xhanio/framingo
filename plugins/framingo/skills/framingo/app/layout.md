@@ -90,7 +90,7 @@ still applies to them.
 | `types/entity/` | Pure business domain models | Tags: `json` only. Returned from services to callers |
 | `types/model/` | Service **business** interfaces (`example.go` declares `model.Example`) | Imported by routers and other services so implementations stay package-private. Pairs with the service's own `Manager` — see below |
 | `types/orm/` | Database table models | Tags: `gorm` only. Must implement `TableName()`. Never exposed outside the repository: `types/repo` contracts speak `entity` |
-| `types/repo/` | Repository interfaces, one file per domain | Implemented by `services/repository/`; services depend on the interface, never a concrete repo |
+| `types/repo/` | Repository interfaces, one file per domain | Implemented by `services/repository/`; services depend on the interface, never a concrete repo. Each embeds `repo.Repository` — `common.Service` plus `Transaction` — so a service opens a unit of work through the contract, never through the database |
 | `utils/` | Shared helpers | Stateless — with `utils/infra` as the one deliberate exception: process-wide facts (`Debug`, `StartTime`, `ConfigDir`, `EnvPrefix`) set once at startup by the server component |
 
 Categories are not a closed set: the example grew `types/message/`,

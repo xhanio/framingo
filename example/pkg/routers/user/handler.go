@@ -8,7 +8,6 @@ import (
 
 	"github.com/xhanio/framingo/example/pkg/types/api"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
-	"github.com/xhanio/framingo/example/pkg/types/preset"
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
@@ -147,30 +146,11 @@ func (r *router) Update(c api.Context) error {
 			return errors.Wrap(err)
 		}
 	}
-	before, err := r.um.Get(c, userID)
-	if err != nil {
-		return errors.Wrap(err)
-	}
-	if opts.Username != nil && *opts.Username != before.Username {
-		cred := &entity.Credential{
-			Source:           preset.AuthSourceLocalUser,
-			UserName:         before.Username,
-			OrganizationName: preset.DefaultOrganizationName,
-		}
-		if r.am.HasSession(c, cred) {
-			return errors.BadRequest.Newf("cannot update username: user has alive sessions")
-		}
-	}
+	// A rename or a role change ends the user's sessions: the user service
+	// publishes the change and the auth service acts on it.
 	user, err := r.um.Update(c, userID, opts)
 	if err != nil {
 		return errors.Wrap(err)
-	}
-	if opts.Role != nil && *opts.Role != before.Role {
-		r.am.Logout(c, &entity.Credential{
-			Source:           preset.AuthSourceLocalUser,
-			UserName:         user.Username,
-			OrganizationName: preset.DefaultOrganizationName,
-		})
 	}
 	return c.JSON(http.StatusOK, user)
 }

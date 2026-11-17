@@ -321,17 +321,21 @@ them from the manager.
 ## Health Probes
 
 Implement `common.Liveness`/`common.Readiness` when the service has
-something real to report — the repository is the worked example
-(`services/repository/health.go`, interface halves declared in its
-`model.go` under a `// health.go` comment):
+something real to report of its own — state it holds, a connection it owns.
+A service that only fronts another needs neither: the repository probes
+nothing, because the database it holds is a dependency, and its probes
+already roll up into everything downstream. The framework's database
+manager is the worked example (`pkg/services/db/health.go`, interface halves
+declared in its `model.go`):
 
 ```go
 // Alive: the service's own wiring ONLY. A liveness failure makes the
-// supervisor restart this service, and no repository restart fixes an
-// unreachable database - that is Ready's story.
+// supervisor restart this service - Init reconnects, so a missing handle is
+// exactly what a restart fixes - but no restart of this client raises a
+// database server: that is Ready's story.
 func (m *manager) Alive(_ context.Context) error {
-	if m.db == nil || m.db.DB() == nil {
-		return errors.Newf("repository has no database handle")
+	if m.sqlDB == nil {
+		return errors.Newf("database %s has no connection handle", m.Name())
 	}
 	return nil
 }
@@ -339,12 +343,12 @@ func (m *manager) Alive(_ context.Context) error {
 // Ready: "can it serve right now" - derive from the caller's context,
 // capping it, never fabricating a fresh one.
 func (m *manager) Ready(ctx context.Context) error {
-	if m.db == nil || m.db.DB() == nil {
-		return errors.Newf("repository has no database handle")
+	if m.sqlDB == nil {
+		return errors.Newf("database %s has no connection handle", m.Name())
 	}
 	ctx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
 	defer cancel()
-	if err := m.db.DB().PingContext(ctx); err != nil {
+	if err := m.sqlDB.PingContext(ctx); err != nil {
 		return errors.Wrapf(err, "database ping failed")
 	}
 	return nil

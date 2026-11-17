@@ -33,7 +33,7 @@ func (m *manager) initAPI() error {
 		exampleRouter.New(m.example, m.log),
 		healthRouter.New(m.services, m.log),
 		authRouter.New(m.auth, m.role, m.log),
-		userRouter.New(m.user, m.role, m.auth, m.log),
+		userRouter.New(m.user, m.role, m.log),
 		roleRouter.New(m.role, m.log),
 		certRouter.New(m.certificate, m.log),
 		messagebusRouter.New(m.messagebus, m.log),

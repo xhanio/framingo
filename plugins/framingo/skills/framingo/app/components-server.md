@@ -171,7 +171,9 @@ func (m *manager) initServices() error {
 
 	/* init system level services */
 
-	m.user = user.New(m.repository, user.WithLogger(m.log))
+	// the user service publishes the account changes the auth service ends
+	// sessions on
+	m.user = user.New(m.platform, m.repository, user.WithLogger(m.log))
 	m.role = role.New(m.repository, role.WithLogger(m.log))
 	m.organization = organization.New(m.repository, organization.WithLogger(m.log))
 	m.certificate = certificate.New(m.repository, certificate.WithLogger(m.log))
@@ -384,7 +386,7 @@ func (m *manager) initAPI() error {
 		exampleRouter.New(m.example, m.log),
 		healthRouter.New(m.services, m.log), // /healthz + /readyz on the health listener
 		authRouter.New(m.auth, m.role, m.log),
-		userRouter.New(m.user, m.role, m.auth, m.log),
+		userRouter.New(m.user, m.role, m.log),
 		roleRouter.New(m.role, m.log),
 		certRouter.New(m.certificate, m.log),
 		messagebusRouter.New(m.messagebus, m.log),

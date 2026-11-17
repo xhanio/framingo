@@ -1,20 +1,13 @@
 package repository
 
 import (
-	"context"
-	"database/sql"
-
-	"github.com/xhanio/framingo/pkg/types/common"
-
 	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
+// Repository is the one instance behind every repo contract. Its Name,
+// Dependencies and Transaction come with each contract, through the
+// repo.Repository they all embed.
 type Repository interface {
-	common.Service
-	// health.go
-	common.Readiness
-	common.Liveness
-	Transaction(ctx context.Context, fn func(context.Context) error, opts ...*sql.TxOptions) error
 	repo.User
 	repo.Organization
 	repo.Role

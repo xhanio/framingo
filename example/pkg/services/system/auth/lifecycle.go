@@ -9,9 +9,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 
-	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/message"
-	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
 func (m *manager) Info(w io.Writer, debug bool) {
@@ -51,24 +49,17 @@ func (m *manager) Info(w io.Writer, debug bool) {
 	t.Flush()
 }
 
+// HandleMessage ends the sessions of local users whose account changed under
+// them: a session must not outlive the deletion, password or identity it was
+// issued against.
 func (m *manager) HandleMessage(ctx context.Context, e common.Message) error {
 	switch evt := e.(type) {
-	case message.DeleteLocalUsers:
-		for _, username := range evt.Usernames {
-			cred := &entity.Credential{
-				Source:           preset.AuthSourceLocalUser,
-				UserName:         username,
-				OrganizationName: preset.DefaultOrganizationName,
-			}
-			m.Logout(ctx, cred)
-		}
-	case message.ResetLocalUserPassword:
-		cred := &entity.Credential{
-			Source:           preset.AuthSourceLocalUser,
-			UserName:         evt.Username,
-			OrganizationName: preset.DefaultOrganizationName,
-		}
-		m.Logout(ctx, cred)
+	case message.LocalUsersDeleted:
+		m.revokeLocalUsers(evt.UserIDs...)
+	case message.LocalUserPasswordReset:
+		m.revokeLocalUsers(evt.UserID)
+	case message.LocalUserIdentityChanged:
+		m.revokeLocalUsers(evt.UserID)
 	}
 	return nil
 }

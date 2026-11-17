@@ -4,15 +4,20 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/xhanio/errors"
+	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/message"
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
+	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
 var (
@@ -63,6 +68,12 @@ func stringPointer(s string) *string {
 // database's debug side, which the tests clean up through; the service only
 // ever sees model.Database.
 func setup() (*manager, model.DatabaseDebugger, error) {
+	return setupWithBus(nil)
+}
+
+// setupWithBus is setup with the messagebus the platform carries, where the
+// service publishes its account changes.
+func setupWithBus(mb model.MessageBus) (*manager, model.DatabaseDebugger, error) {
 	db, err := testutil.SetupDB()
 	if err != nil {
 		return nil, nil, errors.Wrap(err)
@@ -77,7 +88,7 @@ func setup() (*manager, model.DatabaseDebugger, error) {
 	); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}
-	m := newManager(repository.New(platform.New(db, nil, nil, nil)))
+	m := newManager(platform.New(db, nil, nil, mb), repository.New(platform.New(db, nil, nil, nil)))
 	if err := m.Init(context.Background()); err != nil {
 		return nil, nil, errors.Wrap(err)
 	}
@@ -406,4 +417,50 @@ func TestAuthenticate(t *testing.T) {
 	} else if credential.UserID != 2 || credential.UserName != testUser {
 		t.Errorf("Failed to authenticate existing user")
 	}
+}
+
+// recorder is a messagebus that keeps what it is sent. SendMessage is the one
+// method the service drives; the rest is left to the embedded nil interface,
+// so a call to it panics as a test bug.
+type recorder struct {
+	model.MessageBus
+	msgs []common.Message
+}
+
+func (r *recorder) Name() string                   { return "test/recorder" }
+func (r *recorder) Dependencies() []common.Service { return nil }
+func (r *recorder) SendMessage(_ context.Context, _ common.Named, msg common.Message) {
+	r.msgs = append(r.msgs, msg)
+}
+
+// Every committed change that invalidates a session reaches the sender, by
+// user ID; a change that leaves the credential intact sends nothing.
+func TestAccountChangesArePublished(t *testing.T) {
+	sent := &recorder{}
+	m, db, err := setupWithBus(sent)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Cleanup(true)) }()
+	ctx := context.Background()
+
+	_, err = m.Create(ctx, createOpts) // ID 2
+	require.NoError(t, err)
+
+	_, err = m.Update(ctx, 2, entity.UserUpdateOptions{FirstName: stringPointer("Jon")})
+	require.NoError(t, err)
+	assert.Empty(t, sent.msgs, "a contact-only update leaves the credential intact")
+
+	_, err = m.Update(ctx, 2, entity.UserUpdateOptions{Role: stringPointer(rbac.RoleUser)})
+	require.NoError(t, err)
+	require.NoError(t, m.ResetPassword(ctx, false, 2, entity.UserResetPasswordOptions{Password: "password_new"}))
+	require.NoError(t, m.Delete(ctx, []int32{2}))
+	assert.Equal(t, []common.Message{
+		message.LocalUserIdentityChanged{UserID: 2},
+		message.LocalUserPasswordReset{UserID: 2},
+		message.LocalUsersDeleted{UserIDs: []int32{2}},
+	}, sent.msgs)
+
+	// A refused change publishes nothing.
+	sent.msgs = nil
+	require.Error(t, m.Delete(ctx, []int32{preset.AdminUserID}))
+	assert.Empty(t, sent.msgs)
 }

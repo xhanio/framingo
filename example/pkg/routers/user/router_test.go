@@ -13,7 +13,7 @@ import (
 // newRouter hands tests the concrete *router, without the fapi.Router
 // interface New wraps it in for everyone else.
 func TestHandlersCoverConfig(t *testing.T) {
-	r := newRouter(nil, nil, nil, log.Default)
+	r := newRouter(nil, nil, log.Default)
 	handlers := r.Handlers()
 	require.NotEmpty(t, handlers)
 

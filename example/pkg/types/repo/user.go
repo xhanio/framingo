@@ -7,6 +7,7 @@ import (
 )
 
 type User interface {
+	Repository
 	// CreateUser stores passwordHash as the user's password. How a password is
 	// hashed is the caller's: the repository never reads opts.Password.
 	CreateUser(ctx context.Context, opts entity.UserCreateOptions, passwordHash string) (*entity.User, error)

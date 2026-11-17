@@ -166,7 +166,10 @@ func (m *manager) initServices() error {
 
 	/* init system level services */
 
+	// the user service publishes the account changes the auth service ends
+	// sessions on
 	m.user = user.New(
+		m.platform,
 		m.repository,
 		user.WithLogger(m.log),
 	)

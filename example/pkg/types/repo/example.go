@@ -7,5 +7,6 @@ import (
 )
 
 type HelloWorld interface {
+	Repository
 	CreateHelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error)
 }

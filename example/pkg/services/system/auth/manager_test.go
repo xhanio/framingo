@@ -6,7 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/message"
+	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
 func newSession(t *testing.T, m *manager, username string) *entity.Session {
@@ -128,4 +132,43 @@ func TestLogoutClosesEverySessionForTheUser(t *testing.T) {
 			t.Fatalf("session %s survived logout", s.ID)
 		}
 	}
+}
+
+// The user service's account events end the sessions of the users they name,
+// matched by user ID - whatever organization or username the credential
+// carries - and leave everyone else's alone.
+func TestAccountEventsRevokeLocalUserSessions(t *testing.T) {
+	m := newManager(nil, nil, nil)
+	open := func(userID int32, source string) *entity.Session {
+		m.Lock()
+		defer m.Unlock()
+		return m.createSession(context.Background(), &entity.Credential{
+			Source:           source,
+			OrganizationName: "not-the-default",
+			UserName:         "renamed-since",
+			UserID:           userID,
+		})
+	}
+	alive := func(s *entity.Session) bool {
+		_, ok := m.GetSession(context.Background(), s.ID)
+		return ok
+	}
+	deleted := open(2, preset.AuthSourceLocalUser)
+	reset := open(3, preset.AuthSourceLocalUser)
+	changed := open(4, preset.AuthSourceLocalUser)
+	bystander := open(5, preset.AuthSourceLocalUser)
+	token := open(2, preset.AuthSourceAPIToken) // same number, not a local user
+	time.Sleep(50 * time.Millisecond)           // let the lease goroutines reach their select
+
+	ctx := context.Background()
+	require.NoError(t, m.HandleMessage(ctx, message.LocalUsersDeleted{UserIDs: []int32{2}}))
+	require.NoError(t, m.HandleMessage(ctx, message.LocalUserPasswordReset{UserID: 3}))
+	require.NoError(t, m.HandleMessage(ctx, message.LocalUserIdentityChanged{UserID: 4}))
+
+	for _, s := range []*entity.Session{deleted, reset, changed} {
+		assert.Eventually(t, func() bool { return !alive(s) }, time.Second, 10*time.Millisecond,
+			"session of user %d survived its account event", s.Credential.UserID)
+	}
+	assert.True(t, alive(bystander), "an unrelated user's session was ended")
+	assert.True(t, alive(token), "a non-local credential with a matching number was ended")
 }

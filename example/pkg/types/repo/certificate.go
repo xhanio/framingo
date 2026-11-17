@@ -7,6 +7,7 @@ import (
 )
 
 type Certificate interface {
+	Repository
 	CreateCertificate(ctx context.Context, opts entity.CertCreateOptions) (*entity.Certificate, error)
 	GetCertificate(ctx context.Context, certID int32) (*entity.Certificate, error)
 	GetCertificateByName(ctx context.Context, certName string) (*entity.Certificate, error)
