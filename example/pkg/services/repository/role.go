@@ -119,7 +119,6 @@ func (m *manager) UpdateRole(ctx context.Context, roleID int32, opts entity.Role
 	return toRole(role), nil
 }
 
-// CountRoleUsers is how many users hold the role.
 func (m *manager) CountRoleUsers(ctx context.Context, roleName string) (int64, error) {
 	var n int64
 	tx := m.db.FromContext(ctx)
@@ -129,7 +128,6 @@ func (m *manager) CountRoleUsers(ctx context.Context, roleName string) (int64, e
 	return n, nil
 }
 
-// DeleteRole deletes the role and its permissions, in one transaction.
 func (m *manager) DeleteRole(ctx context.Context, roleID int32) error {
 	tx := m.db.FromContext(ctx)
 	err := tx.Transaction(func(itx *gorm.DB) error {
@@ -137,11 +135,9 @@ func (m *manager) DeleteRole(ctx context.Context, roleID int32) error {
 		if err != nil {
 			return errors.Wrap(err)
 		}
-		// Delete the role
 		if err := itx.Model(&r).Where("id = ?", roleID).Delete(&r).Error; err != nil {
 			return errors.DBFailed.Wrapf(err, "failed to delete role %d", roleID)
 		}
-		// Delete the role's permissions
 		if err := itx.Where("role_id = ?", roleID).Delete(&orm.RolePermission{}).Error; err != nil {
 			return errors.DBFailed.Wrapf(err, "failed to delete role permissions for role %d", roleID)
 		}
@@ -175,7 +171,6 @@ func (m *manager) AddRolePermission(ctx context.Context, roleID int32, permissio
 }
 
 func (m *manager) setRolePermissions(tx *gorm.DB, roleID int32, permissions []string) error {
-	// Delete existing permissions
 	if err := tx.Where("role_id = ?", roleID).Delete(&orm.RolePermission{}).Error; err != nil {
 		return errors.DBFailed.Wrapf(err, "failed to delete role permissions for role %d", roleID)
 	}

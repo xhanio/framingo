@@ -4,8 +4,7 @@ import (
 	"testing"
 )
 
-// A Task is configuration, so it copies like any value; go vet's copylocks check flags this
-// if the manager keeps state in it again.
+// go vet's copylocks check flags this if Task gains state.
 func TestTaskIsAPlainValue(t *testing.T) {
 	a := Task{Schedule: "@daily", Priority: 3}
 	b := a

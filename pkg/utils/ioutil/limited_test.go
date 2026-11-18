@@ -24,8 +24,6 @@ func TestLimitReaderUnderLimit(t *testing.T) {
 	}
 }
 
-// Exactly at the limit is legal input and must not be reported as an error —
-// otherwise a body sized to the cap is rejected.
 func TestLimitReaderExactlyAtLimit(t *testing.T) {
 	lr := NewLimitReader(strings.NewReader("hello"), 5)
 	got, err := io.ReadAll(lr)
@@ -40,8 +38,6 @@ func TestLimitReaderExactlyAtLimit(t *testing.T) {
 	}
 }
 
-// One byte past the limit must fail rather than truncate: a silently short
-// body is indistinguishable from a complete one to the consumer.
 func TestLimitReaderOverLimitFails(t *testing.T) {
 	lr := NewLimitReader(strings.NewReader("hello world"), 5)
 	if _, err := io.ReadAll(lr); err == nil {
@@ -50,8 +46,6 @@ func TestLimitReaderOverLimitFails(t *testing.T) {
 }
 
 func TestLimitReaderDoesNotTruncateSilently(t *testing.T) {
-	// A reader that hands back one byte at a time exercises the accounting
-	// across many small Reads rather than a single large one.
 	lr := NewLimitReader(&iotest{data: bytes.Repeat([]byte("x"), 100)}, 10)
 	n, err := io.Copy(io.Discard, lr)
 	if err == nil {
@@ -69,8 +63,6 @@ func TestLimitReaderZeroLimit(t *testing.T) {
 	}
 }
 
-// Close must reach the wrapped reader when it is a Closer, so the result can
-// stand in for something like http.Request.Body.
 func TestLimitReaderCloseDelegates(t *testing.T) {
 	rc := &closeSpy{Reader: strings.NewReader("hello")}
 	lr := NewLimitReader(rc, 10)
@@ -82,7 +74,6 @@ func TestLimitReaderCloseDelegates(t *testing.T) {
 	}
 }
 
-// A plain Reader has nothing to close; Close must not panic or error.
 func TestLimitReaderCloseOnNonCloser(t *testing.T) {
 	if err := NewLimitReader(strings.NewReader("hello"), 10).Close(); err != nil {
 		t.Fatalf("Close on a non-Closer should be a no-op, got %v", err)

@@ -28,7 +28,6 @@ func TestSetAdd(t *testing.T) {
 				s.Add(elem)
 			}
 
-			// Check unique elements are present
 			unique := make(map[string]bool)
 			for _, elem := range tt.elements {
 				unique[elem] = true
@@ -142,7 +141,6 @@ func TestSetHas(t *testing.T) {
 func TestSetIntegration(t *testing.T) {
 	s := make(Set[int])
 
-	// Test adding elements
 	s.Add(1)
 	s.Add(2)
 	s.Add(3)
@@ -152,7 +150,6 @@ func TestSetIntegration(t *testing.T) {
 		t.Errorf("Set length = %v, want %v", len(s), 3)
 	}
 
-	// Test checking elements
 	if !s.Has(1) || !s.Has(2) || !s.Has(3) {
 		t.Error("Set should contain elements 1, 2, 3")
 	}
@@ -161,7 +158,6 @@ func TestSetIntegration(t *testing.T) {
 		t.Error("Set should not contain element 4")
 	}
 
-	// Test removing elements
 	s.Remove(2)
 	if s.Has(2) {
 		t.Error("Set should not contain element 2 after removal")
@@ -171,7 +167,6 @@ func TestSetIntegration(t *testing.T) {
 		t.Errorf("Set length after removal = %v, want %v", len(s), 2)
 	}
 
-	// Test removing non-existing element
 	s.Remove(5)
 	if len(s) != 2 {
 		t.Errorf("Set length after removing non-existing element = %v, want %v", len(s), 2)

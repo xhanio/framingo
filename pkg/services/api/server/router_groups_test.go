@@ -10,17 +10,12 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// A router's YAML is a stream of documents, one handler group each: every
-// group has its own prefix and group middlewares, and all of them draw on
-// the one Handlers map.
-
 func TestRouterGroups_EachDocumentIsAGroup(t *testing.T) {
 	text := func(s string) echo.HandlerFunc {
 		return func(c echo.Context) error { return c.String(http.StatusOK, s) }
 	}
 	base, cleanup := startServer(t, &mockRouter{
 		name: "users",
-		// a leading and a trailing `---` are empty documents, skipped
 		config: []byte(`---
 server: http
 prefix: /users
@@ -49,7 +44,6 @@ handlers:
 	assert.Equal(t, "me", body)
 }
 
-// A group's middlewares wrap that group's handlers and no other group's.
 func TestRouterGroups_MiddlewaresStayInTheirGroup(t *testing.T) {
 	cap := registerCapture(t, `server: http
 prefix: /a
@@ -72,9 +66,6 @@ handlers:
 	assert.Contains(t, string(cap.configs[0]), "a")
 }
 
-// A route is one server, method and path wherever it is declared: declared
-// twice - across groups or across routers - it fails registration rather
-// than silently replacing the first.
 func TestRouterGroups_DuplicateRouteConflicts(t *testing.T) {
 	route := func(prefix, path string) string {
 		return "server: http\nprefix: " + prefix + "\nhandlers:\n  - method: GET\n    path: " + path + "\n    func: Test\n"
@@ -114,9 +105,6 @@ func TestRouterGroups_NoGroupIsAnError(t *testing.T) {
 	assert.Contains(t, err.Error(), "no handler group")
 }
 
-// A mistake in any document fails registration, and the error names the
-// router and the group it is in: registration is where a router's config is
-// checked, as supervisor.Register is where a service's name is.
 func TestRouterGroups_AMistakeInAnyDocumentFailsRegistration(t *testing.T) {
 	m := testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))

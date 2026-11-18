@@ -8,28 +8,24 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
-// SupervisorInitPolicy shapes how a service's init turn retries: MaxRetries bounds
-// the attempts (0 one pass, -1 until ctx cancels), Delay is the backoff
-// base, doubling up to MaxDelay.
+// SupervisorInitPolicy: MaxRetries 0 is one pass, -1 retries until ctx ends;
+// Delay doubles up to MaxDelay.
 type SupervisorInitPolicy struct {
 	MaxRetries int
 	Delay      time.Duration
 	MaxDelay   time.Duration
 }
 
-// SupervisorMonitorPolicy shapes the health monitor: Interval is the sweep
-// cadence (0 disables monitoring), MaxRetries bounds in-process restarts
-// per service (0 none - a liveness failure escalates immediately, -1
-// unlimited), RestartDelay pauses before each restart attempt.
+// SupervisorMonitorPolicy: Interval 0 disables monitoring; MaxRetries bounds
+// restarts per service (0 escalates a liveness failure at once, -1 unlimited).
 type SupervisorMonitorPolicy struct {
 	Interval     time.Duration
 	MaxRetries   int
 	RestartDelay time.Duration
 }
 
-// SupervisorStopPolicy shapes how a shutdown ends: Timeout bounds the whole stop,
-// and the stop of each restart, after which what is left is forced; 0 leaves the
-// bound to the caller's context.
+// SupervisorStopPolicy: Timeout bounds each full stop and each restart's stop,
+// then forces the rest; 0 defers to the caller's ctx.
 type SupervisorStopPolicy struct {
 	Timeout time.Duration
 }

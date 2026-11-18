@@ -2,12 +2,7 @@ package confutil
 
 import "time"
 
-// Config is the read side of the app's configuration, handed to services
-// through the Init context. Every getter takes a format string: with no
-// args it is the key itself, otherwise it is fmt.Sprintf-ed first, so a
-// service reads under its own root - GetInt("%s.connection.max_open",
-// nameutil.ConfigRoot(m.name)) - rather than a hardcoded one. Getters mirror viper's: an
-// absent key reads as the zero value, never an error.
+// Config keys are Sprintf-ed only when args are given; an absent key reads zero, never an error.
 type Config interface {
 	Get(format string, args ...any) any
 	GetBool(format string, args ...any) bool

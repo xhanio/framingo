@@ -29,13 +29,11 @@ func CopyFile(ctx context.Context, src, dst string) error {
 }
 
 func CopyDir(ctx context.Context, source string, dest string) (err error) {
-	// get properties of source dir
 	sourceinfo, err := os.Stat(source)
 	if err != nil {
 		return err
 	}
 
-	// create dest dir
 	err = os.MkdirAll(dest, sourceinfo.Mode())
 	if err != nil {
 		return err
@@ -53,7 +51,6 @@ func CopyDir(ctx context.Context, source string, dest string) (err error) {
 	}
 
 	for _, obj := range objects {
-		// Check if context has been cancelled
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

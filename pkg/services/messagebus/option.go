@@ -37,8 +37,7 @@ func WithName(name string) Option {
 	}
 }
 
-// WithTopic overrides the default bus topic ("/messages"). Use this when you
-// need multiple messagebus instances sharing one pubsub.
+// WithTopic lets several messagebus instances share one pubsub.
 func WithTopic(topic string) Option {
 	return func(m *manager) {
 		m.topic = topic

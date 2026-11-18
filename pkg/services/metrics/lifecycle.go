@@ -19,14 +19,8 @@ import (
 func (m *manager) Init(ctx context.Context) error {
 	config := confutil.FromContext(ctx)
 	root := nameutil.ConfigRoot(m.name)
-	// Dynamic config reloads through the very options the wiring layer used,
-	// so a value has one way in and setDefaults has the only say on what a
-	// zero falls back to - the constructor's order, repeated. Config is the
-	// authority here: an absent key reads zero and lands on the default
-	// rather than preserving whatever construction happened to set. Under
-	// the lock because probes, Info and the export loop read these fields
-	// concurrently. The exporter block stays opaque - the chosen factory
-	// strict-decodes its own struct.
+	// reload through the constructor's options so setDefaults decides every zero;
+	// locked: probes, Info and the export loop read these fields
 	m.mu.Lock()
 	m.applyOptions(
 		WithEnabled(config.GetBool("%s.enabled", root)),
@@ -39,16 +33,8 @@ func (m *manager) Init(ctx context.Context) error {
 	m.setDefaults()
 	enabled := m.enabled
 	m.mu.Unlock()
-	// Init runs on first startup and on every restart. The provider and
-	// reader stay - cached instruments must survive - so unlike tracing
-	// there is nothing to flush here: whatever aggregated meanwhile is
-	// picked up by the next export cycle through the same reader. On the
-	// happy path the replacement is built first and swapped in atomically,
-	// so a probe landing mid-restart still sees a live exporter; failure
-	// still retires the previous one - enabled with no exporter is the
-	// wiring fault Alive reports, and config is the authority a running
-	// state must not outlive. A failed shutdown only loses that exporter's
-	// buffered data - never the restart.
+	// build before swapping so probes never see a gap; on failure still retire
+	// the old exporter so Alive reports the fault
 	if !enabled {
 		if err := m.controller.shutdown(context.Background(), m.controller.retire(false)); err != nil {
 			m.log.Warnf("failed to shut down retiring metrics exporter: %s", err)
@@ -62,9 +48,7 @@ func (m *manager) Init(ctx context.Context) error {
 		}
 		return err
 	}
-	// the identity check only matters for the injected test seam, where
-	// buildExporter hands back the same instance every Init - a registry
-	// factory always constructs a fresh one
+	// the injected test exporter comes back identical on every Init
 	if old := m.controller.swap(exp); old != exp {
 		if serr := m.controller.shutdown(context.Background(), old); serr != nil {
 			m.log.Warnf("failed to shut down retiring metrics exporter: %s", serr)
@@ -73,11 +57,7 @@ func (m *manager) Init(ctx context.Context) error {
 	return nil
 }
 
-// buildExporter resolves where metrics go: the injected instance when the
-// test seam is set, else the registry factory named by exporterName fed the
-// marshaled config block. It reads the config fields unlocked - Init, the
-// only writer, already rewrote them earlier in the same call, and
-// supervisor ops serialize.
+// buildExporter reads config unlocked: Init is the only writer and calls it.
 func (m *manager) buildExporter(ctx context.Context) (sdkmetric.Exporter, error) {
 	if m.exporter != nil {
 		return m.exporter, nil
@@ -95,9 +75,7 @@ func (m *manager) buildExporter(ctx context.Context) (sdkmetric.Exporter, error)
 			return nil, errors.Wrapf(err, "invalid metrics exporter config")
 		}
 	}
-	// otlp exporters connect lazily, so an unreachable collector does not
-	// fail the build - matching the probe doctrine that a collector outage
-	// must never take the app down
+	// otlp connects lazily, so an unreachable collector does not fail the build
 	exp, err := f(ctx, raw)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to build %s metric exporter", m.exporterName)
@@ -105,10 +83,7 @@ func (m *manager) buildExporter(ctx context.Context) (sdkmetric.Exporter, error)
 	return exp, nil
 }
 
-// export runs one collect+export cycle against the current exporter - the
-// primitive both the Start loop and the final Stop flush drive. A nil
-// exporter (disabled, or a failed Init) is a quiet no-op: instruments keep
-// aggregating into the SDK and the next enabled cycle picks the state up.
+// export is a no-op without an exporter; the reader keeps aggregating meanwhile.
 func (m *manager) export(ctx context.Context) error {
 	exp := m.controller.current()
 	if exp == nil {
@@ -121,10 +96,7 @@ func (m *manager) export(ctx context.Context) error {
 		m.controller.recordExport(err)
 		return errors.Wrap(err)
 	}
-	// nothing recorded yet: skip the empty envelope so a stdout exporter
-	// stays quiet instead of printing one per interval (cumulative otlp
-	// needs no empty pushes either). Still record the healthy outcome, so
-	// Info can tell an idle loop from one that never ran.
+	// skip empty exports, but record the success so Info sees the loop ran
 	if len(rm.ScopeMetrics) == 0 {
 		m.controller.recordExport(nil)
 		return nil
@@ -134,16 +106,13 @@ func (m *manager) export(ctx context.Context) error {
 	return errors.Wrap(err)
 }
 
-// Start runs the export loop - unlike tracing's no-op Start, Daemon is
-// genuinely meaningful here: the ManualReader only collects when this loop
-// (or the final flush in Stop) drives it.
+// Start drives the ManualReader, which never collects on its own.
 func (m *manager) Start(_ context.Context) error {
 	if m.loopCancel != nil {
 		m.log.Warnf("%s already started", m.Name())
 		return nil
 	}
-	// Detached from the caller's context on purpose: the loop's lifetime is
-	// Stop's to end, and Stop must flush before the exporter goes away.
+	// detached: only Stop ends the loop, after flushing
 	ctx, cancel := context.WithCancel(context.Background())
 	m.loopCancel = cancel
 	m.wg.Add(1)
@@ -151,9 +120,7 @@ func (m *manager) Start(_ context.Context) error {
 	return nil
 }
 
-// run ticks at the configured interval, re-reading it each cycle so an Init
-// that changed metrics.interval takes effect at the next tick without
-// restarting the loop.
+// run re-reads the interval each tick so Init can change it live.
 func (m *manager) run(ctx context.Context) {
 	defer m.wg.Done()
 	interval := m.currentInterval()
@@ -181,21 +148,15 @@ func (m *manager) currentInterval() time.Duration {
 	return m.interval
 }
 
-// Stop ends the loop, performs the final collect+export (the flush), and
-// shuts the exporter down, each until ctx ends or shutdownTimeout passes.
-// The flush is best-effort - a dead collector loses the last window's data,
-// never the shutdown - while a failed exporter shutdown is returned.
-// Idempotent, like tracing's Stop.
+// Stop is idempotent; the final flush is best-effort, only a failed exporter
+// shutdown is returned.
 func (m *manager) Stop(ctx context.Context) error {
 	if m.loopCancel != nil {
 		m.loopCancel()
 		m.loopCancel = nil
 		m.wg.Wait()
 	}
-	// flush before retiring: the exporter must still be installed for the
-	// final cycle to reach it. Bounded by shutdownTimeout, not the looser
-	// exportTimeout - a stalled collector must not wedge the supervisor's
-	// stop sequence (export's own timeout nests inside this one).
+	// flush before retiring, bounded by shutdownTimeout rather than exportTimeout
 	flushCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
 	if err := m.export(flushCtx); err != nil {

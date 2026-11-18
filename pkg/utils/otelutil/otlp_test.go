@@ -32,8 +32,6 @@ func TestRetryNilIsOn(t *testing.T) {
 }
 
 func TestRetryOnIsNilSafe(t *testing.T) {
-	// exported vocabulary must be total: a factory calling cfg.Retry.On()
-	// unguarded gets the default (on), not a panic
 	var r *otelutil.Retry
 	assert.True(t, r.On())
 }

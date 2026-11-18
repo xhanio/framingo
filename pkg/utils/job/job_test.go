@@ -102,17 +102,14 @@ func TestJobGetters(t *testing.T) {
 		return nil
 	}))
 
-	// Test ID
 	if j.ID() != testID {
 		t.Errorf("expected ID %s, got %s", testID, j.ID())
 	}
 
-	// Test CreatedAt
 	if j.CreatedAt().IsZero() {
 		t.Error("CreatedAt should not be zero")
 	}
 
-	// Test Context before run
 	if j.Context() == nil {
 		t.Error("Context should not be nil even before run")
 	}
@@ -120,7 +117,6 @@ func TestJobGetters(t *testing.T) {
 	j.Run(context.Background(), testParams)
 	j.Wait()
 
-	// Test StartedAt and EndedAt
 	if j.StartedAt().IsZero() {
 		t.Error("StartedAt should not be zero after run")
 	}
@@ -128,7 +124,6 @@ func TestJobGetters(t *testing.T) {
 		t.Error("EndedAt should not be zero after completion")
 	}
 
-	// Test ExecutionTime
 	execTime := j.ExecutionTime()
 	if execTime < 0 {
 		t.Error("ExecutionTime should be positive")
@@ -276,7 +271,6 @@ func TestJobOptions(t *testing.T) {
 		t.Errorf("expected label %s=%s", testKey, testVal)
 	}
 
-	// Test WithLabels - it replaces all labels
 	testLabels := map[string]string{"team": "platform", "service": "api"}
 	j2 := New("",
 		Wrap(func(ctx context.Context) error { return nil }),
@@ -299,21 +293,18 @@ func TestJobMultipleRuns(t *testing.T) {
 		return nil
 	})
 
-	// First run
 	if !j.Run(context.Background(), nil) {
 		t.Error("first run should return true")
 	}
 
 	time.Sleep(10 * time.Millisecond) // Give it time to start
 
-	// Try to run again while still executing
 	if j.Run(context.Background(), nil) {
 		t.Error("second run should return false while executing")
 	}
 
 	j.Wait()
 
-	// Run again after completion
 	if !j.Run(context.Background(), nil) {
 		t.Error("run after completion should return true")
 	}
@@ -330,7 +321,6 @@ func TestJobCancelNotRunning(t *testing.T) {
 		return nil
 	}))
 
-	// Try to cancel before running
 	if j.Cancel() {
 		t.Error("cancel should return false when job is not running")
 	}
@@ -338,7 +328,6 @@ func TestJobCancelNotRunning(t *testing.T) {
 	j.Run(context.Background(), nil)
 	j.Wait()
 
-	// Try to cancel after completion
 	if j.Cancel() {
 		t.Error("cancel should return false when job is done")
 	}
@@ -363,7 +352,6 @@ func TestJobPanicWithNonError(t *testing.T) {
 func TestJobContextInterface(t *testing.T) {
 	testID := "context-test"
 	j := New(testID, func(ctx Context) error {
-		// Test Context methods
 		if ctx.ID() != testID {
 			return errors.New("ID mismatch")
 		}
@@ -396,7 +384,6 @@ func TestJobExecutionTimeWhileRunning(t *testing.T) {
 	j.Run(context.Background(), nil)
 	time.Sleep(50 * time.Millisecond)
 
-	// Get execution time while job is still running
 	execTime := j.ExecutionTime()
 	if execTime < 50*time.Millisecond {
 		t.Error("execution time should be at least 50ms while running")
@@ -470,7 +457,6 @@ func TestJobStatsWithRunningJob(t *testing.T) {
 	j.Run(context.Background(), nil)
 	time.Sleep(50 * time.Millisecond)
 
-	// Get stats while job is running
 	stats := j.Stats()
 	if stats == nil {
 		t.Fatal("Stats should not be nil")

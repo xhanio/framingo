@@ -16,8 +16,7 @@ func (m *middleware) setDefaults() {
 	}
 }
 
-// WithName renames the attachment; config keys follow the name, letting two
-// differently-named instances run side by side.
+// WithName also renames the config key, so two instances can run side by side.
 func WithName(name string) Option {
 	return func(m *middleware) {
 		m.name = name

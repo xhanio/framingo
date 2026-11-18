@@ -24,8 +24,7 @@ func (c *Credential) Dump(path string) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	// 0600: this file holds a live session token. World-readable would let any
-	// local user lift it and replay the session.
+	// 0600: the file holds a live session token
 	if err := os.WriteFile(path, b, 0600); err != nil {
 		return errors.Wrap(err)
 	}

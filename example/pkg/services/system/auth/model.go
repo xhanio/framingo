@@ -7,9 +7,7 @@ import (
 )
 
 type Manager interface {
-	// business.go
 	model.Auth
-	// lifecycle.go
 	common.MessageHandler
 	common.Debuggable
 }

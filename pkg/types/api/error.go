@@ -14,11 +14,11 @@ import (
 const ErrorSourceUnknown = "Unknown"
 
 type ErrorBody struct {
-	Origin  error      `json:"-"`                // keep the original error to trace the stack
-	Source  string     `json:"source,omitempty"` // source
-	Status  int        `json:"status,omitempty"` // http status code
-	Code    string     `json:"code,omitempty"`   // customized error code
-	Kind    string     `json:"kind,omitempty"`   // error category
+	Origin  error      `json:"-"` // keep the original error to trace the stack
+	Source  string     `json:"source,omitempty"`
+	Status  int        `json:"status,omitempty"`
+	Code    string     `json:"code,omitempty"` // customized error code
+	Kind    string     `json:"kind,omitempty"` // error category
 	Message string     `json:"message,omitempty"`
 	Details labels.Set `json:"details,omitempty"`
 }
@@ -108,8 +108,7 @@ func StatusCode(err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
-	// the normalisation WrapError applies, so the status a metric or a span
-	// records agrees with the one the error handler commits
+	// mirror WrapError so metrics and spans agree with the committed status
 	switch err {
 	case context.Canceled:
 		err = errors.Cancaled.Wrap(err)

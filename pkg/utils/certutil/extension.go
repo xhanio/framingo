@@ -22,10 +22,8 @@ var OIDStringToNameMap = map[string]string{
 	"2.5.29.20":         "CRL Number",
 }
 
-// Get extension value from certificate with gvien oid
 func GetExtensionValue(cert *x509.Certificate, oid string) (string, error) {
 
-	// Get name of oid
 	name := OIDStringToNameMap[oid]
 	if name == "" {
 		return "", errors.Newf("Extension OID %s not recognized", oid)
@@ -35,10 +33,8 @@ func GetExtensionValue(cert *x509.Certificate, oid string) (string, error) {
 		return "", errors.Newf("Certificate is nil")
 	}
 
-	// Get extension value
 	switch name {
 	case "Subject Key Identifier":
-		// parse []byte to hex string in format "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
 		hex := []string{}
 		for i := 0; i < len(cert.SubjectKeyId); i++ {
 			hex = append(hex, fmt.Sprintf("%X", cert.SubjectKeyId[i]))
@@ -144,17 +140,14 @@ func parseSubjectAlternateNames(cert *x509.Certificate) string {
 
 	subjectAltNames := []string{}
 
-	// DNS Names
 	for _, dnsName := range cert.DNSNames {
 		subjectAltNames = append(subjectAltNames, fmt.Sprintf("DNS Name: %v", dnsName))
 	}
 
-	// Email Addresses
 	for _, emailAddress := range cert.EmailAddresses {
 		subjectAltNames = append(subjectAltNames, fmt.Sprintf("Email Address: %v", emailAddress))
 	}
 
-	// IP Addresses
 	for _, ipAddress := range cert.IPAddresses {
 		subjectAltNames = append(subjectAltNames, fmt.Sprintf("IP Address: %v", ipAddress))
 	}
@@ -174,7 +167,6 @@ func parseNameConstraints(cert *x509.Certificate) string {
 
 	nameConstraints := []string{}
 
-	// Permitted Names
 	for _, permittedDNS := range cert.PermittedDNSDomains {
 		nameConstraints = append(nameConstraints, fmt.Sprintf("Permitted DNS Name: %v", permittedDNS))
 	}
@@ -188,7 +180,6 @@ func parseNameConstraints(cert *x509.Certificate) string {
 		nameConstraints = append(nameConstraints, fmt.Sprintf("Permitted URI Domain: %v", permittedURI))
 	}
 
-	// Excluded Names
 	for _, excludedDNS := range cert.ExcludedDNSDomains {
 		nameConstraints = append(nameConstraints, fmt.Sprintf("Excluded DNS Name: %v", excludedDNS))
 	}

@@ -233,12 +233,10 @@ func TestRandom(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Random(tt.charset, tt.length)
 
-			// Check length
 			if len(result) != tt.length {
 				t.Errorf("Random() length = %v, want %v", len(result), tt.length)
 			}
 
-			// Check all characters are from charset
 			for _, char := range result {
 				if !strings.ContainsRune(tt.charset, char) {
 					t.Errorf("Random() contains invalid character %c, charset: %s", char, tt.charset)

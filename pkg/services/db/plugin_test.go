@@ -13,10 +13,7 @@ import (
 	_ "github.com/xhanio/framingo/pkg/services/db/drivers/sqlite"
 )
 
-// countingPlugin is a real gorm.Plugin rather than a flag the test flips: it
-// registers a raw callback, so what the assertions observe is gorm dispatching
-// through the installed plugin, not the manager reporting that it installed
-// one.
+// a real callback, so assertions observe gorm dispatching through the plugin
 type countingPlugin struct {
 	statements int
 }
@@ -44,9 +41,6 @@ func TestWithPluginsInstallsPluginOnConnect(t *testing.T) {
 	assert.Equal(t, 2, p.statements)
 }
 
-// brokenPlugin fails to install. A plugin that cannot register its callbacks
-// is silent misconfiguration otherwise: queries would run untraced with
-// nothing in the logs to say why.
 type brokenPlugin struct{}
 
 func (brokenPlugin) Name() string { return "broken" }
@@ -67,12 +61,7 @@ func TestPluginInstallFailureFailsInit(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot install")
 }
 
-// WithPlugins keeps a slice and does not dedup by Name(), because gorm already
-// does: DB.Use rejects a second plugin registered under a name it has seen,
-// with ErrRegistered. So a double-wired plugin fails Init loudly, naming the
-// plugin. Deduping in WithPlugins would swallow that wiring bug instead -
-// silently installing one of the two and leaving no trace of the other.
-// Characterization: this pins gorm's behavior, which the decision rests on.
+// pins gorm's ErrRegistered, which is why WithPlugins does not dedup
 func TestDuplicatePluginNameFailsInit(t *testing.T) {
 	mgr := db.New(
 		db.WithType(db.SQLite),

@@ -120,7 +120,6 @@ func TestShiftN(t *testing.T) {
 		t.Errorf("Expected %v, but got %v", expected1, elements1)
 	}
 
-	// Second shift 2 elements
 	elements2, err := s.ShiftN(2)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -130,7 +129,6 @@ func TestShiftN(t *testing.T) {
 		t.Errorf("Expected %v, but got %v", expected2, elements2)
 	}
 
-	// Ensure that the simple is updated after the shifts
 	expectedQueue := []int{5, 6}
 	if !slices.Equal(s.data, expectedQueue) {
 		t.Errorf("Expected simple %v, but got %v", expectedQueue, s.data)

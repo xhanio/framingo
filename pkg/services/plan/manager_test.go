@@ -58,7 +58,6 @@ func (r *recordingSender) finished() []entity.PlanRun {
 	return out
 }
 
-// run is the run's start and end, as reported so far.
 func (r *recordingSender) run(id string) (started, finished *entity.PlanRun) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -77,7 +76,6 @@ func (r *recordingSender) run(id string) (started, finished *entity.PlanRun) {
 	return started, finished
 }
 
-// unfinished counts the plan's runs reported started and not finished.
 func (r *recordingSender) unfinished(planID string) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -132,7 +130,6 @@ func startedTaskManager(t *testing.T, opts ...task.Option) task.Manager {
 	return tm
 }
 
-// startedManager starts a plan manager on a task manager of its own.
 func startedManager(t *testing.T, opts ...Option) (*manager, *recordingSender) {
 	t.Helper()
 	return startedManagerOn(t, startedTaskManager(t), opts...)
@@ -183,8 +180,7 @@ const (
 	stubbornCommand = `trap "" TERM; ` + stubbornChild
 )
 
-// assertCanceledBeforeItStarted checks the run a Trigger promised ended canceled without
-// having started, reported by PlanRunFinished alone.
+// such a run is reported by PlanRunFinished alone
 func assertCanceledBeforeItStarted(t *testing.T, sender *recordingSender, runID string) {
 	t.Helper()
 	var started, finished *entity.PlanRun

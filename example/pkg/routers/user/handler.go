@@ -9,12 +9,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 )
 
-// The handlers translate HTTP to the user service and back. authz has checked
-// the route's permission before any of them runs; a role given to a user is
-// checked against the role service here, which keeps the two services apart;
-// and the user service keeps the rules about an account itself.
-
-// --- /users: accounts by ID -----------------------------------------------
+// a role given to a user is checked against the role service here, keeping the two services apart
 
 func (r *router) Create(c api.Context) error {
 	var body api.UserCreateRequest
@@ -47,7 +42,7 @@ func (r *router) Create(c api.Context) error {
 func (r *router) List(c api.Context) error {
 	opts := entity.UserListOptions{}
 	if sortBy := c.QueryParam("sort_by"); sortBy != "" {
-		// Validated by the service against UserListOptions' validate tag.
+		// validated by the service
 		opts.SortBy = sortBy
 		if c.QueryParam("sort_order") == "desc" {
 			opts.Desc = true
@@ -140,10 +135,7 @@ func (r *router) ResetPassword(c api.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
-// --- /user: the caller's own account --------------------------------------
-
-// currentUserID is the account /user stands for: the caller's own, which only
-// a local user has.
+// only a local user has an own account
 func currentUserID(c api.Context) (int32, error) {
 	cred, ok := c.Credential()
 	if !ok {
@@ -168,8 +160,6 @@ func (r *router) GetCurrent(c api.Context) error {
 	return c.JSON(http.StatusOK, user)
 }
 
-// UpdateCurrent takes contact details only: the request type has no username
-// or role, so the caller cannot change who they are through it.
 func (r *router) UpdateCurrent(c api.Context) error {
 	userID, err := currentUserID(c)
 	if err != nil {
@@ -192,8 +182,6 @@ func (r *router) UpdateCurrent(c api.Context) error {
 	return c.JSON(http.StatusOK, user)
 }
 
-// ChangePassword is the caller changing their own password, which takes the
-// old one.
 func (r *router) ChangePassword(c api.Context) error {
 	userID, err := currentUserID(c)
 	if err != nil {

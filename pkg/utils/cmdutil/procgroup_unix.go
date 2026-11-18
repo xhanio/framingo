@@ -17,8 +17,7 @@ func SetProcessGroup(p *exec.Cmd) {
 	p.SysProcAttr.Setpgid = true
 }
 
-// UseProcessGroup is for a command made with exec.CommandContext, as exec refuses its Cancel
-// hook otherwise: canceling the context sends the whole group a SIGTERM.
+// UseProcessGroup needs an exec.CommandContext command (exec ignores Cancel otherwise); cancel SIGTERMs the group.
 func UseProcessGroup(p *exec.Cmd) {
 	SetProcessGroup(p)
 	p.Cancel = func() error {

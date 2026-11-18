@@ -2,10 +2,6 @@ package api
 
 import "k8s.io/apimachinery/pkg/labels"
 
-// SessionResponse is the wire view of the caller's own credential. Permissions
-// are resolved per request rather than carried on entity.Credential: they are
-// derived from Role and can change while a session is alive, so a copy stored
-// at login would go stale.
 type SessionResponse struct {
 	Metadata             labels.Set `json:"metadata,omitempty"`
 	Source               string     `json:"source"`

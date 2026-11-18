@@ -23,12 +23,7 @@ type retryOptions struct {
 	retried uint
 }
 
-// WithRetry configures the executor to retry failed job executions.
-// The retry mechanism applies to each Start() call independently.
-//
-// Parameters:
-//   - retries: number of retry attempts (must be > 0)
-//   - interval: delay before the first retry, doubled after each
+// WithRetry applies per Start(); retries <= 0 is ignored, and interval doubles after each retry.
 func WithRetry(retries int, interval time.Duration) Option {
 	return func(e *executor) {
 		if retries <= 0 {

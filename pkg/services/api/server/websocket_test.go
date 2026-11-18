@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// wsRouter serves fn at /ws/conn.
 func wsRouter(fn func(echo.Context, *websocket.Conn) error) *mockRouter {
 	return &mockRouter{
 		name: "test",
@@ -35,8 +34,6 @@ func dialConn(t *testing.T, baseURL string) *websocket.Conn {
 	return conn
 }
 
-// A stop closes a WebSocket connection with going away - net/http's Shutdown
-// would leave it running - and returns only once its handler has.
 func TestWebSocket_StopClosesConnectionsGoingAway(t *testing.T) {
 	entered := make(chan struct{})
 	returned := make(chan struct{})
@@ -75,8 +72,6 @@ func TestWebSocket_StopClosesConnectionsGoingAway(t *testing.T) {
 	}
 }
 
-// A handler that ignores its connection is waited for until the stop's
-// context ends, then left running: Stop says so rather than wait on.
 func TestWebSocket_StopGivesUpOnAHandlerThatIgnoresItsConnection(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -89,7 +84,7 @@ func TestWebSocket_StopGivesUpOnAHandlerThatIgnoresItsConnection(t *testing.T) {
 	conn := dialConn(t, base)
 	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
-	// the client reads, so it answers the server's close frame
+	// reading lets the client answer the server's close frame
 	//nolint:errcheck // the read ends with the close; nothing to check
 	go conn.Read(context.Background())
 	<-entered
@@ -103,8 +98,6 @@ func TestWebSocket_StopGivesUpOnAHandlerThatIgnoresItsConnection(t *testing.T) {
 	assert.Less(t, time.Since(start), 2*time.Second, "Stop gives up once its context ends")
 }
 
-// A stop leaves its connections refusing; the next start serves with a fresh
-// set, so WebSockets work again after a restart.
 func TestWebSocket_RestartServesAgain(t *testing.T) {
 	m, base := startManager(t, wsRouter(func(c echo.Context, conn *websocket.Conn) error {
 		ctx := c.Request().Context()
@@ -136,7 +129,6 @@ func TestWebSocket_RestartServesAgain(t *testing.T) {
 	require.NoError(t, conn.Close(websocket.StatusNormalClosure, ""))
 }
 
-// An upgrade that lands once the stop began is not served, and not waited for.
 func TestWebSocket_UpgradeAfterStopIsRefused(t *testing.T) {
 	m, _ := startManager(t, wsRouter(func(c echo.Context, conn *websocket.Conn) error { return nil }))
 	require.NoError(t, m.Stop(context.Background()))

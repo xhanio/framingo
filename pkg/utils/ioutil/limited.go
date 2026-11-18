@@ -36,7 +36,7 @@ func (lw *lwriter) Write(p []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
-	// what is past the limit is discarded, not unwritten: a short count is an error to a caller
+	// excess is discarded but reported written: a short count is an error to callers
 	return whole, nil
 }
 
@@ -52,28 +52,18 @@ func (lw *lwriter) Remaining() int {
 	return r
 }
 
-// LimitReader reads at most max bytes and then FAILS, rather than reporting a
-// clean EOF. That distinction matters for untrusted input: a silently
-// truncated body reaches the consumer looking like a complete one. Use it to
-// bound anything whose decoded size isn't known from the wire size — an
-// inflating stream being the usual case.
+// LimitReader errors past max rather than returning EOF, so truncated untrusted input never looks complete.
 type LimitReader interface {
 	io.ReadCloser
 	Consumed() int
 	Remaining() int
 }
 
-// NewLimitReader bounds r to max bytes. Reading exactly max succeeds and ends
-// in io.EOF; the first byte beyond max returns an error. The error is
-// deliberately uncategorized — how an over-long stream maps to a status is the
-// caller's decision, not this package's.
-//
-// It returns a ReadCloser so the result can stand in directly for something
-// like http.Request.Body. Close closes r when r is itself a Closer, and is a
-// no-op otherwise.
+// NewLimitReader: exactly max bytes ends in io.EOF; the error is uncategorized so the caller picks
+// the status. Close closes r if it is a Closer.
 func NewLimitReader(r io.Reader, max int) LimitReader {
 	lr := &lreader{
-		// max+1 so the overflowing byte is observable rather than swallowed.
+		// max+1 so the overflowing byte is observable
 		r:   io.LimitReader(r, int64(max)+1),
 		max: max,
 	}

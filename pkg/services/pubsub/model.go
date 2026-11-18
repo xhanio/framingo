@@ -6,9 +6,7 @@ import (
 )
 
 type Manager interface {
-	// business
 	model.Pubsub
-	// lifecycle
 	common.Daemon
 	common.Initializable
 	common.Debuggable

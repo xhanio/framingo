@@ -16,7 +16,6 @@ func NewPooledBuffer[T any](size int, pool PoolG[T]) PooledBufferG[T] {
 	return newPooledBuffer[T](size, pool)
 }
 
-// newPooledBuffer creates a pooled buffer
 func newPooledBuffer[T any](size int, pool PoolG[T]) *pooled[T] {
 	return &pooled[T]{
 		data:   pool.Get(size),
@@ -26,7 +25,6 @@ func newPooledBuffer[T any](size int, pool PoolG[T]) *pooled[T] {
 	}
 }
 
-// Write implements io.Writer interface
 func (pb *pooled[T]) Write(p []T) (int, error) {
 	if pb.closed {
 		return 0, errors.New("buffer is closed")
@@ -38,7 +36,6 @@ func (pb *pooled[T]) Write(p []T) (int, error) {
 
 	requiredCap := len(pb.data) + len(p)
 
-	// check if expansion is needed
 	if requiredCap > cap(pb.data) {
 		if err := pb.expand(requiredCap); err != nil {
 			return 0, err
@@ -49,7 +46,6 @@ func (pb *pooled[T]) Write(p []T) (int, error) {
 	return len(p), nil
 }
 
-// Read implements io.Reader interface
 func (pb *pooled[T]) Read(p []T) (int, error) {
 	if pb.closed {
 		return 0, errors.New("buffer is closed")
@@ -59,23 +55,19 @@ func (pb *pooled[T]) Read(p []T) (int, error) {
 		return 0, nil
 	}
 
-	// check if there's still data to read
 	if pb.pos >= len(pb.data) {
 		return 0, io.EOF
 	}
 
-	// calculate readable bytes
 	available := len(pb.data) - pb.pos
 	toRead := min(len(p), available)
 
-	// copy data
 	copy(p[:toRead], pb.data[pb.pos:pb.pos+toRead])
 	pb.pos += toRead
 
 	return toRead, nil
 }
 
-// Close implements io.Closer interface
 func (pb *pooled[T]) Close() error {
 	if pb.closed {
 		return nil // already closed, not an error
@@ -91,35 +83,28 @@ func (pb *pooled[T]) Close() error {
 	return nil
 }
 
-// expand expands the buffer
 func (pb *pooled[T]) expand(requiredCap int) error {
 	if pb.closed {
 		return errors.New("buffer is closed")
 	}
 
-	// calculate new capacity (slightly larger than required to reduce frequent expansions)
 	newCap := requiredCap * 2
 
-	// get new buffer from pool
 	newBuffer := pb.pool.Get(newCap)
 	if cap(newBuffer) < requiredCap {
-		// pool doesn't have large enough buffer, allocate directly
 		newBuffer = make([]T, 0, newCap)
 	}
 
-	// copy old data
 	newBuffer = append(newBuffer, pb.data...)
 
-	// return old buffer to pool
 	pb.pool.Put(pb.data)
 
-	// use new buffer
 	pb.data = newBuffer
 
 	return nil
 }
 
-// Reset resets the buffer (clears data and read position, but maintains capacity)
+// Reset keeps capacity.
 func (pb *pooled[T]) Reset() {
 	if !pb.closed {
 		pb.data = pb.data[:0]
@@ -127,14 +112,13 @@ func (pb *pooled[T]) Reset() {
 	}
 }
 
-// ResetRead only resets read position, data remains unchanged
 func (pb *pooled[T]) ResetRead() {
 	if !pb.closed {
 		pb.pos = 0
 	}
 }
 
-// Seek sets read position (similar to file Seek operation)
+// Seek clamps past the end; a negative position is an error.
 func (pb *pooled[T]) Seek(offset int64, whence int) (int64, error) {
 	if pb.closed {
 		return 0, errors.New("buffer is closed")
@@ -160,7 +144,6 @@ func (pb *pooled[T]) Seek(offset int64, whence int) (int64, error) {
 	return pos, nil
 }
 
-// Available returns remaining readable bytes
 func (pb *pooled[T]) Available() int {
 	if pb.closed {
 		return 0
@@ -168,12 +151,11 @@ func (pb *pooled[T]) Available() int {
 	return len(pb.data) - pb.pos
 }
 
-// basic property access
 func (pb *pooled[T]) Len() int     { return len(pb.data) }
 func (pb *pooled[T]) Cap() int     { return cap(pb.data) }
 func (pb *pooled[T]) Closed() bool { return pb.closed }
 
-// Data returns a copy of the buffer (safe access)
+// Data returns a copy, nil when closed or empty.
 func (pb *pooled[T]) Data() []T {
 	if pb.closed || len(pb.data) == 0 {
 		return nil

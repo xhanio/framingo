@@ -97,7 +97,6 @@ func TestRedisUnsubscribe(t *testing.T) {
 func TestRedisCrossInstance(t *testing.T) {
 	client := getTestRedisClient(t)
 
-	// Create two backends simulating two instances
 	b1, err := NewRedis(client, log.Default)
 	require.NoError(t, err)
 
@@ -107,7 +106,6 @@ func TestRedisCrossInstance(t *testing.T) {
 	ch, err := b2.Subscribe("remote-subscriber", "cross/topic")
 	require.NoError(t, err)
 
-	// Start both backends
 	require.NoError(t, b1.Start(context.Background()))
 	require.NoError(t, b2.Start(context.Background()))
 
@@ -116,10 +114,8 @@ func TestRedisCrossInstance(t *testing.T) {
 	//nolint:errcheck // test teardown; a failed stop has nothing to act on
 	defer b2.Stop(context.Background())
 
-	// Give Redis time to set up subscriptions
 	time.Sleep(200 * time.Millisecond)
 
-	// Publish via b1
 	err = b1.Publish(context.Background(), "publisher", "cross/topic", "cross-event", map[string]string{"key": "value"})
 	require.NoError(t, err)
 
@@ -174,7 +170,6 @@ func TestRedisDoubleStop(t *testing.T) {
 	err = b.Stop(context.Background())
 	require.NoError(t, err)
 
-	// Second stop should not panic
 	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }
@@ -187,7 +182,6 @@ func TestRedisStopWithoutStart(t *testing.T) {
 
 	_, _ = b.Subscribe("svc", "topic")
 
-	// Stop without Start should not panic
 	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }

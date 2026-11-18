@@ -6,8 +6,6 @@ import (
 )
 
 type Manager interface {
-	// business
 	model.Task
-	// lifecycle
 	common.Daemon
 }

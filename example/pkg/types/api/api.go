@@ -1,19 +1,5 @@
-// Package api defines this project's request-context wrapper around
-// echo.Context and the glue that lets routers declare handlers as
-// `func(c Context) error` instead of `func(c echo.Context) error`.
-//
-// Why this layer exists:
-//   - One context value satisfies both echo.Context (request/response,
-//     binding) and context.Context (deadline/cancellation propagation
-//     into services), so handlers can pass `c` straight through.
-//   - Project-wide accessors (credential, session, trace-id) and
-//     custom binders live here, so adding one doesn't ripple through
-//     every handler signature.
-//
-// The framework's API server only accepts echo.HandlerFunc /
-// func(echo.Context, *websocket.Conn) error. WrapHandler /
-// WrapWebSocket / DiscoverHandlers bridge our richer signatures back
-// to those at router registration time.
+// Package api wraps echo.Context in a Context that is also a context.Context,
+// and adapts handlers taking it to the framework's echo signatures.
 package api
 
 import (
@@ -28,14 +14,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 )
 
-// Context is the per-request value passed to router handlers.
-// It embeds echo.Context (so handlers keep all of Echo's API) and
-// context.Context (so handlers can hand `c` to any context-aware
-// service call without unwrapping to c.Request().Context() first).
 type Context interface {
-	// echo wrap: echo.Context for request/response handling,
-	// context.Context for cancellation/deadline propagation, plus
-	// thin helpers over Echo's parameter binders.
 	echo.Context
 	context.Context
 	BindQuery() *echo.ValueBinder
@@ -43,19 +22,12 @@ type Context interface {
 	BindForm() *echo.ValueBinder
 	BindAny(i any) error
 
-	// helpers: typed accessors for values stashed into the echo
-	// context by middleware (auth, tracing). They return (_, false)
-	// when the value is missing or the wrong type, so handlers don't
-	// have to repeat the assertion dance.
 	Credential() (*entity.Credential, bool)
 	Session() (*entity.Session, bool)
 	TraceID() (string, bool)
 }
 
-// ctx is the default Context implementation: an echo.Context with
-// context.Context semantics layered on by deferring to the underlying
-// *http.Request's context for Deadline/Done/Err, and routing Value
-// lookups through echo's request-scoped Get store.
+// ctx takes Deadline/Done/Err from the request's context but answers Value from echo's store.
 type ctx struct {
 	echo.Context
 }
@@ -120,10 +92,6 @@ func (c *ctx) BindAny(i any) error {
 	return c.Context.Bind(i)
 }
 
-// HandlerFunc / WebSocketHandlerFunc are the recommended handler signatures
-// for routers in this project. WrapHandler / WrapWebSocket adapt them
-// into the echo signatures the framework's server registers.
-
 type WebSocketHandlerFunc func(Context, *websocket.Conn) error
 
 func WrapWebSocket(wf WebSocketHandlerFunc) func(echo.Context, *websocket.Conn) error {
@@ -140,15 +108,7 @@ func WrapHandler(hf HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// DiscoverHandlers reflects over r's methods and returns those matching a
-// known handler signature, keyed by method name. It lets a router expose
-//
-//	func (r *router) Handlers() map[string]any { return api.DiscoverHandlers(r) }
-//
-// instead of hand-listing every method, and transparently wraps
-// `func(Context) error` / `func(Context, *websocket.Conn) error` methods
-// into the echo-compatible signatures the framework expects. Methods named
-// "Handlers" are skipped so the router's own Handlers() doesn't recurse.
+// DiscoverHandlers wraps r's methods with a known handler signature, keyed by name; Handlers itself is skipped.
 func DiscoverHandlers(r any) map[string]any {
 	handlers := make(map[string]any)
 	rv := reflect.ValueOf(r)

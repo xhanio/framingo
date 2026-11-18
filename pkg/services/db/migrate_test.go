@@ -15,8 +15,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/confutil"
 )
 
-// writeMigrations lays out golang-migrate's file naming convention in a temp
-// directory and returns it.
 func writeMigrations(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -26,9 +24,7 @@ func writeMigrations(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-// newMigratedMgr builds a file-backed SQLite manager that migrates from sqlDir
-// on Init. A file (rather than :memory:) is used so every pooled connection
-// observes the same schema.
+// file-backed, not :memory:, so every pooled connection sees the same schema
 func newMigratedMgr(t *testing.T, sqlDir string, version uint) (db.Manager, error) {
 	t.Helper()
 
@@ -45,9 +41,6 @@ func newMigratedMgr(t *testing.T, sqlDir string, version uint) (db.Manager, erro
 	return mgr, mgr.Init(ctx)
 }
 
-// TestMigrate_AppliesUpMigrations covers the vendored golang-migrate driver
-// end to end: it must create the version table, run the migrations, and record
-// the resulting version.
 func TestMigrate_AppliesUpMigrations(t *testing.T) {
 	dir := writeMigrations(t, map[string]string{
 		"0001_create_users.up.sql":   `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);`,
@@ -59,14 +52,12 @@ func TestMigrate_AppliesUpMigrations(t *testing.T) {
 	mgr, err := newMigratedMgr(t, dir, 0)
 	require.NoError(t, err)
 
-	// Both migrations applied: the v2 column must exist.
 	require.NoError(t, mgr.ORM().Exec(`INSERT INTO users (id, name, email) VALUES (1, 'ada', 'ada@example.com')`).Error)
 
 	var name string
 	require.NoError(t, mgr.ORM().Raw(`SELECT name FROM users WHERE id = 1`).Scan(&name).Error)
 	assert.Equal(t, "ada", name)
 
-	// The vendored driver tracks state in golang-migrate's canonical table.
 	var version int
 	var dirty bool
 	require.NoError(t, mgr.ORM().Raw(`SELECT version, dirty FROM schema_migrations LIMIT 1`).Row().Scan(&version, &dirty))
@@ -74,8 +65,6 @@ func TestMigrate_AppliesUpMigrations(t *testing.T) {
 	assert.False(t, dirty, "migration should not leave the schema dirty")
 }
 
-// TestMigrate_StopsAtRequestedVersion pins migration to v1, so the v2 column
-// must not exist.
 func TestMigrate_StopsAtRequestedVersion(t *testing.T) {
 	dir := writeMigrations(t, map[string]string{
 		"0001_create_users.up.sql":   `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);`,
@@ -95,8 +84,6 @@ func TestMigrate_StopsAtRequestedVersion(t *testing.T) {
 	assert.Error(t, err, "email column should not exist at version 1")
 }
 
-// TestMigrate_ReportsFailure ensures a broken migration surfaces as an error
-// rather than being silently swallowed.
 func TestMigrate_ReportsFailure(t *testing.T) {
 	dir := writeMigrations(t, map[string]string{
 		"0001_broken.up.sql":   `THIS IS NOT VALID SQL;`,

@@ -65,7 +65,6 @@ func (b *redisDriver) Subscribe(name string, topic string) (<-chan entity.Pubsub
 	return sub.ch, nil
 }
 
-// GetSubscribers returns the names of local subscribers matching the given topic hierarchically.
 func (b *redisDriver) GetSubscribers(topic string) []string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -78,7 +77,6 @@ func (b *redisDriver) GetSubscribers(topic string) []string {
 	return names
 }
 
-// getSubscribers returns local subscribers matching the given topic hierarchically.
 func (b *redisDriver) getSubscribers(topic string) []*subscriber {
 	var subscribers []*subscriber
 	for subTopic, subs := range b.topics {
@@ -119,16 +117,14 @@ func (b *redisDriver) Unsubscribe(name string, topic string) error {
 	}
 	b.mu.Unlock()
 
-	// stop tears down the pump, which owns close(ch); doing it here rather than
-	// under the lock keeps close off the critical section.
+	// outside the lock: the pump owns close(ch)
 	for _, sub := range removed {
 		sub.stop()
 	}
 	return err
 }
 
-// unsubscribePattern drops a topic with no remaining subscribers. Callers must
-// hold the write lock.
+// caller holds the write lock
 func (b *redisDriver) unsubscribePattern(topic string) error {
 	delete(b.topics, topic)
 	pattern := b.getTopicPattern(topic)
@@ -152,9 +148,7 @@ func (b *redisDriver) evict(lagged []laggard) {
 	}
 }
 
-// remove drops target from topic by identity. Removing by name would race a
-// subscriber that unsubscribed and resubscribed under the same name between
-// the read lock being released and the write lock being taken.
+// by identity, not name: a same-name resubscribe can land between RUnlock and Lock
 func (b *redisDriver) remove(topic string, target *subscriber) {
 	subscribers, ok := b.topics[topic]
 	if !ok {
@@ -196,8 +190,7 @@ func (b *redisDriver) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop waits for the listener and the pumps whatever ctx says: they end as soon as they are
-// stopped.
+// Stop ignores ctx: the listener and pumps end as soon as they are stopped.
 func (b *redisDriver) Stop(_ context.Context) error {
 	if b.cancel != nil {
 		b.cancel()
@@ -228,7 +221,6 @@ func (b *redisDriver) Stop(_ context.Context) error {
 	return nil
 }
 
-// Publish dispatches locally and sends to Redis for cross-instance delivery.
 func (b *redisDriver) Publish(ctx context.Context, from string, topic string, kind string, payload any) error {
 	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
 
@@ -236,8 +228,7 @@ func (b *redisDriver) Publish(ctx context.Context, from string, topic string, ki
 	lagged := b.fanout(b.topics, from, msg)
 	b.mu.RUnlock()
 
-	// Eviction needs the write lock, which cannot be taken while Publish holds
-	// the read lock: Go's RWMutex is not upgradable.
+	// after RUnlock: RWMutex is not upgradable
 	b.evict(lagged)
 
 	rawPayload, err := json.Marshal(payload)

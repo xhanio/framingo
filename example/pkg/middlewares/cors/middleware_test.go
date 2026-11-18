@@ -51,7 +51,6 @@ func TestFunc(t *testing.T) {
 	})
 }
 
-// stubRouter is the minimal fapi.Router the integration test needs.
 type stubRouter struct{}
 
 func (r *stubRouter) Name() string                   { return "corstest" }
@@ -65,8 +64,6 @@ func (r *stubRouter) Handlers() map[string]any {
 	})}
 }
 
-// The wiring the server component performs - WithMiddlewares(New()) plus a
-// cors block in the middleware configs - answers preflight on a live server.
 func TestPreflightThroughServer(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

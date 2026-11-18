@@ -17,9 +17,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
-// fakeRoles grants exactly the role/permission pairs it lists. HasPermission
-// is the one method authz calls; the rest of role.Manager is left to the
-// embedded nil interface, so a call to any of it panics as a test bug.
+// fakeRoles implements only HasPermission; any other role.Manager call panics.
 type fakeRoles struct {
 	role.Manager
 	grants map[string][]string
@@ -34,9 +32,6 @@ func (f fakeRoles) HasPermission(_ context.Context, roleName, permission string)
 	return false, nil
 }
 
-// serve runs one request through authz with the credential and the route's
-// declared permission already on the context, as authnuser and the server's
-// Info middleware would have put them, and returns what the handler saw.
 func serve(t *testing.T, cred *entity.Credential, permission string) (bool, error) {
 	t.Helper()
 	mw, err := New(fakeRoles{grants: map[string][]string{"reader": {"thing_read"}}}).Func(true, nil)
@@ -65,7 +60,6 @@ func TestAuthz(t *testing.T) {
 	assert.True(t, isA(errors.Forbidden, err), "missing permission: %v", err)
 	assert.False(t, reached)
 
-	// A route that names no permission is refused, not opened to everyone.
 	reached, err = serve(t, user, "")
 	assert.True(t, isA(errors.Forbidden, err), "no permission declared: %v", err)
 	assert.False(t, reached)
@@ -80,8 +74,6 @@ func TestAuthz(t *testing.T) {
 	assert.False(t, reached)
 }
 
-// Switched off, authz attaches nothing: the route is open to whoever the
-// authn middleware let through.
 func TestAuthzSwitchedOff(t *testing.T) {
 	mw, err := New(fakeRoles{}).Func(false, nil)
 	assert.NoError(t, err)

@@ -13,11 +13,8 @@ import (
 
 var _ api.Middleware = (*middleware)(nil)
 
-// DefaultMaxDecompressed caps how many bytes a single request body may expand
-// to. Any body-size limit upstream applies to the COMPRESSED bytes, so without
-// a cap here a few hundred KB of zlib can expand to gigabytes and exhaust
-// memory — a classic decompression bomb.
-const DefaultMaxDecompressed = 32 << 20 // 32 MiB
+// DefaultMaxDecompressed caps a body's inflated size: upstream body limits bound only the compressed bytes.
+const DefaultMaxDecompressed = 32 << 20
 
 type middleware struct {
 	name            string
@@ -39,8 +36,7 @@ func (m *middleware) Dependencies() []common.Service {
 	return nil
 }
 
-// Func implements api.Middleware. The middleware takes no router.yaml config,
-// so a block under its name is a mistake worth failing startup for.
+// Func takes no router.yaml config: a block under its name fails startup.
 func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
 	if !enabled {
 		return nil, nil
@@ -59,11 +55,7 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 			if err != nil {
 				return errors.BadRequest.Newf("failed to deflate request body: %s", err)
 			}
-			// Set the new request body, which is the deflated data stream,
-			// bounded so a small payload cannot expand without limit.
-			// NewLimitReader is a ReadCloser, so it drops straight in; its
-			// Close releases the zlib reader. net/http closes the original
-			// body itself, using the reference it captured before handlers ran.
+			// its Close releases the zlib reader; net/http closes the original body itself
 			c.Request().Body = ioutil.NewLimitReader(reader, m.maxDecompressed)
 		}
 		return next(c)

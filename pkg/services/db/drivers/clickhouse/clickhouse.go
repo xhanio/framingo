@@ -1,6 +1,4 @@
-// Package clickhouse registers the ClickHouse GORM dialector, golang-migrate
-// driver, DSN builder, and cleanup hooks with pkg/services/db. Blank-import it
-// to enable ClickHouse support.
+// Package clickhouse registers the ClickHouse driver with pkg/services/db; blank-import it.
 package clickhouse
 
 import (

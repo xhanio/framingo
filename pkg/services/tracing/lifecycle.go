@@ -20,14 +20,8 @@ import (
 func (m *manager) Init(ctx context.Context) error {
 	config := confutil.FromContext(ctx)
 	root := nameutil.ConfigRoot(m.name)
-	// Dynamic config reloads through the very options the wiring layer used,
-	// so a value has one way in and setDefaults has the only say on what a
-	// zero falls back to - the constructor's order, repeated. Config is the
-	// authority here: an absent key reads zero and lands on the default
-	// rather than preserving whatever construction happened to set. Under
-	// the lock because probes and Info read these fields concurrently from
-	// the monitor's and the supervisor's goroutines. The exporter block
-	// stays opaque - the chosen factory strict-decodes its own struct.
+	// reload through the constructor's options so setDefaults decides every zero;
+	// locked: probes and Info read these fields concurrently
 	m.mu.Lock()
 	m.applyOptions(
 		WithEnabled(config.GetBool("%s.enabled", root)),
@@ -40,9 +34,7 @@ func (m *manager) Init(ctx context.Context) error {
 	m.setDefaults()
 	enabled := m.enabled
 	m.mu.Unlock()
-	// Init runs on first startup and on every restart: retire and flush the
-	// previous pipeline before building its replacement. A failed flush only
-	// loses buffered spans - never the restart.
+	// a failed flush loses buffered spans, never the restart
 	if err := m.controller.flush(context.Background(), m.controller.retire(false)); err != nil {
 		m.log.Warnf("failed to flush retiring tracer provider: %s", err)
 	}
@@ -53,11 +45,7 @@ func (m *manager) Init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// The span resource is the build's application identity, nothing else:
-	// the binary knows which application it is, so neither attribute is
-	// configurable. A build without ldflags injection leaves them empty and
-	// the attribute is omitted rather than set blank, so a backend shows its
-	// own unknown-service placeholder instead of a nameless service.
+	// omit unset attributes rather than blank them, so backends show their placeholder
 	var attrs []attribute.KeyValue
 	if info.ApplicationName != "" {
 		attrs = append(attrs, semconv.ServiceName(info.ApplicationName))
@@ -74,11 +62,7 @@ func (m *manager) Init(ctx context.Context) error {
 	return nil
 }
 
-// buildExporter resolves where spans go: the injected instance when the
-// test seam is set, else the registry factory named by exporterName fed the
-// marshaled config block. It reads the config fields unlocked - Init, the
-// only writer, already rewrote them earlier in the same call, and
-// supervisor ops serialize.
+// buildExporter reads config unlocked: Init is the only writer and calls it.
 func (m *manager) buildExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
 	if m.exporter != nil {
 		return m.exporter, nil
@@ -96,9 +80,7 @@ func (m *manager) buildExporter(ctx context.Context) (sdktrace.SpanExporter, err
 			return nil, errors.Wrapf(err, "invalid tracing exporter config")
 		}
 	}
-	// otlp exporters connect lazily, so an unreachable collector does not
-	// fail the build - matching the probe doctrine that a collector outage
-	// must never take the app down
+	// otlp connects lazily, so an unreachable collector does not fail the build
 	exp, err := f(ctx, raw)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to build %s span exporter", m.exporterName)
@@ -106,15 +88,11 @@ func (m *manager) buildExporter(ctx context.Context) (sdktrace.SpanExporter, err
 	return exp, nil
 }
 
-// Start is a no-op: the span processor runs its own export loop. Daemon is
-// implemented so the supervisor calls Stop on shutdown and restart, which is
-// where the final flush happens.
+// Start is a no-op; Daemon exists so the supervisor calls Stop to flush.
 func (m *manager) Start(_ context.Context) error {
 	return nil
 }
 
-// Stop retires the provider and flushes it, until ctx ends or shutdownTimeout passes, whichever
-// comes first.
 func (m *manager) Stop(ctx context.Context) error {
 	return m.controller.flush(ctx, m.controller.retire(true))
 }

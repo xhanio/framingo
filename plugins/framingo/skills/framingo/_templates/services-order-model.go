@@ -25,9 +25,7 @@ import (
 // service actually implements. Compose only what you need: a service with no
 // background goroutine should not claim common.Daemon.
 type Manager interface {
-	// business.go
 	model.Order
-	// lifecycle.go
 	common.Initializable
 	common.Daemon
 	common.Debuggable

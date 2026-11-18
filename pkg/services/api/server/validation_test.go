@@ -29,8 +29,6 @@ func TestValidHTTPMethod(t *testing.T) {
 	}
 }
 
-// A request that fails its validate tags is the caller's mistake: a 400, not
-// the 500 an uncategorized error becomes.
 func TestValidate_FailedTagIsABadRequest(t *testing.T) {
 	type body struct {
 		Name string `json:"name" validate:"required"`

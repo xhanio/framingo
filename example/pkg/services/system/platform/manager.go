@@ -13,8 +13,6 @@ type manager struct {
 
 var _ Platform = (*manager)(nil)
 
-// New combines already-constructed services; building them stays in the
-// wiring layer.
 func New(db model.Database, meter model.Meter, pubsub model.Pubsub, messagebus model.MessageBus) Platform {
 	return &manager{
 		db:         db,

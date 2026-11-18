@@ -19,13 +19,13 @@ type kafkaDriver struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	kafkaTopic string // single Kafka topic for all pubsub messages
+	kafkaTopic string // one Kafka topic carries every pubsub topic
 
 	writer *kafka.Writer
 	reader *kafka.Reader
 
 	mu     sync.RWMutex
-	topics map[string][]*subscriber // pubsub topic -> local subscribers
+	topics map[string][]*subscriber
 
 	wg sync.WaitGroup
 }
@@ -38,9 +38,7 @@ func NewKafka(brokers []string, groupID string, log log.Logger, opts ...Option) 
 		return nil, errors.Newf("group ID cannot be empty")
 	}
 
-	// Each instance gets a unique consumer group for broadcast semantics.
-	// Kafka consumer groups partition messages across members;
-	// unique groups ensure every instance receives all messages.
+	// a unique group per instance: a shared group would partition messages instead of broadcasting
 	instanceGroupID := groupID + "-" + uuid.New().String()
 
 	kafkaTopic := "pubsub"
@@ -133,8 +131,7 @@ func (b *kafkaDriver) Unsubscribe(name string, topic string) error {
 	}
 	b.mu.Unlock()
 
-	// stop tears down the pump, which owns close(ch); doing it here rather than
-	// under the lock keeps close off the critical section.
+	// outside the lock: the pump owns close(ch)
 	for _, sub := range removed {
 		sub.stop()
 	}
@@ -154,9 +151,7 @@ func (b *kafkaDriver) evict(lagged []laggard) {
 	}
 }
 
-// remove drops target from topic by identity. Removing by name would race a
-// subscriber that unsubscribed and resubscribed under the same name between
-// the read lock being released and the write lock being taken.
+// by identity, not name: a same-name resubscribe can land between RUnlock and Lock
 func (b *kafkaDriver) remove(topic string, target *subscriber) {
 	subscribers, ok := b.topics[topic]
 	if !ok {
@@ -176,18 +171,15 @@ func (b *kafkaDriver) remove(topic string, target *subscriber) {
 }
 
 func (b *kafkaDriver) Publish(ctx context.Context, from string, topic string, kind string, payload any) error {
-	// Local delivery
 	msg := entity.PubsubMessage{From: from, Topic: topic, Kind: kind, Payload: payload}
 
 	b.mu.RLock()
 	lagged := b.fanout(b.topics, from, msg)
 	b.mu.RUnlock()
 
-	// Eviction needs the write lock, which cannot be taken while Publish holds
-	// the read lock: Go's RWMutex is not upgradable.
+	// after RUnlock: RWMutex is not upgradable
 	b.evict(lagged)
 
-	// Remote delivery via Kafka
 	rawPayload, err := json.Marshal(payload)
 	if err != nil {
 		return errors.Wrapf(err, "failed to marshal event payload")
@@ -219,8 +211,7 @@ func (b *kafkaDriver) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop waits for the listener and the pumps whatever ctx says: they end as soon as they are
-// stopped.
+// Stop ignores ctx: the listener and pumps end as soon as they are stopped.
 func (b *kafkaDriver) Stop(_ context.Context) error {
 	if b.cancel != nil {
 		b.cancel()

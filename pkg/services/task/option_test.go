@@ -37,7 +37,6 @@ func TestNewWithoutAConcurrencyStillRunsTasks(t *testing.T) {
 	}
 }
 
-// Schedules are read in local time unless the manager is given a location.
 func TestWithLocationSetsTheScheduleZone(t *testing.T) {
 	if got := newManager().cm.Location(); got != time.Local {
 		t.Fatalf("default location = %v, want time.Local", got)

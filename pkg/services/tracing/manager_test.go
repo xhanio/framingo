@@ -33,27 +33,19 @@ func TestDisabledByDefaultServesNoop(t *testing.T) {
 	require.NoError(t, m.Stop(context.Background()))
 }
 
-// newTestManager injects exp directly on the concrete manager - the package
-// tests' seam, since instance injection has no public option. Pair it with
-// enabledCtx: Init reloads from config, so setting enabled here would not
-// survive the call.
+// pair with enabledCtx: Init reloads enabled from config
 func newTestManager(exp sdktrace.SpanExporter) *manager {
 	m := newManager()
 	m.exporter = exp
 	return m
 }
 
-// enabledCtx turns tracing on the way production does - through config, the
-// only authority Init consults.
 func enabledCtx() context.Context {
 	v := viper.New()
 	v.Set("tracing.enabled", true)
 	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
-// flushSpans drains the batcher so exported spans become observable - the
-// stock otel way tests get determinism, instead of a bespoke wiring mode in
-// production code.
 func flushSpans(t *testing.T, m *manager) {
 	t.Helper()
 	tp, ok := m.Provider().(*sdktrace.TracerProvider)
@@ -68,8 +60,7 @@ func TestInjectedExporterExportsSpans(t *testing.T) {
 	_, span := m.Provider().Tracer("test").Start(context.Background(), "op")
 	require.True(t, span.IsRecording())
 	span.End()
-	// an injected exporter rides the same batcher as registry-built ones:
-	// nothing reaches it until a flush
+	// batched: nothing arrives until a flush
 	assert.Empty(t, exp.GetSpans())
 	flushSpans(t, m)
 	spans := exp.GetSpans()
@@ -77,7 +68,6 @@ func TestInjectedExporterExportsSpans(t *testing.T) {
 	assert.Equal(t, "op", spans[0].Name)
 }
 
-// resourceAttr reads one attribute off an exported span's resource.
 func resourceAttr(span tracetest.SpanStub, key string) (string, bool) {
 	for _, kv := range span.Resource.Attributes() {
 		if string(kv.Key) == key {
@@ -111,9 +101,6 @@ func TestSpanResourceIsBuildIdentity(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "v1.2.3", version)
 
-	// a build without ldflags injection omits the attributes rather than
-	// setting them blank, so backends show their own unknown-service
-	// placeholder instead of an empty name
 	info.ApplicationName = ""
 	info.ApplicationVersion = ""
 	exp.Reset()
@@ -135,18 +122,15 @@ func TestReInitSwapsProvider(t *testing.T) {
 	require.NoError(t, m.Init(enabledCtx()))
 	p1 := m.Provider()
 
-	// Init runs again on every supervisor restart
 	require.NoError(t, m.Init(enabledCtx()))
 	p2 := m.Provider()
 	assert.NotSame(t, p1, p2)
 	require.NoError(t, m.Alive(context.Background()))
 
-	// a span started on the retired provider must be a silent no-op
 	_, late := p1.Tracer("test").Start(context.Background(), "late")
 	assert.False(t, late.IsRecording())
 	late.End()
 
-	// the fresh provider still exports
 	exp.Reset()
 	_, span := p2.Tracer("test").Start(context.Background(), "fresh")
 	span.End()
@@ -155,9 +139,6 @@ func TestReInitSwapsProvider(t *testing.T) {
 }
 
 func TestExporterConfigFromViper(t *testing.T) {
-	// tracing.config is an opaque kv block: the manager records it verbatim
-	// and hands it to the exporter factory, which strict-decodes its own
-	// struct - the middleware Func(enabled, config) pattern.
 	v := viper.New()
 	v.Set("tracing.config", map[string]any{
 		"endpoint": "collector:4317",
@@ -173,13 +154,10 @@ func TestExporterConfigFromViper(t *testing.T) {
 	assert.Equal(t, "collector:4317", m.exporterConfig["endpoint"])
 	assert.Equal(t, "the manager does not interpret keys", m.exporterConfig["whatever"])
 
-	// no block at all leaves it nil - the factory receives nil config
 	assert.Nil(t, newManager().exporterConfig)
 }
 
 func TestWithEnabledAndConfigOverride(t *testing.T) {
-	// the option carries the wiring layer's reading of tracing.enabled, and
-	// Init reloads that same key - so config is what decides on every restart
 	on := viper.New()
 	on.Set("tracing.enabled", true)
 	m := newManager(WithEnabled(true))
@@ -194,15 +172,9 @@ func TestWithEnabledAndConfigOverride(t *testing.T) {
 }
 
 func TestSampleRatioZeroMeansDefault(t *testing.T) {
-	// Go cannot tell an unset ratio from an explicit zero, so the option
-	// reads zero as "use the default" - letting a wiring layer pass an
-	// absent config key straight through without an IsSet dance
 	assert.Equal(t, 1.0, newManager(WithSampleRatio(0)).sampleRatio)
 	assert.Equal(t, 0.25, newManager(WithSampleRatio(0.25)).sampleRatio)
 
-	// Init reloads through the same option, so the rule holds there too: an
-	// absent key reads zero and lands on the default, not on whatever the
-	// wiring layer happened to construct with
 	m := newManager(WithSampleRatio(0.25))
 	require.NoError(t, m.Init(context.Background()))
 	assert.Equal(t, 1.0, m.sampleRatio)
@@ -215,10 +187,7 @@ func TestSampleRatioZeroMeansDefault(t *testing.T) {
 }
 
 func TestExporterOptionDoesNotEnable(t *testing.T) {
-	// configuring where spans would go is not the same act as turning the
-	// service on: enabling is ops state, and tracing.enabled is the only
-	// thing that does it. Were it otherwise this Init would reach the
-	// registry and fail on the unimported stdout exporter.
+	// enabling would fail here: the stdout exporter is not imported
 	m := newManager(WithExporter(Stdout, nil))
 	require.NoError(t, m.Init(context.Background()))
 	_, span := m.Provider().Tracer("test").Start(context.Background(), "op")
@@ -243,8 +212,6 @@ func TestInitEnabledWithoutExporterFails(t *testing.T) {
 }
 
 func TestViperOverridesOptions(t *testing.T) {
-	// a set key wins over the constructed state: enabled=false switches an
-	// injected-exporter manager off...
 	exp := tracetest.NewInMemoryExporter()
 	m := newTestManager(exp)
 	off := viper.New()
@@ -255,7 +222,6 @@ func TestViperOverridesOptions(t *testing.T) {
 	span.End()
 	assert.Empty(t, exp.GetSpans())
 
-	// ...and a later restart with enabled=true switches it back on
 	on := viper.New()
 	on.Set("tracing.enabled", true)
 	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(on))))
@@ -291,17 +257,13 @@ func TestStopFlushesAndDegradesToNoop(t *testing.T) {
 	require.NoError(t, m.Stop(context.Background()))
 	require.NoError(t, m.Stop(context.Background())) // idempotent
 
-	// after a deliberate stop the handle degrades to noop...
 	_, span = m.Provider().Tracer("test").Start(context.Background(), "op")
 	assert.False(t, span.IsRecording())
-	// ...and liveness must NOT fail: the monitor probes stopped services
-	// through dependents' chains, and a failing Alive would cascade restarts
+	// a stopped manager stays alive, or dependents would cascade-restart
 	require.NoError(t, m.Alive(context.Background()))
 }
 
 func TestAliveFailsWhenEnabledButNeverBuilt(t *testing.T) {
-	// config says on but names no exporter: Init fails, no provider is
-	// built, and until a restart fixes it Alive reports exactly that
 	v := viper.New()
 	v.Set("tracing.enabled", true)
 	m := newManager()
@@ -309,8 +271,7 @@ func TestAliveFailsWhenEnabledButNeverBuilt(t *testing.T) {
 	require.Error(t, m.Alive(context.Background()))
 }
 
-// blockingExporter parks in Shutdown until released - the shape of a stalled
-// collector drain during Stop.
+// blockingExporter parks in Shutdown until released, like a stalled collector.
 type blockingExporter struct {
 	entered chan struct{}
 	release chan struct{}
@@ -335,9 +296,6 @@ func TestStopIsDeliberateWhileFlushInFlight(t *testing.T) {
 	go func() { stopped <- m.Stop(context.Background()) }()
 	<-exp.entered // the flush is in flight, the provider already retired
 
-	// a deliberate stop must never fail liveness - not even while the final
-	// flush is still draining - or the monitor sees a false failure through
-	// dependents' probe chains
 	assert.NoError(t, m.Alive(context.Background()))
 
 	close(exp.release)
@@ -364,8 +322,7 @@ func TestStopGivesUpOnAStalledFlushOnceItsContextEnds(t *testing.T) {
 func TestConcurrentProbesDuringLifecycle(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()
 	m := newTestManager(exp)
-	// a populated viper makes every Init actually rewrite the config fields,
-	// which is the write side of the race this test guards against
+	// a populated viper makes every Init write the fields under race
 	v := viper.New()
 	v.Set("tracing.enabled", true)
 	v.Set("tracing.sample_ratio", 1.0)
@@ -417,9 +374,6 @@ func TestReInitDoesNotLeakGoroutines(t *testing.T) {
 	assert.LessOrEqual(t, after-before, 2, "Init cycles must not leave goroutines behind")
 }
 
-// A named manager reads its keys under that name and ignores the package
-// root; an unnamed one reads tracing.*. Both stay disabled, so Init records
-// the config and stops - sample_ratio is the observable.
 func TestConfigRootFollowsName(t *testing.T) {
 	v := viper.New()
 	v.Set("otel.sample_ratio", 0.25)

@@ -1,6 +1,4 @@
-// Package postgres registers the Postgres GORM dialector, golang-migrate
-// driver, DSN builder, and cleanup hooks with pkg/services/db. Blank-import it
-// to enable Postgres support.
+// Package postgres registers the Postgres driver with pkg/services/db; blank-import it.
 package postgres
 
 import (
@@ -46,10 +44,8 @@ func dsn(s db.Source) (string, error) {
 			params["sslmode"] = "disable"
 		}
 	}
-	// Set the fields as entries rather than Sprintf them into a string, so the
-	// notation's quoting reaches them: a password holding a space would
-	// otherwise be mangled before quoting could see it. Params set last
-	// overwrite any field, sorted for a deterministic DSN.
+	// entries, not Sprintf, so values like a password with a space get quoted;
+	// params set last override fields
 	entries := paramutil.NewEntries[string]()
 	entries.Set("host", s.Host)
 	entries.Set("port", strconv.FormatUint(uint64(s.Port), 10))

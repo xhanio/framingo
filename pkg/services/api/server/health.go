@@ -6,10 +6,7 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// Alive and Ready both report on the listeners. A listener that stopped
-// serving fails liveness because a restart genuinely fixes it - Init
-// rebuilds the echo instances, so the supervisor's restart re-binds it -
-// and a server not accepting connections is equally not ready for traffic.
+// a dead listener fails liveness too: a restart's Init rebuilds echo and re-binds it
 func (m *manager) Alive(_ context.Context) error {
 	return m.listenersServing()
 }

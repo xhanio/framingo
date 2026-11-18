@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A listener that fails to bind must surface through both probes, naming the
-// server - not vanish into a debug log while the supervisor reports Ready.
 func TestProbesReportListenerFailure(t *testing.T) {
 	blocker, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -33,7 +31,6 @@ func TestProbesReportListenerFailure(t *testing.T) {
 	assert.Contains(t, m.Ready(context.Background()).Error(), "http")
 }
 
-// A serving listener keeps both probes green.
 func TestProbesHealthyListener(t *testing.T) {
 	port := freePort(t)
 	m := testManager()
@@ -55,9 +52,6 @@ func TestProbesHealthyListener(t *testing.T) {
 	assert.NoError(t, m.Ready(context.Background()))
 }
 
-// The supervisor's remedy for a dead listener is restart: Stop, Init
-// (rebuilds echo), Start. A recorded failure must clear once the listener
-// binds again.
 func TestRestartClearsListenerFailure(t *testing.T) {
 	blocker, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -70,7 +64,6 @@ func TestRestartClearsListenerFailure(t *testing.T) {
 		return m.Alive(context.Background()) != nil
 	}, 2*time.Second, 10*time.Millisecond)
 
-	// The port frees up; the supervisor restarts the service.
 	blocker.Close()
 	require.NoError(t, m.Stop(context.Background()))
 	require.NoError(t, m.Init(context.Background()))

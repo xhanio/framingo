@@ -10,17 +10,11 @@ import (
 
 type sampleService struct{}
 
-// Package is the base name of obj's package dir - the identity middlewares
-// default to, where the package name is the middleware name. Unlike Name it
-// needs no ProjectPath: the base segment survives unrelativized paths.
 func TestPackage(t *testing.T) {
 	assert.Equal(t, "nameutil", Package(&sampleService{}))
 	assert.Equal(t, "nameutil", Package(sampleService{}))
 }
 
-// Name is the package dir relative to the project root joined with the type
-// name, judged from the gopro-injected ProjectPath. The layout root (Root,
-// default pkg) is stripped so the category stays visible.
 func TestName(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo"
 	t.Cleanup(func() { info.ProjectPath = "" })
@@ -28,7 +22,6 @@ func TestName(t *testing.T) {
 	assert.Equal(t, "utils/nameutil/sampleService", Name(sampleService{}))
 }
 
-// Projects with a different layout override or clear Root.
 func TestNameRootOverride(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo"
 	t.Cleanup(func() {
@@ -41,8 +34,6 @@ func TestNameRootOverride(t *testing.T) {
 	assert.Equal(t, "nameutil/sampleService", Name(&sampleService{}))
 }
 
-// Without the injection (plain go build/test) there is no project to be
-// relative to: names keep the full import path.
 func TestNameWithoutProjectPath(t *testing.T) {
 	assert.Equal(t, "github.com/xhanio/framingo/pkg/utils/nameutil/sampleService", Name(&sampleService{}))
 }
@@ -51,8 +42,6 @@ func TestNameNil(t *testing.T) {
 	assert.Empty(t, Name(nil))
 }
 
-// Callers may name extra prefixes to strip after Root - they apply to the
-// root-stripped dir, first match wins, whole segments only.
 func TestNameStripsGivenPrefix(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo"
 	t.Cleanup(func() { info.ProjectPath = "" })
@@ -64,9 +53,6 @@ func TestNameStripsGivenPrefix(t *testing.T) {
 	assert.Equal(t, "nameutil/sampleService", Name(&sampleService{}, "services", "utils"), "first matching prefix wins")
 }
 
-// ProjectPath is relative to $GOPATH/src while import paths carry the module
-// host prefix, so the cut happens at their overlap - whatever the project's
-// layout below it.
 func TestRelativeTrimsProjectPathOverlap(t *testing.T) {
 	info.ProjectPath = "foo/myapp"
 	t.Cleanup(func() { info.ProjectPath = "" })
@@ -74,17 +60,12 @@ func TestRelativeTrimsProjectPathOverlap(t *testing.T) {
 	assert.Equal(t, "", relative("github.com/foo/myapp"))
 }
 
-// A dependency's packages share only the leading segments of ProjectPath:
-// the framework used from within its own repo still gets relative names.
 func TestRelativeTrimsPartialOverlapForDependencies(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo/example"
 	t.Cleanup(func() { info.ProjectPath = "" })
 	assert.Equal(t, "pkg/services/db", relative("github.com/xhanio/framingo/pkg/services/db"))
 }
 
-// Overlaps are whole segments; a single shared segment counts only when it
-// is the entire ProjectPath, so an org name shared with an unrelated
-// dependency must not cut it.
 func TestRelativeOverlapBoundaries(t *testing.T) {
 	t.Cleanup(func() { info.ProjectPath = "" })
 
@@ -102,10 +83,6 @@ func TestRelativeWithoutProjectPath(t *testing.T) {
 	assert.Equal(t, "github.com/xhanio/framingo/pkg/services/db", relative("github.com/xhanio/framingo/pkg/services/db"))
 }
 
-// ConfigRoot is the package segment of a category-visible name, or the name
-// itself when it has none - so an unnamed db reads db.* whether or not the
-// ProjectPath injection shortened its name, and a WithName'd clickhouse
-// reads clickhouse.*, with no second field on the service.
 func TestConfigRoot(t *testing.T) {
 	assert.Equal(t, "db", ConfigRoot("services/db/manager"))
 	assert.Equal(t, "db", ConfigRoot("db/manager"))

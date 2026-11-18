@@ -77,7 +77,7 @@ func (m *manager) acquireRest(ctx context.Context, slots *semaphore.Weighted, re
 	return slots.Acquire(ctx, int64(m.concurrent)-1) == nil
 }
 
-// pop waits for a registration in the queue, and returns nil once ctx ends.
+// pop returns nil once ctx ends.
 func (m *manager) pop(ctx context.Context) *registration {
 	reg, err := m.pq.WaitPop(ctx)
 	if err != nil {
@@ -166,7 +166,6 @@ func (m *manager) halt() {
 	m.cm.Stop()
 }
 
-// kill sends SignalKill to the executions still going, and says how many there are.
 func (m *manager) kill() int {
 	m.el.RLock()
 	going := make([]*execution, 0, len(m.running))

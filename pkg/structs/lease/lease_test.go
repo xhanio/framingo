@@ -42,7 +42,6 @@ func TestNew(t *testing.T) {
 		assert.Equal(t, "test", lease.ID())
 		assert.False(t, lease.Expired())
 
-		// Options will be tested through behavior in other tests
 	})
 }
 
@@ -57,7 +56,6 @@ func TestLeaseLifecycle(t *testing.T) {
 
 		go lease.Start()
 
-		// Wait for expiration
 		time.Sleep(300 * time.Millisecond)
 
 		assert.True(t, expired.Load())
@@ -73,11 +71,9 @@ func TestLeaseLifecycle(t *testing.T) {
 
 		go lease.Start()
 
-		// Cancel after a short time
 		time.Sleep(100 * time.Millisecond)
 		lease.Cancel()
 
-		// Wait a bit more to ensure cancellation is processed
 		time.Sleep(200 * time.Millisecond)
 
 		assert.True(t, cancelled.Load())
@@ -91,7 +87,6 @@ func TestLeaseLifecycle(t *testing.T) {
 		go lease.Start()
 		time.Sleep(50 * time.Millisecond) // Let it initialize
 
-		// Second start should be ignored
 		go lease.Start()
 
 		assert.False(t, lease.Expired())
@@ -112,11 +107,9 @@ func TestLeaseRefresh(t *testing.T) {
 		initialExpiration := lease.ExpiresAt()
 		time.Sleep(100 * time.Millisecond)
 
-		// Refresh the lease
 		success := lease.Refresh(300 * time.Millisecond)
 		assert.True(t, success)
 
-		// Wait for refresh to be processed
 		time.Sleep(50 * time.Millisecond)
 		assert.True(t, refreshed.Load())
 
@@ -131,7 +124,6 @@ func TestLeaseRefresh(t *testing.T) {
 
 		go lease.Start()
 
-		// Wait for expiration
 		time.Sleep(200 * time.Millisecond)
 
 		success := lease.Refresh(1 * time.Second)
@@ -152,11 +144,9 @@ func TestLeaseExtend(t *testing.T) {
 
 		initialExpiration := lease.ExpiresAt()
 
-		// Extend the lease
 		success := lease.Extend(300 * time.Millisecond)
 		assert.True(t, success)
 
-		// Wait for extend to be processed
 		time.Sleep(50 * time.Millisecond)
 		assert.True(t, extended.Load())
 
@@ -171,7 +161,6 @@ func TestLeaseExtend(t *testing.T) {
 
 		go lease.Start()
 
-		// Wait for expiration
 		time.Sleep(200 * time.Millisecond)
 
 		success := lease.Extend(1 * time.Second)
@@ -192,11 +181,9 @@ func TestLeaseRenew(t *testing.T) {
 
 		newExpiration := time.Now().Add(1 * time.Second)
 
-		// Renew the lease
 		success := lease.Renew(newExpiration)
 		assert.True(t, success)
 
-		// Wait for renew to be processed
 		time.Sleep(50 * time.Millisecond)
 		assert.True(t, renewed.Load())
 
@@ -211,7 +198,6 @@ func TestLeaseRenew(t *testing.T) {
 
 		go lease.Start()
 
-		// Wait for expiration
 		time.Sleep(200 * time.Millisecond)
 
 		newExpiration := time.Now().Add(1 * time.Second)
@@ -233,7 +219,6 @@ func TestLeaseHooks(t *testing.T) {
 
 		lease := New("test", 500*time.Millisecond)
 
-		// Add hooks after creation
 		lease.OnRefresh(func() { refreshCalled.Store(true) })
 		lease.OnExtend(func() { extendCalled.Store(true) })
 		lease.OnRenew(func() { renewCalled.Store(true) })
@@ -243,22 +228,18 @@ func TestLeaseHooks(t *testing.T) {
 		go lease.Start()
 		time.Sleep(50 * time.Millisecond) // Let it initialize
 
-		// Test refresh
 		lease.Refresh(500 * time.Millisecond)
 		time.Sleep(50 * time.Millisecond)
 		assert.True(t, refreshCalled.Load())
 
-		// Test extend
 		lease.Extend(200 * time.Millisecond)
 		time.Sleep(50 * time.Millisecond)
 		assert.True(t, extendCalled.Load())
 
-		// Test renew
 		lease.Renew(time.Now().Add(200 * time.Millisecond))
 		time.Sleep(50 * time.Millisecond)
 		assert.True(t, renewCalled.Load())
 
-		// Test cancel
 		lease.Cancel()
 		time.Sleep(100 * time.Millisecond)
 		assert.True(t, cancelCalled.Load())
@@ -274,7 +255,6 @@ func TestLeaseHooks(t *testing.T) {
 
 		go lease.Start()
 
-		// Wait for expiration
 		time.Sleep(300 * time.Millisecond)
 
 		assert.Equal(t, int32(1), count1.Load())
@@ -290,13 +270,11 @@ func TestLeaseOptions(t *testing.T) {
 			OnExpired(func() { expiredCount.Add(1) }),
 		)
 
-		// First start
 		go lease.Start()
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(t, int32(1), expiredCount.Load())
 		assert.True(t, lease.Expired())
 
-		// Second start should be ignored
 		go lease.Start()
 		time.Sleep(200 * time.Millisecond)
 		assert.Equal(t, int32(1), expiredCount.Load()) // Should not increment
@@ -305,7 +283,6 @@ func TestLeaseOptions(t *testing.T) {
 	t.Run("UseWallTime option", func(t *testing.T) {
 		lease := New("test", 1*time.Second, UseWallTime())
 
-		// UseWallTime behavior will be verified through timing tests
 		assert.Equal(t, "test", lease.ID())
 	})
 
@@ -313,7 +290,6 @@ func TestLeaseOptions(t *testing.T) {
 		logger := log.New()
 		lease := New("test", 1*time.Second, WithLogger(logger))
 
-		// Logger is set internally, verified by successful creation
 		assert.Equal(t, "test", lease.ID())
 	})
 
@@ -340,7 +316,6 @@ func TestLeaseThreadSafety(t *testing.T) {
 		var wg sync.WaitGroup
 		const numGoroutines = 100
 
-		// Test concurrent reads
 		for i := 0; i < numGoroutines; i++ {
 			wg.Add(1)
 			go func() {
@@ -351,7 +326,6 @@ func TestLeaseThreadSafety(t *testing.T) {
 			}()
 		}
 
-		// Test concurrent operations
 		for i := 0; i < numGoroutines; i++ {
 			wg.Add(1)
 			go func(i int) {
@@ -384,7 +358,6 @@ func TestLeaseEdgeCases(t *testing.T) {
 		lease.Cancel()
 		time.Sleep(100 * time.Millisecond) // Let cancellation process
 
-		// All operations should return false on cancelled lease
 		assert.False(t, lease.Refresh(1*time.Second))
 		assert.False(t, lease.Extend(1*time.Second))
 		assert.False(t, lease.Renew(time.Now().Add(1*time.Second)))
@@ -400,14 +373,12 @@ func TestLeaseEdgeCases(t *testing.T) {
 		go lease.Start()
 		time.Sleep(50 * time.Millisecond) // Let it initialize
 
-		// Multiple cancel calls
 		lease.Cancel()
 		lease.Cancel()
 		lease.Cancel()
 
 		time.Sleep(100 * time.Millisecond)
 
-		// Should only be called once
 		assert.Equal(t, int32(1), cancelCount.Load())
 	})
 
@@ -419,7 +390,6 @@ func TestLeaseEdgeCases(t *testing.T) {
 
 		go lease.Start()
 
-		// Should expire very quickly
 		time.Sleep(200 * time.Millisecond)
 
 		assert.True(t, expired.Load())
@@ -434,7 +404,6 @@ func TestLeaseEdgeCases(t *testing.T) {
 
 		go lease.Start()
 
-		// Should expire immediately on first tick
 		time.Sleep(200 * time.Millisecond)
 
 		assert.True(t, expired.Load())

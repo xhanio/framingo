@@ -17,8 +17,7 @@ func received(ch <-chan struct{}) bool {
 	}
 }
 
-// listening runs a job that reports, once released, whether each signal had arrived and
-// whether its context was done.
+// listening's job reports, once released, which signals arrived and whether its context was done.
 func listening(t *testing.T, release <-chan struct{}) (*job, <-chan map[string]bool) {
 	t.Helper()
 	got := make(chan map[string]bool, 1)

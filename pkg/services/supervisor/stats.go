@@ -7,9 +7,8 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
-// statsStore zips the per-service records with the lock that guards them:
-// the monitor goroutine writes probe results while health endpoints read
-// them. All access goes through track, snapshot, and update.
+// statsStore: the monitor writes while health endpoints read; access only via
+// track, snapshot and update.
 type statsStore struct {
 	sync.RWMutex
 	records map[string]*entity.SupervisorStats
@@ -21,8 +20,7 @@ func newStatsStore() *statsStore {
 	}
 }
 
-// track adds a record for the service unless its name already has one, and
-// returns the service holding the name then - nil when the record is new.
+// track returns the service already holding the name, nil when newly added.
 func (s *statsStore) track(service common.Service) common.Service {
 	s.Lock()
 	defer s.Unlock()
@@ -36,9 +34,7 @@ func (s *statsStore) track(service common.Service) common.Service {
 	return nil
 }
 
-// snapshot returns a copy of the named service's stats, or nil if the
-// service is unknown. Copies are what leave the lock: callers read them
-// freely while the monitor keeps writing the live record.
+// snapshot returns a copy, nil if unknown.
 func (s *statsStore) snapshot(name string) *entity.SupervisorStats {
 	s.RLock()
 	defer s.RUnlock()
@@ -50,8 +46,7 @@ func (s *statsStore) snapshot(name string) *entity.SupervisorStats {
 	return &cp
 }
 
-// update mutates the named service's stats under the write lock. Blocking
-// work (probes, Init/Start/Stop) stays outside fn.
+// update runs fn under the write lock; keep blocking work out of fn.
 func (s *statsStore) update(name string, fn func(stat *entity.SupervisorStats)) {
 	s.Lock()
 	defer s.Unlock()

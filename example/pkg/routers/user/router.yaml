@@ -1,11 +1,5 @@
-# Two handler groups, one per document. /users manages accounts by ID;
-# /user is the caller's own account. In both, authz checks the caller's role
-# against the handler's permission - failing closed, so every handler
-# declares one or switches authz off - and the user service keeps the rules
-# no permission lifts.
-# authz sits at group level, after authnuser: a handler-level entry wraps
-# outermost, so attached per handler it would run before authnuser had set
-# the credential and refuse every request.
+# authz sits at group level, after authnuser: a handler-level entry wraps outermost
+# and would run before the credential is set.
 server: http
 prefix: /users
 middlewares:
@@ -38,8 +32,7 @@ handlers:
     func: ResetPassword
     permission: local_user_manage_write
 ---
-# The caller's own account: no :id - the handler resolves it from the
-# credential, and only a local user has one.
+# no :id: the caller's own account, resolved from the credential
 server: http
 prefix: /user
 middlewares:
@@ -55,8 +48,7 @@ handlers:
     path: /
     func: UpdateCurrent
     permission: local_user_write
-  # authz also refuses a caller whose password must be reset, so it is
-  # switched off here, where that caller resets it.
+  # authz refuses a caller whose password must be reset, and this is where it is reset
   - method: PUT
     path: /passwords
     func: ChangePassword

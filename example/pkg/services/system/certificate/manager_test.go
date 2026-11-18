@@ -17,9 +17,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/utils/infra"
 )
 
-// setup is the service over a real test database, initialised as the
-// supervisor would - which creates the default CA. Init dumps the CA under
-// infra.ConfigDir, so that points at a temp dir rather than the source tree.
+// Init dumps the default CA under infra.ConfigDir, hence the temp dir
 func setup(t *testing.T) *manager {
 	t.Helper()
 	infra.ConfigDir = t.TempDir()
@@ -34,10 +32,6 @@ func setup(t *testing.T) *manager {
 	return m
 }
 
-// The default CA is the system's own: it signs what Issue issues, but List
-// leaves it out. That is the service's rule now, not a condition of the
-// repository's query - and what List shows is described from the bundle the
-// repository decoded.
 func TestListLeavesOutTheDefaultCA(t *testing.T) {
 	m := setup(t)
 	ctx := context.Background()

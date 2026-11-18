@@ -12,11 +12,10 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/job"
 )
 
-// DefaultCommandGrace is how long a stopped Command gets before a SIGKILL when its Grace is zero.
+// DefaultCommandGrace applies when Grace is zero.
 const DefaultCommandGrace = 10 * time.Second
 
-// Command is a predefined job function that runs a command: job.New(id, cmd.Run) takes a copy,
-// which fixes the definition.
+// Command: job.New(id, cmd.Run) captures a copy, fixing the definition.
 type Command struct {
 	Argv  []string          `json:"argv"` // the executable first
 	Dir   string            `json:"dir,omitempty"`
@@ -25,8 +24,7 @@ type Command struct {
 	Out   io.Writer         `json:"-"`               // nil discards the output
 }
 
-// CommandError is how a Command ended when it did not end on its own with status 0. It unwraps
-// to what stopped the command, so errors.Is(err, context.Canceled) works.
+// CommandError unwraps to what stopped the command, so errors.Is(err, context.Canceled) works.
 type CommandError struct {
 	ExitCode int   // -1 if the command never started or died of a signal
 	Stopped  error // context.Canceled or context.DeadlineExceeded if it was stopped, nil if it ended on its own
@@ -52,8 +50,7 @@ func (e *CommandError) succeeded() bool {
 	return e.Stopped == nil && e.ExitCode == 0
 }
 
-// Run returns nil when the command ended on its own with status 0, a *CommandError otherwise.
-// A job function with bookkeeping of its own calls it on a copy with the Out it wants.
+// Run returns nil only on a self-ended exit 0, else a *CommandError.
 func (c Command) Run(jc job.Context) error {
 	if end := c.execute(jc); !end.succeeded() {
 		return end
@@ -98,7 +95,7 @@ func (c Command) execute(jc job.Context) *CommandError {
 		select {
 		case err := <-exited:
 			if end.Stopped != nil {
-				// what ignored the SIGTERM goes too; a command that ended on its own keeps its children
+				// a stopped command's survivors are killed; one that ended on its own keeps its children
 				_ = p.Kill()
 			}
 			end.ExitCode, end.Err = p.ExitCode(), err

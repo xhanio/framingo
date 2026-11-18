@@ -77,7 +77,7 @@ func newBundleFromBytes(certBytes, caBytes, keyBytes []byte, password string) (*
 	if len(certBytes) == 0 && len(caBytes) == 0 && len(keyBytes) == 0 {
 		return nil, errors.Newf("empty cert bytes")
 	} else if len(caBytes) == 0 && len(keyBytes) == 0 {
-		// try pkcs12 first
+		// try pkcs12, then pem, then der
 		if cert, pool, key, err := ParsePKCS12(certBytes, password); err == nil {
 			result.cert = cert
 			result.pool = pool
@@ -89,7 +89,6 @@ func newBundleFromBytes(certBytes, caBytes, keyBytes []byte, password string) (*
 			}
 			return result, nil
 		}
-		// then pem
 		if cert, pool, key, err := ParsePEM(certBytes, nil, nil, password); err == nil {
 			result.cert = cert
 			result.pool = pool
@@ -101,7 +100,6 @@ func newBundleFromBytes(certBytes, caBytes, keyBytes []byte, password string) (*
 			}
 			return result, nil
 		}
-		// then der
 		if cert, err := ParseDERCert(certBytes); err == nil {
 			result.cert = cert
 		}
@@ -112,7 +110,7 @@ func newBundleFromBytes(certBytes, caBytes, keyBytes []byte, password string) (*
 			return result, nil
 		}
 	} else {
-		// try pem first
+		// try pem, then der
 		if cert, pool, key, err := ParsePEM(certBytes, caBytes, keyBytes, password); err == nil {
 			result.cert = cert
 			result.pool = pool
@@ -124,7 +122,6 @@ func newBundleFromBytes(certBytes, caBytes, keyBytes []byte, password string) (*
 			}
 			return result, nil
 		}
-		// then der
 		if cert, err := ParseDERCert(certBytes); err == nil {
 			result.cert = cert
 		}
@@ -168,7 +165,6 @@ func (b *bundle) init() error {
 	return nil
 }
 
-// parse tls cert
 func (b *bundle) initTLS() error {
 	if len(b.certPEM) == 0 || len(b.keyPEM) == 0 {
 		err := b.init()

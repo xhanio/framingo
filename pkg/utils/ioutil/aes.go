@@ -13,7 +13,6 @@ import (
 
 func EncryptAES(data []byte, password string) ([]byte, error) {
 
-	// Hash the password to create a 32-byte key
 	key := sha256.Sum256([]byte(password))
 
 	block, err := aes.NewCipher(key[:])
@@ -38,7 +37,6 @@ func EncryptAES(data []byte, password string) ([]byte, error) {
 
 func DecryptAES(data []byte, password string) ([]byte, error) {
 
-	// Hash the password to create a 32-byte key
 	key := sha256.Sum256([]byte(password))
 
 	block, err := aes.NewCipher(key[:])

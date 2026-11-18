@@ -43,9 +43,6 @@ func (m *manager) SendRawMessage(ctx context.Context, from common.Named, kind st
 	}
 }
 
-// subscribe wires a registered module's dispatch loop to the bus topic. It
-// no-ops for modules that implement neither MessageHandler nor RawMessageHandler
-// — subscribing them would just drop every message.
 func (m *manager) subscribe(ctx context.Context, svc common.Named) {
 	_, isMH := svc.(common.MessageHandler)
 	_, isRMH := svc.(common.RawMessageHandler)
@@ -63,8 +60,6 @@ func (m *manager) subscribe(ctx context.Context, svc common.Named) {
 	m.wg.Go(func() { m.listen(ctx, svc, ch) })
 }
 
-// listen reads messages from a subscription channel and dispatches to
-// MessageHandler / RawMessageHandler implementations on svc.
 func (m *manager) listen(ctx context.Context, svc common.Named, ch <-chan entity.PubsubMessage) {
 	for {
 		select {

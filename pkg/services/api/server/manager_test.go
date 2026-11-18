@@ -25,7 +25,6 @@ func testManager() *manager {
 	return newManager(WithLogger(log.New(log.WithLevel(-1))))
 }
 
-// mockRouter implements api.Router for testing
 type mockRouter struct {
 	name     string
 	config   []byte
@@ -41,7 +40,6 @@ func okHandler(c echo.Context) error {
 	return c.String(http.StatusOK, "ok")
 }
 
-// freePort returns an available TCP port.
 func freePort(t *testing.T) uint {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -51,8 +49,6 @@ func freePort(t *testing.T) uint {
 	return uint(port)
 }
 
-// startServer sets up a manager with routers, starts the server, and returns
-// the base URL and a cleanup function.
 func startServer(t *testing.T, routers ...*mockRouter) (baseURL string, cleanup func()) {
 	t.Helper()
 	m, baseURL := startManager(t, routers...)
@@ -60,8 +56,7 @@ func startServer(t *testing.T, routers ...*mockRouter) (baseURL string, cleanup 
 	return baseURL, cleanup
 }
 
-// startManager sets up a manager with routers, starts it, and returns it with
-// the base URL once it serves; stopping it is the caller's.
+// the caller stops it
 func startManager(t *testing.T, routers ...*mockRouter) (m *manager, baseURL string) {
 	t.Helper()
 	port := freePort(t)
@@ -76,7 +71,6 @@ func startManager(t *testing.T, routers ...*mockRouter) (m *manager, baseURL str
 	return m, baseURL
 }
 
-// waitServing waits until the server at baseURL answers.
 func waitServing(t *testing.T, baseURL string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
@@ -89,7 +83,6 @@ func waitServing(t *testing.T, baseURL string) {
 	}, 2*time.Second, 10*time.Millisecond)
 }
 
-// httpDo makes an HTTP request and returns status code and body.
 func httpDo(t *testing.T, method, url string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(method, url, nil)
@@ -301,10 +294,6 @@ handlers:
 	assert.Equal(t, http.StatusNotFound, code)
 }
 
-// ============================================================================
-// WebSocket Tests
-// ============================================================================
-
 func TestWebSocket_Echo(t *testing.T) {
 	echoWS := func(c echo.Context, conn *websocket.Conn) error {
 		ctx := c.Request().Context()
@@ -331,7 +320,6 @@ handlers:
 	})
 	defer cleanup()
 
-	// Connect via WebSocket
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -341,7 +329,6 @@ handlers:
 	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
-	// Send and receive a message
 	msg := []byte("hello websocket")
 	err = conn.Write(ctx, websocket.MessageText, msg)
 	require.NoError(t, err)
@@ -351,7 +338,6 @@ handlers:
 	assert.Equal(t, websocket.MessageText, typ)
 	assert.Equal(t, msg, got)
 
-	// Send another message
 	msg2 := []byte("second message")
 	err = conn.Write(ctx, websocket.MessageText, msg2)
 	require.NoError(t, err)
@@ -368,7 +354,6 @@ func TestWebSocket_RegisterRejectsWrongType(t *testing.T) {
 	m := testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
 
-	// WS method with an echo.HandlerFunc should fail
 	err := m.RegisterRouters(&mockRouter{
 		name: "test",
 		config: []byte(`server: http
@@ -400,7 +385,6 @@ handlers:
 	})
 	defer cleanup()
 
-	// Plain HTTP GET to a WS endpoint should not succeed as WebSocket
 	code, _ := httpDo(t, "GET", base+"/ws/feed")
 	assert.NotEqual(t, http.StatusSwitchingProtocols, code)
 }
@@ -429,7 +413,6 @@ handlers:
 	conn, _, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(t, err)
 
-	// Server should close with StatusInternalError
 	_, _, err = conn.Read(ctx)
 	assert.Error(t, err)
 	var closeErr websocket.CloseError
@@ -437,8 +420,6 @@ handlers:
 	assert.Equal(t, websocket.StatusInternalError, closeErr.Code)
 }
 
-// captureMiddleware records the config bytes of every Func call, so a test can
-// see how many attachments were minted and what each one received.
 type captureMiddleware struct {
 	name    string
 	enabled []bool
@@ -456,8 +437,6 @@ func (m *captureMiddleware) Func(enabled bool, config []byte) (func(echo.Handler
 	return func(next echo.HandlerFunc) echo.HandlerFunc { return next }, nil
 }
 
-// rejectMiddleware refuses any config, the shape of a config-free middleware
-// handed a block it does not understand.
 type rejectMiddleware struct{}
 
 func (m *rejectMiddleware) Name() string                   { return "rejectmw" }
@@ -497,9 +476,7 @@ handlers:
 		handlers: map[string]any{"A": okHandler, "B": okHandler},
 	}))
 
-	// One Func call per route: /bare from the group ref, /configured from the
-	// handler ref. The handler's configured ref overrides the group's bare one
-	// rather than stacking a second run.
+	// the handler ref overrides the group's rather than stacking a second run
 	require.Len(t, cap.configs, 2)
 	assert.Nil(t, cap.configs[0], "bare attachment passes nil config")
 	var cfg map[string]string
@@ -530,8 +507,7 @@ handlers:
 		handlers: map[string]any{"A": okHandler, "B": okHandler},
 	}))
 
-	// A group-level config reaches every route of the group, one Func call
-	// each, so per-route state stays per-route.
+	// one Func call per route, so per-route state stays per-route
 	require.Len(t, cap.configs, 2)
 	for _, raw := range cap.configs {
 		var cfg map[string]string
@@ -582,8 +558,6 @@ handlers:
 	assert.Contains(t, err.Error(), "ghost")
 }
 
-// stampMiddleware is shaped like CORS: attached at server level from code, it
-// stamps every response and answers OPTIONS itself, before routing.
 type stampMiddleware struct{}
 
 func (m *stampMiddleware) Name() string                   { return "stamp" }
@@ -666,8 +640,6 @@ handlers:
 	})
 }
 
-// permissionEcho answers with the flattened route metadata it sees at request
-// time, proving the schema never has to leave the server package.
 type permissionEcho struct{}
 
 func (m *permissionEcho) Name() string                   { return "permecho" }
@@ -813,9 +785,6 @@ handlers:
 }
 
 func TestMiddleware_ConfigPrecedence(t *testing.T) {
-	// A handler's own block beats the group's, the group's beats the server
-	// default - each ref falling through to the next level only where it
-	// carries nothing itself.
 	cap := &captureMiddleware{name: "capmw"}
 	m := testManager()
 	require.NoError(t, m.Add("http",
@@ -856,9 +825,6 @@ handlers:
 		require.NoError(t, yaml.Unmarshal(raw, &cfg))
 		scopes = append(scopes, cfg["scope"])
 	}
-	// Route order follows the yaml: bare handler ref inherits the group's
-	// config, the group-only route takes it directly, the configured handler
-	// keeps its own.
 	assert.Equal(t, []string{"group", "group", "handler"}, scopes)
 }
 
@@ -895,8 +861,6 @@ handlers:
 	})
 }
 
-// decliningMiddleware returns no function: attachment declined, the server
-// skips it.
 type decliningMiddleware struct{}
 
 func (m *decliningMiddleware) Name() string                   { return "declining" }
@@ -908,8 +872,6 @@ func (m *decliningMiddleware) Func(enabled bool, config []byte) (func(echo.Handl
 	return nil, nil
 }
 
-// panicMiddleware panics on every request - what recover must catch even when
-// the panic comes from a server-level middleware.
 type panicMiddleware struct{}
 
 func (m *panicMiddleware) Name() string                   { return "panicky" }
@@ -925,7 +887,6 @@ func (m *panicMiddleware) Func(enabled bool, config []byte) (func(echo.HandlerFu
 	}, nil
 }
 
-// witnessMiddleware records that a request reached it.
 type witnessMiddleware struct {
 	saw []string
 }
@@ -957,8 +918,6 @@ func TestChain_Order(t *testing.T) {
 		defer func() { require.NoError(t, m.Stop(context.Background())) }()
 		baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
-		// The panic must come back as a structured error response, not a
-		// dropped connection.
 		require.Eventually(t, func() bool {
 			resp, err := http.Get(baseURL + "/anything")
 			if err != nil {
@@ -971,9 +930,6 @@ func TestChain_Order(t *testing.T) {
 	})
 
 	t.Run("server-level middlewares run in WithMiddlewares order", func(t *testing.T) {
-		// The slot's ordering guarantee is what lets an app put its cors
-		// middleware first and trust that a short-circuited preflight never
-		// reaches the middlewares behind it.
 		port := freePort(t)
 		m := testManager()
 		witness := &witnessMiddleware{}
@@ -1011,14 +967,11 @@ handlers:
 		resp.Body.Close()
 		require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
-		// The GET reached the witness; the short-circuited OPTIONS never did.
 		assert.Contains(t, witness.saw, http.MethodGet)
 		assert.NotContains(t, witness.saw, http.MethodOptions)
 	})
 }
 
-// optionsShortCircuitMiddleware answers OPTIONS itself, the shape of a
-// server-level cors middleware handling preflight.
 type optionsShortCircuitMiddleware struct{}
 
 func (m *optionsShortCircuitMiddleware) Name() string                   { return "optshort" }
@@ -1038,9 +991,6 @@ func (m *optionsShortCircuitMiddleware) Func(enabled bool, config []byte) (func(
 }
 
 func TestMiddleware_DeclineAtRoute(t *testing.T) {
-	// The contract's decline sentence must hold for route attachments exactly
-	// as it does for server-level ones: the route serves as if the middleware
-	// were absent.
 	port := freePort(t)
 	m := testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", port, "/")))
@@ -1102,8 +1052,7 @@ handlers:
 	})
 
 	t.Run("an empty block shadows instead of inheriting", func(t *testing.T) {
-		// `- name: {}` is how a route opts out of the group's or server's
-		// block without detaching the middleware.
+		// `- name: {}` opts out of inherited config without detaching
 		cap := &captureMiddleware{name: "capmw"}
 		m := testManager()
 		require.NoError(t, m.Add("http",
@@ -1155,7 +1104,6 @@ handlers:
 	before := len(cap.configs)
 	require.NoError(t, m.Init(context.Background()))
 	require.Greater(t, len(cap.configs), before)
-	// Every build - first boot and rebuild alike - delivered the server block.
 	for i, raw := range cap.configs {
 		var cfg map[string]string
 		require.NoError(t, yaml.Unmarshal(raw, &cfg), "config %d", i)
@@ -1163,8 +1111,6 @@ handlers:
 	}
 }
 
-// A name already added is a Conflict, never a silent replacement of a
-// listener that may already be serving.
 func TestAdd_RejectsDuplicateName(t *testing.T) {
 	m := testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))

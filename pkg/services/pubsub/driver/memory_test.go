@@ -29,15 +29,12 @@ func TestMemoryHierarchicalTopics(t *testing.T) {
 	_, _ = b.Subscribe("child", "app/module")
 	_, _ = b.Subscribe("leaf", "app/module/component")
 
-	// Publishing to leaf should return all three
 	subs := b.GetSubscribers("app/module/component")
 	assert.Len(t, subs, 3)
 
-	// Publishing to middle should return root and child
 	subs = b.GetSubscribers("app/module")
 	assert.Len(t, subs, 2)
 
-	// Publishing to root should return only root
 	subs = b.GetSubscribers("app")
 	assert.Len(t, subs, 1)
 }
@@ -100,7 +97,6 @@ func TestMemoryUnsubscribe(t *testing.T) {
 	assert.Len(t, subs, 1)
 	assert.Equal(t, "svc2", subs[0])
 
-	// svc2's channel should still work
 	_ = b.Publish(context.Background(), "pub", "topic", "test", nil)
 	select {
 	case <-ch2:
@@ -120,7 +116,6 @@ func TestMemoryUnsubscribeLast(t *testing.T) {
 	subs := b.GetSubscribers("topic")
 	assert.Len(t, subs, 0)
 
-	// channel should be closed
 	_, ok := <-ch
 	assert.False(t, ok)
 }
@@ -163,7 +158,6 @@ func TestMemoryStopClosesChannels(t *testing.T) {
 	err := b.Stop(context.Background())
 	require.NoError(t, err)
 
-	// channel should be closed
 	_, ok := <-ch
 	assert.False(t, ok)
 }
@@ -176,7 +170,6 @@ func TestMemoryDoubleStop(t *testing.T) {
 	err := b.Stop(context.Background())
 	require.NoError(t, err)
 
-	// Second stop should not panic
 	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }

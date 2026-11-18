@@ -9,9 +9,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/components/server/example"
 )
 
-// NewMigrateCmd applies the database migrations and exits - a step of its
-// own, so a deployment runs it once (the prod Job) instead of every replica
-// migrating on start.
+// NewMigrateCmd is its own step so a deployment migrates once, not on every replica start.
 func NewMigrateCmd() *cobra.Command {
 	var migrateConfig string
 	cmd := &cobra.Command{

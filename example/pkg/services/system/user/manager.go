@@ -7,7 +7,6 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 )
 
-// webapp/src/main/java/com/ensilo/webapp/rest/UserRestController.java
 type manager struct {
 	log  log.Logger
 	name string
@@ -16,15 +15,12 @@ type manager struct {
 	sender     common.MessageSender
 }
 
-// New takes the platform for the messagebus the service publishes account
-// changes on - deletions, password resets, identity changes - which the auth
-// service ends sessions on. A platform without one drops them, and a session
-// then outlives the change until its lease expires.
+// New publishes account changes on the platform's messagebus for auth to end
+// sessions; without one, sessions outlive the change until their lease expires.
 func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
 
-// newManager returns the concrete manager, the form package tests construct.
 func newManager(platform platform.Platform, repo Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
@@ -41,7 +37,6 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	// sender is nil on a platform without a messagebus; the supervisor skips
-	// a nil dependency
+	// sender may be nil; the supervisor skips a nil dependency
 	return []common.Service{m.repository, m.sender}
 }

@@ -5,9 +5,6 @@ import (
 	"strings"
 )
 
-// Argv reads a command line as a shell hands one over: --long and -short flags,
-// their values written after an equal sign or in the tokens that follow, and
-// the positionals among them.
 var Argv = NewArgs("=", []string{"--", "-"})
 
 type args struct {
@@ -15,9 +12,6 @@ type args struct {
 	prefixes []string
 }
 
-// NewArgs returns the notation whose flags carry one of prefixes and take a
-// value written after equal or in the tokens that follow. The prefixes are
-// taken as they are then, never aliased.
 func NewArgs(equal string, prefixes []string) Args {
 	return &args{
 		equal:    equal,
@@ -32,8 +26,6 @@ func (a *args) Parse(tokens []string) Entries[Arg] {
 }
 
 func (a *args) ParseInto(entries Entries[Arg], tokens []string) {
-	// A flag left open at the end of one call does not take the tokens of the
-	// next: what follows it there is a line of its own.
 	open := ""
 	for _, token := range tokens {
 		if !a.names(token) {
@@ -50,8 +42,7 @@ func (a *args) ParseInto(entries Entries[Arg], tokens []string) {
 		if k, v, ok := strings.Cut(token, a.equal); ok {
 			key, arg = k, Arg{Inline: true, Values: []string{v}}
 		}
-		// A flag seen again keeps its position and starts its values over, so a
-		// later line replaces an earlier one rather than adding to it.
+		// a repeated flag keeps its position but replaces its values
 		entries.Set(key, arg)
 		open = key
 		if arg.Inline {
@@ -84,10 +75,7 @@ func (a *args) Render(entries Entries[Arg]) []string {
 	return out
 }
 
-// names reports whether a token names a flag, which it does by carrying one of
-// the prefixes and holding more than it. Under Argv's prefixes that leaves a
-// bare "-" a positional, while "--" carries "-" and is longer than it, so it
-// names a flag: there is no terminator handling.
+// names: a bare "-" is a positional, but "--" names a flag; there is no terminator handling.
 func (a *args) names(token string) bool {
 	for _, p := range a.prefixes {
 		if strings.HasPrefix(token, p) && len(token) > len(p) {

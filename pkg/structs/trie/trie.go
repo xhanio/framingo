@@ -17,7 +17,7 @@ type node[T any] struct {
 	termCount int
 }
 
-// Trie is a data structure that stores a set of strings.
+// Trie is safe for concurrent use.
 type Trie[T any] struct {
 	sync.RWMutex
 	root *node[T]
@@ -32,7 +32,6 @@ func (a ByKeys) Less(i, j int) bool { return len(a[i]) < len(a[j]) }
 
 const nul = 0x0
 
-// New creates a new Trie with an initialized root Node.
 func New[T any]() *Trie[T] {
 	return &Trie[T]{
 		root: &node[T]{children: make(map[rune]*node[T]), depth: 0},
@@ -40,7 +39,6 @@ func New[T any]() *Trie[T] {
 	}
 }
 
-// Add adds the key to the Trie, including value data
 func (t *Trie[T]) Add(key string, value T) Node[T] {
 	t.Lock()
 	defer t.Unlock()
@@ -63,8 +61,6 @@ func (t *Trie[T]) Add(key string, value T) Node[T] {
 	return nd
 }
 
-// Find finds and returns value data associated
-// with `key`.
 func (t *Trie[T]) Find(key string) (Node[T], bool) {
 	t.RLock()
 	defer t.RUnlock()
@@ -90,8 +86,6 @@ func (t *Trie[T]) HasKeysWithPrefix(key string) bool {
 	return nd != nil
 }
 
-// Remove removes a key from the trie, ensuring that
-// all bitmasks up to root are appropriately recalculated.
 func (t *Trie[T]) Remove(key string) {
 	t.Lock()
 	defer t.Unlock()
@@ -119,7 +113,7 @@ func (t *Trie[T]) Remove(key string) {
 	}
 }
 
-// Keys returns all the keys currently stored in the trie.
+// Keys returns an empty, non-nil slice for an empty trie.
 func (t *Trie[T]) Keys() []string {
 	t.RLock()
 	defer t.RUnlock()
@@ -131,7 +125,7 @@ func (t *Trie[T]) Keys() []string {
 	return t.PrefixSearch("")
 }
 
-// FuzzySearch performs a fuzzy search against the keys in the trie.
+// FuzzySearch returns, sorted, keys containing pre's runes in order (a subsequence match).
 func (t *Trie[T]) FuzzySearch(pre string) []string {
 	t.RLock()
 	defer t.RUnlock()
@@ -141,7 +135,7 @@ func (t *Trie[T]) FuzzySearch(pre string) []string {
 	return keys
 }
 
-// PrefixSearch performs a prefix search against the keys in the trie.
+// PrefixSearch returns nil when no key has the prefix.
 func (t *Trie[T]) PrefixSearch(pre string) []string {
 	t.RLock()
 	defer t.RUnlock()
@@ -154,7 +148,6 @@ func (t *Trie[T]) PrefixSearch(pre string) []string {
 	return collect(nd)
 }
 
-// newChild creates and returns a pointer to a new child for the node.
 func (n *node[T]) newChild(val rune, path string, value T, term bool) *node[T] {
 	node := &node[T]{
 		val:      val,
@@ -169,7 +162,6 @@ func (n *node[T]) newChild(val rune, path string, value T, term bool) *node[T] {
 	return node
 }
 
-// newEmptyChild creates and returns a pointer to a new child for the node.
 func (n *node[T]) newEmptyChild(val rune, path string) *node[T] {
 	node := &node[T]{
 		val:      val,
@@ -186,7 +178,6 @@ func (n *node[T]) removeChild(r rune) {
 	delete(n.children, r)
 }
 
-// Val returns the value of the node.
 func (n *node[T]) Value() T {
 	return n.value
 }

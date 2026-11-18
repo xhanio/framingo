@@ -23,7 +23,7 @@ type middleware struct {
 	auth auth.Manager
 }
 
-// Authentication only - resolving what a role may do is authz's job.
+// New authenticates only; what a role may do is authz's job.
 func New(auth auth.Manager, opts ...Option) fapi.Middleware {
 	m := &middleware{
 		auth: auth,
@@ -42,8 +42,7 @@ func (m *middleware) Dependencies() []common.Service {
 	return []common.Service{m.auth}
 }
 
-// Func implements api.Middleware. The middleware takes no router.yaml config,
-// so a block under its name is a mistake worth failing startup for.
+// Func takes no router.yaml config: a block under its name fails startup.
 func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
 	if !enabled {
 		return nil, nil
@@ -91,9 +90,7 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 			// if c.Request().Method != http.MethodGet {
 			session.Lease.Refresh(preset.SessionExpiration)
 			// }
-			// The credential is immutable and shared across every request on
-			// this session — resolve permissions where they're consumed, don't
-			// write derived state onto it.
+			// the credential is shared by the whole session: never write derived state onto it
 			c.Set(fapi.ContextKeySession, session)
 			c.Set(fapi.ContextKeyCredential, session.Credential)
 		}

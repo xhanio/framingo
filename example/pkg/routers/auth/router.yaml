@@ -7,8 +7,7 @@ handlers:
     path: /login
     func: Login
     middlewares:
-      # This handler's own limit, overriding the group's throttle attachment
-      # and the server's default config for it.
+      # overrides the group's and the server's throttle limit
       - throttle:
           rps: 1
           burst_size: 3

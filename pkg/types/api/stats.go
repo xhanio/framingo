@@ -4,10 +4,7 @@ import (
 	"time"
 )
 
-// RequestInfo is what the server's Info middleware resolves onto the request
-// context for everything downstream. Route metadata declared in router.yaml -
-// the permission, the poll flag - arrives flattened here; the parsed schema
-// itself never leaves the server package.
+// RequestInfo is set on the request context by the server's Info middleware.
 type RequestInfo struct {
 	Server     string
 	URI        string

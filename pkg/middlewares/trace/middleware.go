@@ -1,17 +1,4 @@
-// Package trace ships the framework's tracing middleware: the server span
-// for every request of the servers it is enabled on. It rides the
-// server-level slot - server.WithMiddlewares(trace.New(t)) at Add time,
-// listed FIRST so its span covers the middlewares behind it - and activates
-// per server through the middleware configs:
-//
-//	trace: true     # or `trace:` - the middleware takes no config
-//
-// With no trace entry at all the attachment stays dormant, which is how a
-// probe listener serves untraced next to a traced public server. The
-// middleware declares its tracing service as a dependency; the api server
-// deliberately does not surface it - a collector outage degrades tracing,
-// never the server - so register the middleware with the supervisor directly
-// if its dependency health should show up in the stats under its own name.
+// Package trace is the server-span middleware; attach it first and enable it per server with a `trace` middleware config entry.
 package trace
 
 import (
@@ -31,8 +18,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/otelutil"
 )
 
-// tracerName is the instrumentation scope of the spans this middleware
-// starts.
 const tracerName = "github.com/xhanio/framingo/pkg/middlewares/trace"
 
 var _ fapi.Middleware = (*middleware)(nil)
@@ -55,9 +40,7 @@ func (m *middleware) Name() string {
 	return m.name
 }
 
-// Dependencies declares the tracing service so an app that registers this
-// middleware with the supervisor gets its dependency health reported under
-// the middleware's own name. The api server does not consume it.
+// Dependencies is for registering with the supervisor directly; the api server ignores it.
 func (m *middleware) Dependencies() []common.Service {
 	if m.tracer == nil {
 		return nil
@@ -65,18 +48,8 @@ func (m *middleware) Dependencies() []common.Service {
 	return []common.Service{m.tracer}
 }
 
-// Func returns the tracing middleware for one attachment. Per request it
-// extracts the W3C remote parent from the headers, starts a server-kind span,
-// pushes it into the request context - which the app's api.Context bridges to
-// every handler and service call - and once the chain has resolved the route,
-// renames the span to the low-cardinality route template with the framingo
-// tid attached as api.trace_id for log<->trace correlation. Provider()
-// is resolved per request on purpose: a tracing-service restart swaps
-// providers without a server rebuild. On the error path the response status
-// comes from the wrapped ErrorBody, because echo's HTTPErrorHandler only
-// commits the response after the middleware chain has returned. On panic the
-// deferred End runs during unwind before the server's recover normalizes the
-// response, so that span exports with its fallback name and no error status.
+// Provider() is resolved per request so a tracing-service restart needs no rebuild;
+// the error status comes from ErrorBody since echo commits the response after the chain returns.
 func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
 	if !enabled {
 		return nil, nil
@@ -94,8 +67,7 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 			ctx, span := m.tracer.Provider().Tracer(tracerName).Start(ctx, "HTTP "+r.Method,
 				oteltrace.WithSpanKind(oteltrace.SpanKindServer),
 				oteltrace.WithAttributes(
-					// the convention's set or _OTHER, never the raw method - the same
-					// mapping the server's metrics use, so span and series agree
+					// same method mapping as the server metrics
 					semconv.HTTPRequestMethodKey.String(string(otelutil.RequestMethod(r.Method))),
 					semconv.NetworkProtocolVersion(otelutil.ProtocolVersion(r)),
 					semconv.URLPath(r.URL.Path),
@@ -119,14 +91,11 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 			if ae != nil {
 				status = ae.Status
 			} else if err != nil {
-				// no route matched: the info built-in short-circuited before
-				// minting anything
+				// no route matched, so no ErrorBody was minted
 				status = fapi.StatusCode(err)
 			}
 			span.SetAttributes(semconv.HTTPResponseStatusCode(status))
-			// only a server failure marks the span and records the exception -
-			// a 4xx is the caller's mistake, and recording every scanner's 404
-			// would bloat the spans with noise
+			// only 5xx marks the span; 4xx would be noise
 			if status >= http.StatusInternalServerError {
 				span.SetStatus(codes.Error, http.StatusText(status))
 				if ae != nil && ae.Origin != nil {

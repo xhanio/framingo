@@ -12,18 +12,12 @@ import (
 
 var _ model.Meter = (*Meter)(nil)
 
-// Meter is a model.Meter serving whatever provider the test supplied. There
-// is deliberately no Swap counterpart to testutil.Tracer's: the production
-// metrics service never replaces its provider, so there is no mid-flight
-// swap for a test to imitate. Pair it with NewMeterRecorder for a real SDK
-// provider whose collected state a test reads back synchronously; a test
-// that just needs some model.Meter is better served by metrics.New(), which
-// serves a real never-exporting provider with no Init, config or exporter.
+// Meter has no Swap (unlike Tracer): the metrics service never replaces its provider.
+// For any model.Meter without assertions, metrics.New() needs no setup.
 type Meter struct {
 	provider metric.MeterProvider
 }
 
-// NewMeter returns a Meter serving p.
 func NewMeter(p metric.MeterProvider) *Meter {
 	return &Meter{provider: p}
 }
@@ -35,23 +29,17 @@ func (m *Meter) Provider() metric.MeterProvider {
 	return m.provider
 }
 
-// NewMeterRecorder pairs a ManualReader with a real SDK provider, so a test
-// creates instruments, records, then Collects and asserts on metricdata -
-// no flush, no sleep, no polling.
+// NewMeterRecorder returns a provider whose ManualReader collects synchronously.
 func NewMeterRecorder() (*sdkmetric.ManualReader, *sdkmetric.MeterProvider) {
 	r := sdkmetric.NewManualReader()
-	// the exemplar filter is pinned to the SDK's default so a shell's
-	// OTEL_METRICS_EXEMPLAR_FILTER cannot change what a test sees
+	// pinned so OTEL_METRICS_EXEMPLAR_FILTER in the shell cannot affect tests
 	return r, sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(r),
 		sdkmetric.WithExemplarFilter(exemplar.TraceBasedFilter),
 	)
 }
 
-// SumInt64 digs the int64 Sum total of the named instrument out of one
-// collected export, summed across data points. found reports whether the
-// instrument appeared with that shape at all - assert on it, so an absent
-// or mistyped metric fails the test instead of reading as zero.
+// SumInt64 totals all data points; assert found so an absent or mistyped metric is not read as zero.
 func SumInt64(rm metricdata.ResourceMetrics, name string) (total int64, found bool) {
 	for _, sm := range rm.ScopeMetrics {
 		for _, met := range sm.Metrics {
@@ -71,13 +59,8 @@ func SumInt64(rm metricdata.ResourceMetrics, name string) (total int64, found bo
 	return 0, false
 }
 
-// Histogram returns the histogram data points of the named instrument out
-// of one collected export, one per attribute set. N is the instrument's
-// value type - float64 for a duration, int64 for a body size - and found
-// reports whether the instrument appeared with that name and shape at all:
-// assert on it, so an absent or mistyped metric fails the test instead of
-// reading as empty. It reads the first scope carrying the name - one
-// emitter per reader is the shape these tests take.
+// Histogram reads only the first scope carrying name; assert the bool so an absent or mistyped
+// metric is not read as empty.
 func Histogram[N int64 | float64](rm metricdata.ResourceMetrics, name string) ([]metricdata.HistogramDataPoint[N], bool) {
 	for _, sm := range rm.ScopeMetrics {
 		for _, met := range sm.Metrics {

@@ -42,10 +42,7 @@ func (m *manager) Services() []common.Service {
 	return m.c.services
 }
 
-// Stats returns a point-in-time copy of each service's stats, so callers
-// read them without racing the monitor's ongoing sweeps. The order is
-// topological - dependencies above dependents, the same order services
-// init - so a red dependency explains the red services below it.
+// Stats returns copies, in topological order (dependencies first).
 func (m *manager) Stats() ([]*entity.SupervisorStats, error) {
 	var result []*entity.SupervisorStats
 	var errs []error
@@ -57,9 +54,7 @@ func (m *manager) Stats() ([]*entity.SupervisorStats, error) {
 	return result, errors.Combine(errs...)
 }
 
-// The manual per-service operations go through the controller's exported
-// methods, which serialize under its operation lock - they never interleave
-// with a monitor restart's stop-init-start cycle at the service level.
+// manual ops serialize with monitor restarts under the controller's operation lock
 
 func (m *manager) InitService(ctx context.Context, name string) error {
 	service := m.c.find(name)

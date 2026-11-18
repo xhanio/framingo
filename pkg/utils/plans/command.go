@@ -1,5 +1,4 @@
-// Package plans holds the predefined kinds of plan: for each, what one run of such a plan does,
-// for the plan manager to run inside a run's bookkeeping.
+// Package plans holds the predefined plan kinds the plan manager runs.
 package plans
 
 import (
@@ -16,14 +15,12 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/jobs"
 )
 
-// Command is a plan of entity.PlanKindCommand: each run is the plan's jobs.Command.
 type Command struct {
 	cmd     jobs.Command
 	timeout time.Duration
 }
 
-// NewCommand reads a command plan, whose Params is a jobs.Command; its Out is the plan manager's,
-// set for each run.
+// NewCommand requires Params to be a jobs.Command; its Out is replaced on each run.
 func NewCommand(plan *entity.Plan) (Command, error) {
 	cmd, ok := plan.Params.(jobs.Command)
 	if !ok {
@@ -38,13 +35,10 @@ func NewCommand(plan *entity.Plan) (Command, error) {
 	return Command{cmd: cmd, timeout: plan.Task.Timeout}, nil
 }
 
-// Header heads each run's log: the command line.
 func (c Command) Header() string {
 	return strings.Join(c.cmd.Argv, " ")
 }
 
-// Run runs the command once, writing its output to out, and says how the run ended. Its error is
-// the command's.
 func (c Command) Run(jc job.Context, out io.Writer) (Outcome, error) {
 	cmd := c.cmd // this run's copy
 	cmd.Out = out

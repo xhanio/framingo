@@ -10,9 +10,8 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
-// The admin role is fixed: it holds every permission implicitly, so it is
-// neither edited, deleted nor handed a permission list. Those refusals live
-// here, where every caller meets them, not in the router.
+// the admin role holds every permission implicitly, so it is never edited,
+// deleted or given a permission list; enforced here so every caller meets it
 
 func (m *manager) Create(ctx context.Context, opts entity.RoleCreateOptions) error {
 	if _, err := m.repository.CreateRole(ctx, opts); err != nil {
@@ -47,9 +46,8 @@ func (m *manager) List(ctx context.Context) ([]*entity.Role, error) {
 	return roles, nil
 }
 
-// Delete refuses a role still held by a user. The check and the delete share
-// one transaction, though that does not stop another transaction assigning
-// the role meanwhile.
+// Delete refuses a role still held by a user; the shared transaction does not
+// stop a concurrent assignment.
 func (m *manager) Delete(ctx context.Context, roleID int32) error {
 	if roleID == rbac.RoleAdminID {
 		return errors.BadRequest.Newf("admin role cannot be deleted")
@@ -74,7 +72,6 @@ func (m *manager) Delete(ctx context.Context, roleID int32) error {
 	return nil
 }
 
-// checkPermissions refuses a permission name rbac does not define.
 func checkPermissions(permissions []string) error {
 	for _, p := range permissions {
 		if !rbac.IsPermissionValid(p) {
@@ -132,11 +129,7 @@ func (m *manager) GetPermissionsByName(ctx context.Context, roleName string) ([]
 	return permissions, nil
 }
 
-// HasPermission reports whether the role identified by roleName holds the
-// given permission. The admin role implicitly holds every permission. An
-// empty permission string is treated as "no permission required" by callers
-// (e.g., the authz middleware skips the check entirely) and returns false
-// here as a defensive default.
+// HasPermission returns false for an empty permission; callers treat empty as "none required".
 func (m *manager) HasPermission(ctx context.Context, roleName string, permission string) (bool, error) {
 	if roleName == rbac.RoleAdmin {
 		return true, nil

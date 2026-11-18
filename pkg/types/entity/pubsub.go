@@ -1,6 +1,5 @@
 package entity
 
-// PubsubMessage represents an event delivered through a subscription channel.
 type PubsubMessage struct {
 	From    string `json:"from"`
 	Topic   string `json:"topic"`

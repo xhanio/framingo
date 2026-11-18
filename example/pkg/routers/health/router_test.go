@@ -12,8 +12,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
-// newRouter hands tests the concrete *router, without the fapi.Router
-// interface New wraps it in for everyone else.
 func TestHandlersCoverConfig(t *testing.T) {
 	r := newRouter(nil, log.Default)
 	handlers := r.Handlers()
@@ -26,9 +24,7 @@ func TestHandlersCoverConfig(t *testing.T) {
 	}
 	require.NoError(t, yaml.Unmarshal(r.Config(), &cfg))
 	require.NotEmpty(t, cfg.Handlers)
-	// Every func the yaml declares must resolve to a handler, or registration
-	// fails at startup - and discovery skips mismatched signatures silently,
-	// so this is the only place short of booting the server that catches it.
+	// discovery skips mismatched signatures silently; only this catches them before boot
 	for _, h := range cfg.Handlers {
 		assert.Contains(t, handlers, h.Func,
 			"router.yaml declares func %s but no matching handler method was discovered", h.Func)
@@ -36,7 +32,6 @@ func TestHandlersCoverConfig(t *testing.T) {
 }
 
 func TestReadyReport(t *testing.T) {
-	// All ready: empty report.
 	stats := []*entity.SupervisorStats{
 		{Name: "db", Ready: true},
 		{Name: "repo", Ready: true},
@@ -44,8 +39,6 @@ func TestReadyReport(t *testing.T) {
 	notReady := readyReport(stats)
 	assert.Empty(t, notReady)
 
-	// One not ready, with its readiness error carried into the report and
-	// results sorted by name for stable output.
 	stats = []*entity.SupervisorStats{
 		{Name: "repo", Ready: false, ReadinessErr: errors.Newf("database ping failed")},
 		{Name: "db", Ready: true},

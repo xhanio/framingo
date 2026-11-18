@@ -9,8 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// A format with no args is the key itself - every plain-string call site
-// keeps working, and a stray % in such a key stays literal.
+// a stray % in a plain key stays literal
 func TestPlainKey(t *testing.T) {
 	v := viper.New()
 	v.Set("db.connection.max_open", 7)
@@ -20,8 +19,6 @@ func TestPlainKey(t *testing.T) {
 	assert.Equal(t, "kept", c.GetString("odd%key"))
 }
 
-// With args the format is Sprintf-ed first, so a service reads under a root
-// it chooses at runtime - the second database's keys, not the package's.
 func TestFormattedKey(t *testing.T) {
 	v := viper.New()
 	v.Set("clickhouse.connection.max_open", 3)
@@ -41,22 +38,18 @@ func TestIsSet(t *testing.T) {
 	assert.False(t, c.IsSet("metrics.enabled"))
 }
 
-// A nil viper wraps an empty one: usable, every getter zero.
 func TestNewNil(t *testing.T) {
 	c := New(nil)
 	assert.Equal(t, "", c.GetString("anything"))
 	assert.False(t, c.IsSet("anything"))
 }
 
-// FromContext never returns nil: a bare context yields an empty Config, so
-// every getter reads zero and no caller needs a nil check.
 func TestFromContextBare(t *testing.T) {
 	c := FromContext(context.Background())
 	assert.NotNil(t, c)
 	assert.Equal(t, 0, c.GetInt("db.connection.max_open"))
 }
 
-// WrapContext carries the very Config FromContext hands back.
 func TestContextRoundTrip(t *testing.T) {
 	v := viper.New()
 	v.Set("example.greeting", "hi")

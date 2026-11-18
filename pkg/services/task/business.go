@@ -94,7 +94,6 @@ func (m *manager) Remove(ctx context.Context, tasks ...*entity.Task) error {
 	return nil
 }
 
-// killGoing sends SignalKill to those of the executions still going, and says how many there are.
 func killGoing(executions []*execution) int {
 	var left int
 	for _, e := range executions {
@@ -190,7 +189,7 @@ func (m *manager) enqueue(reg *registration) {
 	m.pq.Push(reg)
 }
 
-// drop takes a registration's schedule and waits out of the manager. The caller holds el.
+// The caller holds el.
 func (m *manager) drop(reg *registration) {
 	if reg.cron != 0 {
 		m.cm.Remove(reg.cron)

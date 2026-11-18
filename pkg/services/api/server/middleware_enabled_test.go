@@ -11,10 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The enabled flag is resolved by the framework and passed to every Func:
-// booleans under a middleware's name are switches, most specific first;
-// config resolves independently of the switch.
-
 func registerCapture(t *testing.T, routerYAML string, opts ...ServerOption) *captureMiddleware {
 	t.Helper()
 	m := testManager()
@@ -46,8 +42,6 @@ handlers:
       - capmw: false
 `)
 	require.Equal(t, []bool{true, false}, cap.enabled)
-	// The switch and the config resolve independently: the disabled
-	// attachment still sees the group's block.
 	assert.Contains(t, string(cap.configs[0]), "group")
 	assert.Contains(t, string(cap.configs[1]), "group")
 }
@@ -67,7 +61,6 @@ handlers:
     path: /off
     func: Off
 `)
-	// Most specific boolean wins in both directions.
 	require.Equal(t, []bool{true, false}, cap.enabled)
 }
 
@@ -110,8 +103,6 @@ handlers:
     middlewares:
       - capmw: "false"
 `)
-	// The quoted string is config, not a switch - the escape hatch for a
-	// middleware whose config genuinely looks boolean.
 	require.Equal(t, []bool{true}, cap.enabled)
 	assert.Contains(t, string(cap.configs[0]), "false")
 }
@@ -132,13 +123,10 @@ handlers:
 `),
 		handlers: map[string]any{"On": okHandler},
 	})
-	// Switching off a middleware that does not exist is a typo, not a no-op.
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ghost")
 }
 
-// Server-level middlewares are declared by WithMiddlewares and activated by
-// the server's middleware configs.
 func TestEnabled_ServerLevelActivation(t *testing.T) {
 	boot := func(t *testing.T, configs []byte) *witnessMiddleware {
 		t.Helper()

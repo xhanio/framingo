@@ -9,10 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Driver bundles the per-database-engine hooks needed by the manager.
-// Each driver subpackage under pkg/services/db/drivers/* registers a Driver
-// during its init() so the core package never imports concrete GORM or
-// golang-migrate drivers.
+// Driver is registered from a drivers/* subpackage's init() so the core imports no engine.
 type Driver struct {
 	Dialector func(dsn string) gorm.Dialector
 	Migration func(sqlDB *sql.DB) (database.Driver, error)
@@ -46,9 +43,7 @@ func (r *registry) lookup(dbtype string) (Driver, error) {
 	return d, nil
 }
 
-// Register makes a Driver available under the given dbtype name. It is meant
-// to be called from the init() of a driver subpackage; double-registration
-// panics so misconfiguration surfaces at startup.
+// Register panics on double registration.
 func Register(dbtype string, d Driver) {
 	reg.register(dbtype, d)
 }

@@ -29,37 +29,31 @@ import (
 type manager struct {
 	name   string
 	config *viper.Viper
-	// util services
+
 	log log.Logger
 
-	// infra services
 	tracing    tracing.Manager
 	db         db.Manager
 	metrics    metrics.Manager
 	pubsub     pubsub.Manager
 	messagebus messagebus.Manager
-	// platform bundle for business constructors
+
 	platform platform.Platform
-	// data access
+
 	repository repository.Repository
 
-	// system services
 	user         user.Manager
 	role         role.Manager
 	organization organization.Manager
 	certificate  certificate.Manager
 	auth         auth.Manager
 
-	// business services
 	example example.Manager
 
-	// api related services
 	api server.Manager
 
-	// service controller
 	services supervisor.Manager
 
-	// shutdown control
 	ctx    context.Context
 	cancel context.CancelFunc
 }

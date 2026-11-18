@@ -17,7 +17,6 @@ import (
 
 var _ Server = (*server)(nil)
 
-// server holds an echo instance with its configuration and implements model.APIServer interface
 type server struct {
 	sync.Mutex
 
@@ -30,9 +29,7 @@ type server struct {
 	middlewareConfigs []byte
 	echo              *echo.Echo
 
-	// meter is the handle WithMeter gave this instance, nil when none was;
-	// inst are the instruments Add minted - noops without a meter, so the
-	// Metrics built-in never checks.
+	// meter may be nil; inst never is (noops without a meter)
 	meter model.Meter
 	inst  *instruments
 
@@ -41,19 +38,13 @@ type server struct {
 
 	err error // why the serve loop exited; nil while serving or after a graceful shutdown
 
-	// net/http's Shutdown neither closes nor waits for an upgraded connection,
-	// so the WebSocket handlers go by these: wsCtx ends when stop begins, which
-	// closes their connections going away - each echo gets its own - and wsWG
-	// counts them, whichever echo they came from, for stop to wait on.
+	// Shutdown neither closes nor waits for upgraded connections: wsCtx (one per echo)
+	// ends when stop begins, and wsWG counts handlers across echos for stop to wait on
 	wsCtx    context.Context
 	wsCancel context.CancelFunc
 	wsWG     syncutil.WaitGroup
 }
 
-// serve runs the listener until it stops and remembers why. The record is
-// cleared on every launch, so a rebuilt listener starts with a clean slate;
-// http.ErrServerClosed is the expected return after a graceful Shutdown and
-// is not worth remembering.
 func (s *server) serve() {
 	s.Lock()
 	s.err = nil
@@ -68,8 +59,6 @@ func (s *server) serve() {
 	s.log.Warnf("server %s stopped serving: %v", s.name, err)
 }
 
-// serveError reports why the serve loop exited: nil while serving, or after
-// a graceful shutdown.
 func (s *server) serveError() error {
 	s.Lock()
 	defer s.Unlock()
@@ -84,7 +73,6 @@ func (s *server) Endpoint() *api.Endpoint {
 	return s.endpoint
 }
 
-// start starts a single HTTP or HTTPS server
 func (s *server) start() error {
 	if s.endpoint == nil {
 		return nil
@@ -101,7 +89,6 @@ func (s *server) start() error {
 	return s.echo.StartServer(s.echo.TLSServer)
 }
 
-// stop gracefully shuts down the server, its WebSocket handlers included
 func (s *server) stop(ctx context.Context) error {
 	s.Lock()
 	s.wsCancel()
@@ -123,21 +110,7 @@ func (s *server) stop(ctx context.Context) error {
 	return errors.Wrap(err)
 }
 
-// parseMiddlewareConfigs resolves the raw block handed to
-// WithMiddlewareConfigs, splitting each entry once into its two meanings.
-// Unlike a router.yaml middleware list, the block is a plain mapping -
-// defaults carry no order:
-//
-//	throttle:
-//	  rps: 100.0
-//	  burst_size: 200
-//	cors: true
-//
-// A boolean value is a switch and lands in switches (cors: false disables
-// the cors middleware); anything else is config and lands in configs, a
-// null entry as a present key with nil bytes. Switches come first, the way
-// Func takes them. Called wherever the mapping is consumed; Add surfaces an
-// invalid block before the server exists.
+// a null entry is a present key in configs with nil bytes
 func (s *server) parseMiddlewareConfigs() (switches map[string]bool, configs map[string][]byte, err error) {
 	if s.middlewareConfigs == nil {
 		return nil, nil, nil

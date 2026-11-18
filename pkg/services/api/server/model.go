@@ -10,12 +10,8 @@ type Server interface {
 	Endpoint() *api.Endpoint
 }
 
-// Manager manages multiple server instances.
 type Manager interface {
 	common.Service
-	// health.go: a listener that stopped serving fails both probes - a
-	// restart rebuilds the echo instances and re-binds it, so it is
-	// liveness-fixable, and it is equally not ready for traffic.
 	common.Liveness
 	common.Readiness
 	common.Initializable
@@ -24,7 +20,6 @@ type Manager interface {
 	List() []Server
 	RegisterRouters(routers ...api.Router) error
 	RegisterMiddlewares(middlewares ...api.Middleware) error
-	// Add creates the named server instance; a name already added is a
-	// Conflict rather than a silent replacement.
+	// Add returns a Conflict for a name already added.
 	Add(name string, opts ...ServerOption) error
 }

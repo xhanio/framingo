@@ -15,7 +15,6 @@ import (
 )
 
 func TestBundle(t *testing.T) {
-	// 1. create root ca
 	key, err := generateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +31,6 @@ func TestBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 2. create intermediate ca inter1
 	inter1, err := root.SignCA(&CARequest{
 		CommonName: "inter1",
 		KeepChain:  true,
@@ -40,7 +38,6 @@ func TestBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 3. create intermediate ca inter2 from inter1
 	inter2, err := inter1.SignCA(&CARequest{
 		CommonName: "inter2",
 		KeepChain:  true,
@@ -48,7 +45,6 @@ func TestBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 4. create server cert from root
 	server1, err := inter1.SignServer(&ServerRequest{
 		CommonName: "server1",
 		IPs:        []net.IP{net.ParseIP("127.0.0.1")},
@@ -57,7 +53,6 @@ func TestBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 5. create client cert from inter2
 	client1, err := inter2.SignClient(&ClientRequest{
 		CommonName: "client1",
 		KeepChain:  true,
@@ -92,7 +87,6 @@ func TestBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// verify the response
 	respBodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -104,8 +98,6 @@ func TestBundle(t *testing.T) {
 	}
 }
 
-// Generates its own material rather than reading a file from disk, so it runs
-// anywhere.
 func TestParsePEM(t *testing.T) {
 	ca, err := New()
 	if err != nil {
@@ -126,8 +118,7 @@ func TestParsePEM(t *testing.T) {
 	}
 }
 
-// ParsePEMKey must decrypt a password-protected PKCS#8 key, and must fail on
-// the wrong password rather than returning a garbage key.
+// a wrong password must fail, not yield a garbage key
 func TestParseEncryptedPEMKey(t *testing.T) {
 	const password = "demo"
 

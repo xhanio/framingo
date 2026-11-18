@@ -47,9 +47,7 @@ func (r *router) Logout(c api.Context) error {
 	if session, ok := c.Session(); ok && session != nil {
 		r.am.CloseSession(c, session.ID)
 	}
-	// Attributes must match the cookie set at login (notably Path), or the
-	// browser scopes this deletion to the request's directory and leaves the
-	// original session cookie in place.
+	// must match the login cookie's attributes (notably Path), or the browser keeps the original
 	cookie := &http.Cookie{
 		Name:     fapi.CookiesKeySession,
 		Value:    "",
@@ -69,8 +67,7 @@ func (r *router) Session(c api.Context) error {
 	if !ok || credential == nil {
 		return errors.Unauthorized.New()
 	}
-	// Resolved here, not carried on the credential: permissions derive from
-	// Role and can change while the session is alive.
+	// resolved per request: permissions derive from Role and can change mid-session
 	permissions, err := r.rm.GetPermissionsByName(c, credential.Role)
 	if err != nil {
 		return errors.Wrap(err)

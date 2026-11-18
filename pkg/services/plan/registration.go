@@ -6,9 +6,8 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
-// registration lasts from Add to Delete: the plan, and its latest run, which its runs write as
-// they start and end. A run left going by a Delete writes to its own
-// registration, never to that of the plan added again under the same ID.
+// registration lasts from Add to Delete; a run outliving a Delete writes to its own
+// registration, never to one re-added under the same ID.
 type registration struct {
 	plan *entity.Plan
 
@@ -17,7 +16,6 @@ type registration struct {
 	pending *triggered // the latest firing of Trigger, whose ID a run or a drop claims
 }
 
-// lastRun is the plan's latest run, nil if it has none yet.
 func (r *registration) lastRun() *entity.PlanRun {
 	r.mu.Lock()
 	defer r.mu.Unlock()

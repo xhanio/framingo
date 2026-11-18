@@ -10,9 +10,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
-// drainUntilClosed reports whether ch reaches a closed state within d, draining
-// whatever is buffered in it. A subscriber that is never evicted keeps its
-// channel open, so this returns false.
 func drainUntilClosed[T any](ch <-chan T, d time.Duration) bool {
 	closed := make(chan struct{})
 	go func() {
@@ -35,14 +32,12 @@ func dropped(t *testing.T, d Driver) uint64 {
 	return s.Dropped()
 }
 
-// A subscriber that stops reading must be evicted, not silently skipped.
 func TestMemoryDropSubscriberEvictsLaggard(t *testing.T) {
 	b := NewMemory(log.Default, WithOnFull(DropSubscriber), WithChannelBuffer(1), WithQueueCap(2))
 
 	ch, err := b.Subscribe("slow", "topic")
 	require.NoError(t, err)
 
-	// Never read from ch, so the channel buffer and then the pending queue fill up.
 	for i := 0; i < 50; i++ {
 		require.NoError(t, b.Publish(context.Background(), "pub", "topic", "kind", i))
 	}
@@ -55,10 +50,6 @@ func TestMemoryDropSubscriberEvictsLaggard(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond, "evicted subscriber should be gone from the topic")
 }
 
-// Eviction must use the topic the subscriber actually subscribed to, not the
-// topic the message was published to. A subscriber on "app" receives messages
-// published to "app/module/component"; looking it up under the publish topic
-// finds nothing, and the eviction silently does nothing.
 func TestMemoryDropSubscriberEvictsPrefixSubscriber(t *testing.T) {
 	b := NewMemory(log.Default, WithOnFull(DropSubscriber), WithChannelBuffer(1), WithQueueCap(2))
 
@@ -77,7 +68,6 @@ func TestMemoryDropSubscriberEvictsPrefixSubscriber(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond, "evicted subscriber should be gone from its subscription topic")
 }
 
-// Evicting one laggard must not disturb a healthy subscriber on the same topic.
 func TestMemoryDropSubscriberSparesHealthySubscriber(t *testing.T) {
 	b := NewMemory(log.Default, WithOnFull(DropSubscriber), WithChannelBuffer(2), WithQueueCap(8))
 
@@ -91,8 +81,7 @@ func TestMemoryDropSubscriberSparesHealthySubscriber(t *testing.T) {
 		}
 	}()
 
-	// Publish slowly enough that a subscriber which is actually draining stays
-	// well inside its queue; only the one that never reads falls behind.
+	// slow enough that a draining subscriber stays well inside its queue
 	for i := 0; i < 100; i++ {
 		require.NoError(t, b.Publish(context.Background(), "pub", "topic", "kind", i))
 		time.Sleep(200 * time.Microsecond)
@@ -106,8 +95,6 @@ func TestMemoryDropSubscriberSparesHealthySubscriber(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond, "healthy subscriber should survive")
 }
 
-// The default policy stays DropMessage for backward compatibility, but the
-// drops must now be counted rather than silently swallowed.
 func TestMemoryDropMessageCountsDrops(t *testing.T) {
 	b := NewMemory(log.Default, WithChannelBuffer(1), WithQueueCap(2))
 
@@ -122,11 +109,9 @@ func TestMemoryDropMessageCountsDrops(t *testing.T) {
 		return dropped(t, b) > 0
 	}, 2*time.Second, 10*time.Millisecond, "dropped messages should be counted")
 
-	// The subscriber is kept, because DropMessage drops the message, not the peer.
 	assert.Len(t, b.GetSubscribers("topic"), 1)
 }
 
-// A healthy subscriber loses nothing and nothing is counted as dropped.
 func TestMemoryNoDropsForHealthySubscriber(t *testing.T) {
 	b := NewMemory(log.Default, WithOnFull(DropSubscriber), WithChannelBuffer(1), WithQueueCap(2))
 
@@ -148,9 +133,6 @@ func TestMemoryNoDropsForHealthySubscriber(t *testing.T) {
 	assert.Len(t, b.GetSubscribers("topic"), 1)
 }
 
-// The pending queue exists to absorb a burst that overruns the channel buffer.
-// A subscriber that reads late, but does read, must lose nothing and stay
-// subscribed, and the messages must arrive in publish order.
 func TestMemoryQueueAbsorbsBurstBeyondChannelBuffer(t *testing.T) {
 	const burst = 100
 	b := NewMemory(log.Default, WithOnFull(DropSubscriber), WithChannelBuffer(1), WithQueueCap(burst))
@@ -176,7 +158,6 @@ func TestMemoryQueueAbsorbsBurstBeyondChannelBuffer(t *testing.T) {
 	assert.Len(t, b.GetSubscribers("topic"), 1)
 }
 
-// Unsubscribing an already-evicted subscriber must not panic on a double close.
 func TestMemoryEvictThenUnsubscribeDoesNotPanic(t *testing.T) {
 	b := NewMemory(log.Default, WithOnFull(DropSubscriber), WithChannelBuffer(1), WithQueueCap(2))
 

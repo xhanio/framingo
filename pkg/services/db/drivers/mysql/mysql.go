@@ -1,6 +1,4 @@
-// Package mysql registers the MySQL GORM dialector, golang-migrate driver,
-// DSN builder, and cleanup hooks with pkg/services/db. Blank-import it to
-// enable MySQL support.
+// Package mysql registers the MySQL driver with pkg/services/db; blank-import it.
 package mysql
 
 import (

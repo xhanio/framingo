@@ -66,7 +66,7 @@ func signCA(req *CARequest, key *rsa.PrivateKey, ca *bundle) (*x509.Certificate,
 		return nil, errors.Wrapf(err, "failed to parse certificate request")
 	}
 
-	// RFC 5280 recommends no more than 20 octets/160 bits
+	// RFC 5280: at most 20 octets
 	sn, err := rand.Int(rand.Reader, big.NewInt(1).Lsh(big.NewInt(1), 159))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to generate certificate serial number")

@@ -16,7 +16,6 @@ type Certificate struct {
 	RefCount   int    `gorm:"column:ref_count;type:integer"`
 }
 
-// TableName specifies the table name for Certificate model.
 func (Certificate) TableName() string {
 	return "certificates"
 }

@@ -12,8 +12,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
-// failNTimes returns an error for the first n calls, then nil - a database
-// bootstrapping, a socket not yet listening.
 func failNTimes(n int) func() error {
 	calls := 0
 	return func() error {
@@ -25,9 +23,6 @@ func failNTimes(n int) func() error {
 	}
 }
 
-// With the init policy on, a dependent's turn waits for its dependency to
-// answer the Ready probe before running its own Init - a bootstrapping
-// database holds the repository's init until the ping answers.
 func TestInitWaitsForDependencyReadiness(t *testing.T) {
 	db := newMockService("db")
 	db.readyFn = failNTimes(2)
@@ -45,8 +40,6 @@ func TestInitWaitsForDependencyReadiness(t *testing.T) {
 	assert.Equal(t, 1, repo.initCalled)
 }
 
-// A service's own failing Init retries at its own turn - so by the time
-// dependents run, the dependency is initialized and only Ready is observed.
 func TestInitRetriesOwnInit(t *testing.T) {
 	db := newMockService("db")
 	db.initFn = failNTimes(2)
@@ -64,8 +57,7 @@ func TestInitRetriesOwnInit(t *testing.T) {
 	assert.Equal(t, 1, repo.initCalled)
 }
 
-// A bounded policy gives up after its retries; the failing service records
-// the error and dependents fail fast without burning their own budget.
+// dependents fail fast without burning their own retry budget
 func TestInitPolicyExhausted(t *testing.T) {
 	db := newMockService("db")
 	db.initErr = fmt.Errorf("db down")
@@ -91,8 +83,6 @@ func TestInitPolicyExhausted(t *testing.T) {
 	assert.Error(t, stat.InitializationErr)
 }
 
-// Policy off is today's one-pass behavior: the Initialized flag is the only
-// dependency gate, and no Ready probes run during init.
 func TestInitPolicyDisabledSkipsProbes(t *testing.T) {
 	db := newMockService("db")
 	db.readyErr = fmt.Errorf("never ready")
@@ -108,7 +98,6 @@ func TestInitPolicyDisabledSkipsProbes(t *testing.T) {
 	assert.Equal(t, 1, repo.initCalled)
 }
 
-// Cancelling the Init context cuts an unbounded wait short.
 func TestInitWaitHonorsCancel(t *testing.T) {
 	db := newMockService("db")
 	db.readyErr = fmt.Errorf("never ready")

@@ -18,10 +18,7 @@ func (m *middleware) setDefaults() {
 	}
 }
 
-// WithName renames the attachment. The middleware configs key follows the
-// name, so a renamed instance activates under its new name - the way out of
-// a collision with an app middleware called trace, or the way to run two
-// differently-named instances.
+// WithName also renames the middleware configs key that activates it.
 func WithName(name string) Option {
 	return func(m *middleware) {
 		m.name = name

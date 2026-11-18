@@ -49,8 +49,7 @@ func LimitReadAll(ctx context.Context, r io.Reader, p []byte) (int, error) {
 	return offset, nil
 }
 
-// copyBuffer is the cancelable implementation of Copy and CopyBuffer.
-// if buf is nil, one is allocated.
+// CopyBuffer stops when ctx ends; a nil buf is allocated.
 func CopyBuffer(ctx context.Context, dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
 	if buf == nil {
 		size := 32 * 1024

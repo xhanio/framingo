@@ -1,6 +1,4 @@
-// Package otlphttp registers the OTLP-over-HTTP span exporter under
-// tracing.OTLPHTTP. Blank-import it to enable `tracing.exporter: otlphttp`
-// without forcing every binary to carry exporters it doesn't use.
+// Package otlphttp registers tracing.OTLPHTTP when blank-imported.
 package otlphttp
 
 import (
@@ -18,15 +16,11 @@ func init() {
 	tracing.Register(tracing.OTLPHTTP, factory)
 }
 
-// config is this transport's own shape: the shared otlp core plus the
-// http-only url_path.
 type config struct {
 	model.Config `yaml:",inline"`
 	URLPath      string `yaml:"url_path"`
 }
 
-// factory builds the exporter without dialing: otlp connects lazily, so an
-// unreachable collector never fails the tracing service's Init.
 func factory(ctx context.Context, raw []byte) (sdktrace.SpanExporter, error) {
 	var cfg config
 	if err := model.Decode(raw, &cfg); err != nil {

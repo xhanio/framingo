@@ -10,7 +10,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/syncutil"
 )
 
-// DefaultTopic is the topic messagebus uses when WithTopic is not provided.
 const DefaultTopic = "/messages"
 
 var _ Manager = (*manager)(nil)

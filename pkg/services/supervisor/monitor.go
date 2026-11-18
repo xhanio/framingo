@@ -46,9 +46,9 @@ func (mon *monitor) checkAll(ctx context.Context) {
 		if err := mon.check(ctx, service, sw); err != nil {
 			mon.log.Warnf("healthcheck failed for %s: %s", service.Name(), err)
 		}
-		// re-snapshot: check just wrote the probe results this decision reads
+		// re-snapshot: check just wrote the probe results
 		stat = mon.c.stats.snapshot(service.Name())
-		// only restart on liveness or stat-based failures, not readiness-only
+		// readiness-only failures don't restart
 		if stat.LivenessErr == nil && stat.Healthcheck() == nil {
 			continue
 		}
@@ -76,9 +76,7 @@ func (mon *monitor) checkAll(ctx context.Context) {
 	}
 }
 
-// A sweep is one monitoring pass. Probes are memoized per sweep, so a
-// dependency shared by many services is checked exactly once and every
-// dependent reuses its result.
+// sweep memoizes probes so a shared dependency is checked once per pass.
 type sweep struct {
 	done     map[string]error
 	inflight map[string]bool
@@ -91,9 +89,6 @@ func newSweep() *sweep {
 	}
 }
 
-// healthcheck runs an ad-hoc check of one service and its dependency chain.
-// The periodic monitor goes through checkAll instead, which shares a single
-// sweep across all services.
 func (mon *monitor) healthcheck(ctx context.Context, service common.Service) error {
 	return mon.check(ctx, service, newSweep())
 }
@@ -107,8 +102,7 @@ func (mon *monitor) check(ctx context.Context, service common.Service, sw *sweep
 		return err
 	}
 	if sw.inflight[name] {
-		// TopoSort rejects cycles at wiring time; if one slips through
-		// anyway, stop the walk here instead of recursing forever.
+		// cycle guard: TopoSort should have rejected it
 		return nil
 	}
 	sw.inflight[name] = true
@@ -127,7 +121,7 @@ func (mon *monitor) check(ctx context.Context, service common.Service, sw *sweep
 		return err
 	}
 	errs = append(errs, stat.Healthcheck())
-	// probe without the lock held - probes may do I/O and take a while
+	// probe unlocked: probes may do I/O
 	var livenessErr error
 	if liveness, ok := service.(common.Liveness); ok {
 		if err := liveness.Alive(ctx); err != nil {

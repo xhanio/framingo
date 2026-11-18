@@ -66,7 +66,6 @@ func TestServerCertAndClientCertWithGeneratedCA(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// verify the response
 	respBodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +97,6 @@ func TestServerCertAsIntermediateCA(t *testing.T) {
 	certpool := x509.NewCertPool()
 	certpool.AppendCertsFromPEM(newCA.CertPEM())
 
-	// set up the httptest.Server using our certificate signed by our CA
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "success!")
 	}))
@@ -132,7 +130,6 @@ func TestServerCertAsIntermediateCA(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// verify the response
 	respBodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +154,6 @@ func TestNonCACertificateServeASCA(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// create a new CA using the server certificate
 	_, err = NewCABundle(serverCertBundle.CertPEM(), serverCertBundle.KeyPEM())
 	if err == nil {
 		t.Fatal("Expect error: failed to create a new CA from the server certificate")

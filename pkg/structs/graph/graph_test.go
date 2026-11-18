@@ -6,7 +6,6 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// testNode implements common.Named for testing
 type testNode struct {
 	name string
 }
@@ -106,7 +105,6 @@ func TestGraph_Add(t *testing.T) {
 				t.Errorf("len(Nodes()) = %d, want %d", len(nodes), tt.expectedCount)
 			}
 
-			// Check all expected nodes are present
 			nodeNames := make(map[string]bool)
 			for _, node := range nodes {
 				nodeNames[node.Name()] = true
@@ -177,7 +175,7 @@ func TestGraph_TopoSort(t *testing.T) {
 				return g
 			},
 			expectError: false,
-			// A should come first, then B and C (order between B and C doesn't matter), then D
+			// A first, D last; B and C in any order
 			expectedOrder: []string{"A"}, // We'll check A is first and D is last
 		},
 		{
@@ -249,7 +247,6 @@ func TestGraph_TopoSort(t *testing.T) {
 				nodeNames[i] = node.Name()
 			}
 
-			// For simple cases, check exact order
 			if len(tt.expectedOrder) == len(nodeNames) {
 				for i, expected := range tt.expectedOrder {
 					if i < len(nodeNames) && nodeNames[i] != expected {
@@ -257,7 +254,6 @@ func TestGraph_TopoSort(t *testing.T) {
 					}
 				}
 			} else if tt.name == "diamond dependency" {
-				// Special case: check A is first and D is last
 				if len(nodeNames) != 4 {
 					t.Errorf("Expected 4 nodes, got %d", len(nodeNames))
 				}
@@ -268,17 +264,14 @@ func TestGraph_TopoSort(t *testing.T) {
 					t.Errorf("Expected D to be last, got %s", nodeNames[3])
 				}
 			} else if tt.name == "multiple independent components" {
-				// Check that dependencies come before dependents
 				positions := make(map[string]int)
 				for i, name := range nodeNames {
 					positions[name] = i
 				}
 
-				// B should come before A
 				if positions["B"] >= positions["A"] {
 					t.Error("B should come before A")
 				}
-				// D should come before C
 				if positions["D"] >= positions["C"] {
 					t.Error("D should come before C")
 				}
@@ -304,7 +297,6 @@ func TestGraph_Count(t *testing.T) {
 		t.Errorf("After adding two nodes Count() = %d, want 2", g.Count())
 	}
 
-	// Adding duplicate should not increase count
 	g.Add(newTestNode("A"))
 	if g.Count() != 2 {
 		t.Errorf("After adding duplicate Count() = %d, want 2", g.Count())
@@ -314,13 +306,11 @@ func TestGraph_Count(t *testing.T) {
 func TestGraph_Nodes(t *testing.T) {
 	g := New[testNode]()
 
-	// Empty graph
 	nodes := g.Nodes()
 	if len(nodes) != 0 {
 		t.Errorf("Empty graph Nodes() length = %d, want 0", len(nodes))
 	}
 
-	// Add nodes
 	g.Add(newTestNode("A"))
 	g.Add(newTestNode("B"), newTestNode("C"))
 
@@ -329,7 +319,6 @@ func TestGraph_Nodes(t *testing.T) {
 		t.Errorf("After adding nodes, Nodes() length = %d, want 3", len(nodes))
 	}
 
-	// Check all nodes are present
 	nodeNames := make(map[string]bool)
 	for _, node := range nodes {
 		nodeNames[node.Name()] = true
@@ -344,12 +333,10 @@ func TestGraph_Nodes(t *testing.T) {
 }
 
 func TestGraph_TopoSortPreservesOrder(t *testing.T) {
-	// Test that TopoSort can be called multiple times and maintains consistency
 	g := New[testNode]()
 	g.Add(newTestNode("C"), newTestNode("B"))
 	g.Add(newTestNode("B"), newTestNode("A"))
 
-	// First sort
 	err1 := g.TopoSort()
 	if err1 != nil {
 		t.Fatalf("First TopoSort failed: %v", err1)
@@ -359,7 +346,6 @@ func TestGraph_TopoSortPreservesOrder(t *testing.T) {
 		firstOrder[i] = node.Name()
 	}
 
-	// Second sort
 	err2 := g.TopoSort()
 	if err2 != nil {
 		t.Fatalf("Second TopoSort failed: %v", err2)
@@ -369,7 +355,6 @@ func TestGraph_TopoSortPreservesOrder(t *testing.T) {
 		secondOrder[i] = node.Name()
 	}
 
-	// Orders should be the same
 	if len(firstOrder) != len(secondOrder) {
 		t.Errorf("Order lengths differ: %d vs %d", len(firstOrder), len(secondOrder))
 	}

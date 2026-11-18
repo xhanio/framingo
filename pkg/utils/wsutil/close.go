@@ -8,17 +8,8 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// Close ends conn once the handler that served it has returned err:
-//   - nil: a normal closure;
-//   - the peer's own close (normal or going away): nothing more, the
-//     connection is already closing;
-//   - the peer dropping the connection without a close frame (EOF): released
-//     with nothing sent, there being no one left to send it to;
-//   - anything else after ctx has ended: going away, the server shutting down;
-//   - anything else: an internal error carrying err.
-//
-// Only the last is a failure, and it is the one case Close returns err, for
-// the caller to log.
+// Close closes conn per the handler's err (nil, peer close, EOF, ctx done: no failure); it returns
+// err only for an otherwise unexplained error, sent as an internal error.
 func Close(ctx context.Context, conn *websocket.Conn, err error) error {
 	if err == nil {
 		conn.Close(websocket.StatusNormalClosure, "")
@@ -28,8 +19,7 @@ func Close(ctx context.Context, conn *websocket.Conn, err error) error {
 	case status == websocket.StatusNormalClosure, status == websocket.StatusGoingAway:
 		return nil
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
-		// unlike a close frame, an EOF does not make the library close the
-		// connection itself
+		// the library does not close the connection itself on EOF
 		conn.CloseNow()
 		return nil
 	case ctx.Err() != nil:

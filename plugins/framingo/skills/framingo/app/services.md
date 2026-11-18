@@ -67,9 +67,7 @@ type Example interface {
 ```go
 // pkg/services/example/model.go
 type Manager interface {
-	// business.go
 	model.Example
-	// lifecycle.go
 	common.Initializable
 	common.Debuggable
 	common.Daemon

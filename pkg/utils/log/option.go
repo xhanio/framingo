@@ -5,7 +5,6 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// defaultTimeFormat is the log line timestamp layout.
 const defaultTimeFormat = "01/02/2006 15:04:05.00"
 
 type Option func(*logger)
@@ -47,9 +46,7 @@ func WithFileWriter(file string, maxSize, maxBackups, maxAge int) Option {
 	}
 }
 
-// NoStdout suppresses the colored console core so log records are only
-// written to the file writer (when configured). Useful for daemons that pipe
-// stdout into an external log collector or want silent-by-default binaries.
+// NoStdout drops the console core; records go only to the file writer, if any.
 func NoStdout() Option {
 	return func(l *logger) {
 		l.noStdout = true

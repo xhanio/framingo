@@ -5,9 +5,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Provider returns the active TracerProvider. Callers resolve it per use
-// rather than caching the result: Init swaps in a fresh provider on every
-// restart, and a retired provider silently drops spans.
+// Provider must be resolved per use, not cached: a restart retires it and it
+// then silently drops spans.
 func (m *manager) Provider() trace.TracerProvider {
 	return m.controller.current()
 }

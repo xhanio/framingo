@@ -10,7 +10,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// handlerKey uniquely identifies a handler within a server.
 type handlerKey struct {
 	Server string
 	Method string
@@ -21,7 +20,6 @@ func (k handlerKey) String() string {
 	return fmt.Sprintf("[%s] %s %s", k.Server, k.Method, k.Path)
 }
 
-// newHandlerKey creates a handlerKey from a handlerGroupConfig and handlerConfig.
 func newHandlerKey(g *handlerGroupConfig, h *handlerConfig) handlerKey {
 	var server, prefix string
 	if g != nil {
@@ -35,11 +33,7 @@ func newHandlerKey(g *handlerGroupConfig, h *handlerConfig) handlerKey {
 	}
 }
 
-// handlerGroupConfig is the schema of one document of a router.yaml - one
-// handler group: a server, a prefix, the group's middlewares and its
-// handlers. It is private to the server: routers hand their YAML over as
-// bytes, middlewares receive theirs the same way, and the parsed form never
-// crosses the package boundary.
+// handlerGroupConfig is one router.yaml document; it never leaves this package.
 type handlerGroupConfig struct {
 	Server      string              `json:"server"` // default: http
 	Prefix      string              `json:"prefix"` // default: /
@@ -47,12 +41,7 @@ type handlerGroupConfig struct {
 	Middlewares []*middlewareConfig `json:"middlewares"`
 }
 
-// parseRouterConfig reads a router's YAML as a stream of documents, one
-// handler group each, so a router whose routes need more than one prefix -
-// or more than one group middleware chain - separates them with `---`. A
-// single-document file, the common case, reads exactly as it always has.
-// Empty documents (a leading or trailing `---`) are skipped; a stream with
-// no group at all is an error.
+// one handler group per `---` document; empty documents are skipped, none at all is an error
 func parseRouterConfig(data []byte) ([]*handlerGroupConfig, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var groups []*handlerGroupConfig
@@ -84,19 +73,7 @@ type handlerConfig struct {
 	Func        string              `json:"func"`
 }
 
-// middlewareConfig names a middleware and carries the value written under it,
-// already split into its two meanings: a boolean is the switch, anything else
-// is the config. In router.yaml an entry is a bare name or a single-key
-// mapping:
-//
-//	middlewares:
-//	  - authnuser          # bare: no switch, no config
-//	  - authz: false       # boolean: Enabled, the switch
-//	  - throttle:          # block: Config holds the raw YAML
-//	      rps: 1
-//	      burst_size: 3
-//
-// Parsed once, here - the resolution layer never re-inspects the bytes.
+// middlewareConfig is a bare name or a single-key mapping: a boolean value is the switch, anything else the config.
 type middlewareConfig struct {
 	Name    string
 	Enabled *bool  // a boolean value under the name; nil when none
@@ -129,9 +106,7 @@ func (mc *middlewareConfig) UnmarshalYAML(node *yaml.Node) error {
 	}
 }
 
-// splitMiddlewareValue reads the value under a middleware's name as either
-// the switch (a YAML boolean - a quoted "false" is a string and stays
-// config) or the config bytes.
+// a quoted "false" is a string, so it stays config
 func splitMiddlewareValue(value *yaml.Node) (*bool, []byte, error) {
 	if value.Kind == yaml.ScalarNode && value.Tag == "!!bool" {
 		var b bool
@@ -147,12 +122,7 @@ func splitMiddlewareValue(value *yaml.Node) (*bool, []byte, error) {
 	return nil, raw, nil
 }
 
-// configBytes renders the YAML written under a middleware's name back to the
-// raw bytes Middleware.Func receives. A null value - a name with nothing
-// under it - is no config at all, not the string "null". This is the one
-// place the parsed tree turns back into bytes: the contract stays []byte so
-// middlewares owe nothing to the YAML library, at the price of this
-// re-marshal.
+// a null value is no config, not "null"; re-marshalled so Middleware.Func stays []byte and YAML-free
 func configBytes(node *yaml.Node) ([]byte, error) {
 	if node.Tag == "!!null" {
 		return nil, nil

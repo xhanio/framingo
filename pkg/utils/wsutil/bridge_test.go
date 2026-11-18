@@ -20,8 +20,7 @@ import (
 
 var _ model.Messenger = (*fakeMessenger)(nil)
 
-// fakeMessenger stands in for a bus Messenger: what a test puts on in is what
-// the bridge writes to the client, and what the bridge sends lands on sent.
+// fakeMessenger: in feeds the client; what the bridge sends lands on sent.
 type fakeMessenger struct {
 	in     chan entity.PubsubMessage
 	sent   chan entity.PubsubMessage
@@ -50,9 +49,7 @@ func (f *fakeMessenger) Send(ctx context.Context, kind string, payload any) erro
 	}
 }
 
-// wsTestServer wires Bridge up to an httptest server. The handler
-// accepts exactly one connection: ready closes once it is accepted and the
-// bridge is about to begin; done closes after Bridge returns.
+// wsTestServer accepts one connection: ready closes as Bridge begins, done after it returns.
 type wsTestServer struct {
 	messenger *fakeMessenger
 	ready     chan struct{}
@@ -158,9 +155,7 @@ func TestBridge_PingKeepsConnectionAlive(t *testing.T) {
 
 	<-env.ready
 
-	// Spawn a client-side read loop so the websocket lib processes the
-	// server's ping frames and emits pongs. The server should keep pinging
-	// happily without tearing the session down.
+	// only a client read loop makes the lib answer pings with pongs
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
@@ -172,7 +167,6 @@ func TestBridge_PingKeepsConnectionAlive(t *testing.T) {
 		}
 	}()
 
-	// Wait long enough to cover several ping intervals.
 	select {
 	case <-env.done:
 		t.Fatal("Bridge returned early — pings should not tear down a healthy connection")
@@ -196,9 +190,7 @@ func TestBridge_PingTimeoutClosesSession(t *testing.T) {
 
 	<-env.ready
 
-	// Never read on the client side. Without a client read loop the
-	// websocket lib never processes ping frames or sends pongs, so the
-	// server's Ping call times out and the session tears down.
+	// no client reader: pings go unanswered, so the session tears down
 	select {
 	case <-env.done:
 	case <-time.After(2 * time.Second):
@@ -214,8 +206,6 @@ func TestBridge_PingDisabledLeavesSessionOpen(t *testing.T) {
 
 	<-env.ready
 
-	// Without a client-side reader and without server pings, the session
-	// should still stay open — nothing is probing the connection.
 	select {
 	case <-env.done:
 		t.Fatal("Bridge returned without an explicit close")

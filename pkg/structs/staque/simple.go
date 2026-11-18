@@ -13,13 +13,11 @@ type simple[T any] struct {
 	maxSize int
 }
 
-// create a new simple.
-// max size <= 0 means no size limit.
+// NewSimple: maxSize <= 0 means unbounded; beyond it the oldest elements are dropped.
 func NewSimple[T any](maxSize int) Simple[T] {
 	return newSimple[T](maxSize)
 }
 
-// test purpose
 func newSimple[T any](maxSize int) *simple[T] {
 	if maxSize < 0 {
 		maxSize = 0
@@ -61,7 +59,6 @@ func (s *simple[T]) Push(element ...T) {
 	s.Lock()
 	defer s.Unlock()
 	s.data = append(s.data, element...)
-	// adjust by max size
 	if s.maxSize > 0 && len(s.data) > s.maxSize {
 		s.data = s.data[len(s.data)-s.maxSize:]
 	}
@@ -75,7 +72,7 @@ func (s *simple[T]) Pop() (T, error) {
 	} else {
 		last := len(s.data) - 1
 		element := (s.data)[last]
-		// zero out the element to avoid memory leak
+		// zeroed so the backing array does not retain it
 		var zero T
 		s.data[last] = zero
 		s.data = (s.data)[:last]
@@ -105,7 +102,6 @@ func (s *simple[T]) PopN(n int) ([]T, error) {
 		elements := make([]T, n)
 		copy(elements, (s.data)[last:])
 
-		// zero out removed elements
 		var zero T
 		for i := last; i < l; i++ {
 			s.data[i] = zero
@@ -123,13 +119,11 @@ func (s *simple[T]) Shift() (T, error) {
 		return *new(T), errors.Newf("failed to shift element: simple is empty")
 	} else {
 		element := s.data[0]
-		// zero out the element
 		var zero T
 		s.data[0] = zero
 		s.data = s.data[1:]
 
-		// Compact if we have too much wasted space at the beginning
-		// If capacity is more than 2x length and length is small enough, or if we've shifted a lot
+		// compact once over half the capacity is wasted at the front
 		if cap(s.data) > 2*len(s.data) && len(s.data) > 0 {
 			newData := make([]T, len(s.data))
 			copy(newData, s.data)
@@ -161,7 +155,6 @@ func (s *simple[T]) ShiftN(n int) ([]T, error) {
 		elements := make([]T, n)
 		copy(elements, s.data[:n])
 
-		// zero out removed elements
 		var zero T
 		for i := 0; i < n; i++ {
 			s.data[i] = zero
@@ -169,7 +162,6 @@ func (s *simple[T]) ShiftN(n int) ([]T, error) {
 
 		s.data = s.data[n:]
 
-		// Compact if needed
 		if cap(s.data) > 2*len(s.data) && len(s.data) > 0 {
 			newData := make([]T, len(s.data))
 			copy(newData, s.data)

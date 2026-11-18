@@ -29,8 +29,7 @@ func newSession(t *testing.T, m *manager, username string) *entity.Session {
 	return sess
 }
 
-// mustFinish fails if fn has not returned within d, which is how a lock-order
-// inversion presents: no panic, no error, just two wedged goroutines.
+// a lock-order inversion shows only as wedged goroutines, hence the timeout
 func mustFinish(t *testing.T, d time.Duration, what string, fn func()) {
 	t.Helper()
 	done := make(chan struct{})
@@ -42,10 +41,6 @@ func mustFinish(t *testing.T, d time.Duration, what string, fn func()) {
 	}
 }
 
-// The manager's lock and the lease's lock must never be acquired in opposite
-// orders. The lease invokes OnCancel/OnExpired from its own goroutine while
-// holding the lease lock, and those callbacks take the manager lock; so any
-// manager method that calls into a lease must release its own lock first.
 func TestSessionOperationsDoNotInvertLockOrder(t *testing.T) {
 	m := newManager(nil, nil, nil, nil)
 	sess := newSession(t, m, "alice")
@@ -55,8 +50,6 @@ func TestSessionOperationsDoNotInvertLockOrder(t *testing.T) {
 		m.CloseSession(context.Background(), sess.ID)
 	})
 
-	// The manager must still be usable afterwards; if it wedged, every
-	// authenticated request would hang here.
 	mustFinish(t, 3*time.Second, "GetSession after close", func() {
 		m.GetSession(context.Background(), sess.ID)
 	})
@@ -91,11 +84,7 @@ type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
 
-// The session and its credential are shared by every request on that session,
-// and GetSession hands out the stored pointer rather than a copy. That is only
-// safe while entity.Credential stays immutable after construction — if request
-// -scoped state (permissions, say) is ever written back onto it, this test
-// starts failing under -race, which is the point.
+// guards entity.Credential's immutability under -race: GetSession shares the stored pointer
 func TestSharedSessionAccessIsRaceFree(t *testing.T) {
 	m := newManager(nil, nil, nil, nil)
 	sess := newSession(t, m, "carol")
@@ -106,7 +95,6 @@ func TestSharedSessionAccessIsRaceFree(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 200; j++ {
-				// what authnuser does per request
 				if s, ok := m.GetSession(context.Background(), sess.ID); ok {
 					_ = s.Credential.UID()
 					_ = s.UID()
@@ -136,9 +124,6 @@ func TestLogoutClosesEverySessionForTheUser(t *testing.T) {
 	}
 }
 
-// The user service's account events end the sessions of the users they name,
-// matched by user ID - whatever organization or username the credential
-// carries - and leave everyone else's alone.
 func TestAccountEventsRevokeLocalUserSessions(t *testing.T) {
 	m := newManager(nil, nil, nil, nil)
 	open := func(userID int32, source string) *entity.Session {
@@ -175,15 +160,10 @@ func TestAccountEventsRevokeLocalUserSessions(t *testing.T) {
 	assert.True(t, alive(token), "a non-local credential with a matching number was ended")
 }
 
-// fakeLDAP is an LDAP source the auth service can be wired with; only its
-// name matters here.
 type fakeLDAP struct{ model.LDAPAuthN }
 
 func (fakeLDAP) Name() string { return "ldap" }
 
-// An optional credential source is a dependency once it is wired, so the
-// supervisor starts it before the auth service; one that is not wired is a
-// nil entry the supervisor skips.
 func TestOptionalSourcesAreDependencies(t *testing.T) {
 	ldap := fakeLDAP{}
 	deps := newManager(nil, nil, ldap, nil).Dependencies()

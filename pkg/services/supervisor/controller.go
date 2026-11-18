@@ -25,11 +25,8 @@ type controller struct {
 	services []common.Service
 	stats    *statsStore
 
-	// op serializes service operations - restarts, manual init/start/stop,
-	// and the whole shutdown - so stop-init-start cycles never interleave.
-	// Exported controller methods take it; unexported ones don't lock and
-	// run either under an exported caller's lock or in the pre-monitor
-	// init phase.
+	// op serializes restarts, manual ops and shutdown; exported methods take it,
+	// unexported ones run under a caller's lock or before the monitor starts.
 	op sync.Mutex
 }
 
@@ -41,13 +38,9 @@ func newController(config confutil.Config) *controller {
 	}
 }
 
-// register adds service, refusing it when another instance holds its name:
-// the graph and the stats key on the name, so a second instance under it
-// would be dropped - never initialized, never started. Meeting the same
-// instance again, registered directly and as someone's dependency, is a
-// no-op; services are pointers, so != tells two instances apart. It is
-// wiring-time only: readers iterate c.services unlocked, so registering
-// after Start races the monitor.
+// register refuses a second instance under a taken name (the graph keys on
+// names); the same instance again is a no-op. Wiring-time only: c.services is
+// read unlocked.
 func (c *controller) register(service common.Service) error {
 	if holder := c.stats.track(service); holder != nil {
 		if holder != service {
@@ -56,7 +49,6 @@ func (c *controller) register(service common.Service) error {
 				service.Name(), holder, service)
 		}
 	} else if len(c.services) > 0 {
-		// append late-registered services to the end of the sorted list
 		c.services = append(c.services, service)
 	}
 	c.graph.Add(service)
@@ -160,8 +152,6 @@ func (c *controller) stop(ctx context.Context, service common.Service) (bool, er
 	return true, err
 }
 
-// Init initializes one service under the operation lock - the manual
-// InitService contract.
 func (c *controller) Init(ctx context.Context, service common.Service) error {
 	c.op.Lock()
 	defer c.op.Unlock()
@@ -169,8 +159,6 @@ func (c *controller) Init(ctx context.Context, service common.Service) error {
 	return err
 }
 
-// Start starts one service under the operation lock - the manual
-// StartService contract.
 func (c *controller) Start(service common.Service) error {
 	c.op.Lock()
 	defer c.op.Unlock()
@@ -178,8 +166,6 @@ func (c *controller) Start(service common.Service) error {
 	return err
 }
 
-// Stop stops one service under the operation lock - the manual
-// StopService contract.
 func (c *controller) Stop(ctx context.Context, service common.Service) error {
 	c.op.Lock()
 	defer c.op.Unlock()
@@ -187,18 +173,15 @@ func (c *controller) Stop(ctx context.Context, service common.Service) error {
 	return err
 }
 
-// Restart forces a stop-init-start cycle under the operation lock
-// regardless of state - the manual RestartService contract, which
-// resurrects even a stopped service.
+// Restart cycles the service regardless of state, resurrecting even a stopped one.
 func (c *controller) Restart(ctx context.Context, service common.Service) error {
 	c.op.Lock()
 	defer c.op.Unlock()
 	return c.restart(ctx, service)
 }
 
-// RestartIfRunning is the monitor's restart: under the operation lock it
-// re-checks Stopped, so a deliberate stop that landed after the sweep's
-// snapshot stays stopped instead of being resurrected.
+// RestartIfRunning re-checks Stopped under the lock so a stop that landed after
+// the sweep's snapshot is not resurrected.
 func (c *controller) RestartIfRunning(ctx context.Context, service common.Service) error {
 	c.op.Lock()
 	defer c.op.Unlock()
@@ -225,10 +208,7 @@ func (c *controller) restart(ctx context.Context, service common.Service) error 
 			stat.Stopped = false
 		})
 	}
-	// restarted stamps the attempt and carries the outcome into the
-	// healthcheck verdict, so stats are coherent before the next sweep:
-	// success clears it, failure records the phase error that broke the
-	// cycle.
+	// record the outcome in the healthcheck verdict now, not at the next sweep
 	restarted := func(err error) {
 		c.stats.update(name, func(stat *entity.SupervisorStats) {
 			stat.Restarts++
@@ -267,16 +247,11 @@ func (c *controller) initAll(ctx context.Context) error {
 	return errors.Combine(errs...)
 }
 
-// initTurn runs one service's init turn. With an init policy set, the turn
-// waits for dependencies to be init-ready, then runs the service's own
-// Init, retrying transient blockages with exponential backoff until the
-// policy or the context ends the turn. A dependency that already gave up
-// its own turn is permanent: waiting cannot fix it, so the turn fails
-// fast. ok reports whether the service's own Init ran.
+// initTurn retries transient blockages per the init policy; a dependency that
+// failed its own turn fails this one fast. ok reports whether Init itself ran.
 func (c *controller) initTurn(ctx context.Context, service common.Service) (bool, error) {
 	name := service.Name()
-	// map the policy onto retry-go: 0 -> a single attempt, n -> n retries
-	// after the first, -1 -> unlimited, bounded by ctx
+	// retry-go attempts: 0 -> 1, n -> n+1, -1 -> unlimited (bounded by ctx)
 	attempts := uint(1)
 	switch {
 	case c.initPolicy.MaxRetries > 0:
@@ -318,7 +293,6 @@ func (c *controller) initTurn(ctx context.Context, service common.Service) (bool
 		return initErr
 	}, opts...)
 	if err != nil && !attempted {
-		// the turn never reached its own Init - record why
 		if blocked == nil {
 			blocked = err // canceled before the first attempt
 		}
@@ -330,11 +304,8 @@ func (c *controller) initTurn(ctx context.Context, service common.Service) (bool
 	return attempted, err
 }
 
-// depsInitReady reports what blocks a service's init: nil when every
-// dependency is initialized and - with an init policy set - answering its
-// Ready probe, if it has one. transient tells whether waiting could clear
-// the blockage: a failing probe is transient, a dependency that failed its
-// own init turn is not. A one-pass init (no policy) never probes.
+// depsInitReady: a failing Ready probe is transient, a dependency's failed init
+// turn is not; without an init policy it never probes.
 func (c *controller) depsInitReady(ctx context.Context, service common.Service) (blocked error, transient bool) {
 	for _, dep := range service.Dependencies() {
 		if dep == nil {
@@ -374,16 +345,13 @@ func (c *controller) startAll() error {
 	return errors.Combine(errs...)
 }
 
-// StopAll stops every service under the operation lock, honoring the stop
-// policy's timeout.
 func (c *controller) StopAll(ctx context.Context) error {
 	c.op.Lock()
 	defer c.op.Unlock()
 	return c.stopAll(ctx)
 }
 
-// stopContext bounds a stop by the stop policy: once its timeout passes, what is left to stop
-// gets an ended context, which forces it.
+// stopContext: past the stop policy's timeout, remaining stops get an ended context, forcing them.
 func (c *controller) stopContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if c.stopPolicy.Timeout > 0 {
 		return context.WithTimeout(ctx, c.stopPolicy.Timeout)
@@ -398,7 +366,6 @@ func (c *controller) stopAll(ctx context.Context) error {
 	var errs []error
 	var total, failed int
 	l := len(c.services)
-	// stop services in reversed order
 	for i := l - 1; i > -1; i-- {
 		service := c.services[i]
 		ok, err := c.stop(ctx, service)

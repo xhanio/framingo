@@ -22,16 +22,14 @@ func (m *middleware) setDefaults() {
 	}
 }
 
-// WithLogger stores the logger raw; New stamps it with By once the name is
-// resolved, so a WithName rename shows up in the caller field.
+// WithLogger is stamped in New, after WithName, so a rename shows in the caller field.
 func WithLogger(logger log.Logger) Option {
 	return func(m *middleware) {
 		m.log = logger
 	}
 }
 
-// WithName renames the attachment; config keys follow the name, letting two
-// differently-named instances run side by side.
+// WithName also renames the config key, so two instances can run side by side.
 func WithName(name string) Option {
 	return func(m *middleware) {
 		m.name = name

@@ -9,7 +9,6 @@ import (
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	// dynamic config change, read under this service's root
 	config := confutil.FromContext(ctx)
 	root := nameutil.ConfigRoot(m.name)
 	m.applyOptions(
@@ -37,12 +36,7 @@ func (m *manager) Start(ctx context.Context) error {
 	m.looped = looped
 	go func() {
 		defer close(looped)
-		// Deliberately for/select with a single case, not a bare <-ctx.Done():
-		// this is the template's service run loop, and it is shaped so a
-		// ticker, a subscription channel or a work queue can be added as
-		// another case without restructuring anything. Work handed to its own
-		// goroutine runs in m.wg.Go, taking ctx as an argument.
-		//
+		// template run loop: add tickers or queues as cases; hand-off work runs in m.wg.Go
 		//nolint:gosimple // S1000: kept as a loop for the cases that come later
 		for {
 			select {

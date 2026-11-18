@@ -24,10 +24,7 @@ type Credential struct {
 	OrganizationName     string     `json:"-"` // filled by user service
 }
 
-// A Credential is immutable once built. It is shared by every request on a
-// session, so anything request-scoped or derived — permissions, which are a
-// lookup on Role and can change under you — belongs in the response DTO, not
-// here. Keeping it immutable is what makes sharing it safe without copying.
+// Credential is immutable and shared by every request on a session; derived state such as permissions belongs in the response.
 
 func (c *Credential) UID() string {
 	if c == nil {
@@ -44,9 +41,7 @@ func (c *Credential) UID() string {
 	return fmt.Sprintf("%s:%s", c.Source, subject)
 }
 
-// LocalUserID is the users-table row the credential stands for, and false
-// when it stands for none: only a local user has one - an API token or an
-// agent carries no user ID, and an LDAP user's ID is not one of ours.
+// LocalUserID is false unless a local user: API tokens and agents carry none, and an LDAP user's ID is not ours.
 func (c *Credential) LocalUserID() (int32, bool) {
 	if c == nil || c.Source != preset.AuthSourceLocalUser {
 		return 0, false

@@ -5,8 +5,7 @@ import (
 )
 
 var (
-	// !! note that time.Unix(1<<63-1, 999999999) will result an overflow and break the Before/After logic
-	// ref: https://github.com/golang/go/issues/39477
+	// not 1<<63-1: that overflows and breaks Before/After (golang/go#39477)
 	MaxTime = time.Unix(1<<62, 999999999)
 )
 

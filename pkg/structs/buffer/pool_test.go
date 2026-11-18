@@ -11,7 +11,6 @@ func TestNewPool(t *testing.T) {
 		t.Error("NewPool() should return a non-nil pool")
 	}
 
-	// Check initial stats
 	gets, puts, hits, creates, hitRate := pool.Stats()
 	if gets != 0 || puts != 0 || hits != 0 || creates != 0 || hitRate != 0 {
 		t.Errorf("New pool should have zero stats, got gets=%d, puts=%d, hits=%d, creates=%d, hitRate=%f",
@@ -81,7 +80,6 @@ func TestPoolGet(t *testing.T) {
 				t.Errorf("Expected capacity %d, got %d", tt.expectedCap, cap(buffer))
 			}
 
-			// Check stats
 			gets, _, hits, creates, _ := pool.Stats()
 			if gets != 1 {
 				t.Errorf("Expected 1 get, got %d", gets)
@@ -101,14 +99,12 @@ func TestPoolGet(t *testing.T) {
 func TestPoolPut(t *testing.T) {
 	pool := NewPool[byte]()
 
-	// Test putting nil buffer
 	pool.Put(nil)
 	_, puts, _, _, _ := pool.Stats()
 	if puts != 0 {
 		t.Errorf("Putting nil should not increment puts, got %d", puts)
 	}
 
-	// Test putting buffer with pool size
 	buffer := make([]byte, 100, 1024) // capacity matches pool size
 	pool.Put(buffer)
 	_, puts, _, _, _ = pool.Stats()
@@ -116,7 +112,6 @@ func TestPoolPut(t *testing.T) {
 		t.Errorf("Expected 1 put, got %d", puts)
 	}
 
-	// Test putting buffer with non-pool size
 	buffer2 := make([]byte, 100, 2000) // capacity doesn't match any pool size
 	pool.Put(buffer2)
 	_, puts, _, _, _ = pool.Stats()
@@ -128,30 +123,24 @@ func TestPoolPut(t *testing.T) {
 func TestPoolGetPutCycle(t *testing.T) {
 	pool := NewPool[byte]()
 
-	// Get a buffer
 	buffer1 := pool.Get(1000)
 	if cap(buffer1) != 1024 {
 		t.Errorf("Expected capacity 1024, got %d", cap(buffer1))
 	}
 
-	// Use the buffer
 	buffer1 = append(buffer1, []byte("hello world")...)
 
-	// Put it back
 	pool.Put(buffer1)
 
-	// Get another buffer of same size - should reuse
 	buffer2 := pool.Get(1000)
 	if cap(buffer2) != 1024 {
 		t.Errorf("Expected capacity 1024, got %d", cap(buffer2))
 	}
 
-	// Buffer should be reset to length 0
 	if len(buffer2) != 0 {
 		t.Errorf("Reused buffer should have length 0, got %d", len(buffer2))
 	}
 
-	// Check stats
 	gets, puts, hits, creates, hitRate := pool.Stats()
 	if gets != 2 {
 		t.Errorf("Expected 2 gets, got %d", gets)
@@ -162,10 +151,7 @@ func TestPoolGetPutCycle(t *testing.T) {
 	if hits != 2 {
 		t.Errorf("Expected 2 hits, got %d", hits)
 	}
-	// creates counts allocations, which happen inside sync.Pool's New. sync.Pool
-	// may drop a pooled buffer at any time (GC, per-P caches), so the second Get
-	// is allowed to allocate again - assert the floor, not an exact count, or
-	// this test is flaky.
+	// sync.Pool may drop pooled buffers at any time: assert a floor, not an exact count
 	if creates < 1 {
 		t.Errorf("Expected at least 1 create (first get), got %d", creates)
 	}
@@ -177,13 +163,11 @@ func TestPoolGetPutCycle(t *testing.T) {
 func TestPoolStats(t *testing.T) {
 	pool := NewPool[byte]()
 
-	// Initial stats
 	gets, puts, hits, creates, hitRate := pool.Stats()
 	if gets != 0 || puts != 0 || hits != 0 || creates != 0 || hitRate != 0 {
 		t.Error("Initial stats should all be zero")
 	}
 
-	// Get some buffers
 	buffer1 := pool.Get(1000)
 	buffer2 := pool.Get(2000)
 	buffer3 := pool.Get(10000000) // oversized
@@ -203,7 +187,6 @@ func TestPoolStats(t *testing.T) {
 		t.Errorf("Expected hit rate %f%%, got %f%%", expectedHitRate1, hitRate)
 	}
 
-	// Put and get again
 	pool.Put(buffer1)
 	pool.Put(buffer2)
 	pool.Put(buffer3) // this won't be pooled due to size
@@ -221,8 +204,7 @@ func TestPoolStats(t *testing.T) {
 	if hits != 4 {
 		t.Errorf("Expected 4 hits, got %d", hits)
 	}
-	// Floor, not an exact count: if sync.Pool dropped either buffer that was
-	// Put above, the re-Get allocates again and creates climbs to 4 or 5.
+	// a floor: sync.Pool may have dropped either Put buffer
 	if creates < 3 {
 		t.Errorf("Expected at least 3 creates, got %d", creates)
 	}
@@ -231,7 +213,6 @@ func TestPoolStats(t *testing.T) {
 		t.Errorf("Expected hit rate %f%%, got %f%%", expectedHitRate, hitRate)
 	}
 
-	// Use the returned buffers to avoid compiler optimization
 	_ = buffer4
 	_ = buffer5
 }
@@ -240,7 +221,6 @@ func TestPoolConcurrentAccess(t *testing.T) {
 	pool := NewPool[byte]()
 	var wg sync.WaitGroup
 
-	// Number of goroutines
 	numGoroutines := 100
 	numOperations := 10
 
@@ -252,14 +232,11 @@ func TestPoolConcurrentAccess(t *testing.T) {
 
 			buffers := make([][]byte, numOperations)
 
-			// Get buffers
 			for j := 0; j < numOperations; j++ {
 				buffers[j] = pool.Get(1000 + j*100) // varying sizes
-				// Write some data
 				buffers[j] = append(buffers[j], []byte("test data")...)
 			}
 
-			// Put buffers back
 			for j := 0; j < numOperations; j++ {
 				pool.Put(buffers[j])
 			}
@@ -268,7 +245,6 @@ func TestPoolConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 
-	// Check that all operations were recorded
 	gets, puts, hits, _, hitRate := pool.Stats()
 	expectedOps := int64(numGoroutines * numOperations)
 
@@ -279,7 +255,6 @@ func TestPoolConcurrentAccess(t *testing.T) {
 		t.Errorf("Expected %d puts, got %d", expectedOps, puts)
 	}
 
-	// Should have some hits due to reuse
 	if hits == 0 {
 		t.Error("Expected some hits due to concurrent reuse")
 	}
@@ -324,7 +299,6 @@ func TestPoolFindBestSize(t *testing.T) {
 }
 
 func TestPoolGenericTypes(t *testing.T) {
-	// Test with int slice
 	intPool := NewPool[int]()
 	intBuffer := intPool.Get(10)
 
@@ -335,11 +309,9 @@ func TestPoolGenericTypes(t *testing.T) {
 		t.Errorf("Int buffer capacity should be at least 10, got %d", cap(intBuffer))
 	}
 
-	// Use the buffer
 	intBuffer = append(intBuffer, 1, 2, 3)
 	intPool.Put(intBuffer)
 
-	// Test with string slice
 	stringPool := NewPool[string]()
 	stringBuffer := stringPool.Get(5)
 
@@ -353,7 +325,6 @@ func TestPoolGenericTypes(t *testing.T) {
 	stringBuffer = append(stringBuffer, "hello", "world")
 	stringPool.Put(stringBuffer)
 
-	// Verify stats work for different types
 	gets, puts, _, _, _ := intPool.Stats()
 	if gets != 1 || puts != 1 {
 		t.Errorf("Int pool stats: expected gets=1, puts=1, got gets=%d, puts=%d", gets, puts)

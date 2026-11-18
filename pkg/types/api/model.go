@@ -11,39 +11,19 @@ const (
 	MethodWS  = "WS"
 )
 
-// Middleware is one of the two extension points of the API server, the mirror
-// image of Router: where a Router supplies its configuration to the framework,
-// a Middleware receives configuration from it.
 type Middleware interface {
 	common.Service
-	// Func returns the middleware function for one attachment point.
-	//
-	// enabled is the resolved switch for the attachment: booleans written
-	// under the middleware's name are switches, not config, and the most
-	// specific one wins - a handler entry over its group's over the server's
-	// mapping. With no boolean anywhere, a route attachment is enabled by
-	// the router.yaml entry's presence, and a server-level attachment
-	// (WithMiddlewares) is enabled by its entry in the server's middleware
-	// configs - no entry leaves it dormant. The standard first line is
-	// `if !enabled { return nil, nil }`.
-	//
-	// config is the most specific non-boolean YAML written under the
-	// middleware's name, nil when there is none - config and switch resolve
-	// independently, so a handler's `true` can re-enable an attachment while
-	// still inheriting the group's block. Called once per attachment at
-	// registration time - and again on restart, when routes are rebuilt - so
-	// per-route state lives in the returned closure. An error fails
-	// registration; returning no function and no error declines the
-	// attachment, and the server skips it.
+	// Func is called per attachment, again on every restart, so per-route state
+	// lives in the closure. enabled is the most specific boolean under the
+	// middleware's name (else the entry's presence); config is the most
+	// specific non-boolean YAML, resolved independently, nil when absent.
+	// An error fails registration; (nil, nil) declines the attachment.
 	Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)
 }
 
 type Router interface {
 	common.Service
-	// Config is the router's YAML: one handler group per document - a
-	// server, a prefix, group middlewares and handlers. Most routers have
-	// one; routes that need another prefix or middleware chain go in a
-	// further document after `---`, served by the same Handlers.
+	// Config is YAML with one handler group per `---` document, all served by Handlers.
 	Config() []byte
 	Handlers() map[string]any // echo.HandlerFunc or WebSocketHandlerFunc
 }

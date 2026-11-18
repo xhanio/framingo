@@ -17,7 +17,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/plans"
 )
 
-// Add keeps a copy of the plan and its task: the caller's stay as they were.
+// Add stores copies; the caller's plan and task are untouched.
 func (m *manager) Add(plan *entity.Plan) error {
 	if plan.ID == "" {
 		return errors.InvalidArgument.Newf("a plan needs an ID")
@@ -46,7 +46,6 @@ func (m *manager) Add(plan *entity.Plan) error {
 	if err != nil {
 		return err
 	}
-	// under the plan's ID, which the task manager knows it by
 	task.Job = job.New(p.ID, m.runJob(reg, cmd.Header(), cmd.Run), job.WithLabels(p.Metadata), job.WithLogger(m.log))
 	m.Lock()
 	defer m.Unlock()
@@ -117,8 +116,7 @@ func (m *manager) LastRun(id string) (*entity.PlanRun, error) {
 	return reg.lastRun(), nil
 }
 
-// By path, not run ID, since the plan manager only remembers the latest run. The check is lexical:
-// the plan manager made these files.
+// by path, not run ID: only the latest run is remembered; the check is lexical
 func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error) {
 	if m.logDir == "" {
 		return nil, errors.NotFound.Newf("failed to open run log %s: no log dir is configured", path)
@@ -152,8 +150,7 @@ func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error
 	return f, nil
 }
 
-// stats are the plans' stats, from their jobs and their tasks, in the order they started; a plan
-// whose job succeeded is left out unless all.
+// stats in start order; plans whose job succeeded only with all
 func (m *manager) stats(all bool) []*entity.PlanStats {
 	result := make([]*entity.PlanStats, 0)
 	for _, reg := range m.plans {

@@ -1,7 +1,4 @@
-// Package otlpgrpc registers the OTLP-over-gRPC metric exporter under
-// metrics.OTLPGRPC. Blank-import it to enable `metrics.exporter: otlpgrpc`
-// without forcing every binary to link the grpc stack when it only uses
-// other exporters.
+// Package otlpgrpc registers metrics.OTLPGRPC when blank-imported, keeping grpc out of other binaries.
 package otlpgrpc
 
 import (
@@ -23,14 +20,10 @@ func init() {
 	metrics.Register(metrics.OTLPGRPC, factory)
 }
 
-// config is this transport's own shape: the shared otlp core and nothing
-// else, so http-only keys like url_path fail the strict decode here.
 type config struct {
 	otelutil.Config `yaml:",inline"`
 }
 
-// factory builds the exporter without dialing: otlp connects lazily, so an
-// unreachable collector never fails the metrics service's Init.
 func factory(ctx context.Context, raw []byte) (sdkmetric.Exporter, error) {
 	var cfg config
 	if err := otelutil.Decode(raw, &cfg); err != nil {
@@ -47,9 +40,7 @@ func factory(ctx context.Context, raw []byte) (sdkmetric.Exporter, error) {
 		opts = append(opts, otlpmetricgrpc.WithHeaders(cfg.Headers))
 	}
 	if cfg.Compression != "" && cfg.Compression != "none" {
-		// any compressor registered with grpc works (gzip ships
-		// blank-imported), but an unregistered name is checked here so a
-		// typo fails Init instead of surfacing at export time
+		// fail a typo at Init rather than at export time
 		if encoding.GetCompressor(cfg.Compression) == nil {
 			return nil, errors.Newf("unsupported otlpgrpc compression: %s", cfg.Compression)
 		}

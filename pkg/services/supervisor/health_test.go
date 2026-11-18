@@ -16,8 +16,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
-// Ready is the graph's roll-up: nil iff every registered service is ready,
-// judged from the stats the monitor maintains — no probing of its own.
 func TestSupervisorReady(t *testing.T) {
 	alpha := newMockService("alpha")
 	beta := newMockService("beta")
@@ -25,7 +23,6 @@ func TestSupervisorReady(t *testing.T) {
 	require.NoError(t, m.Register(alpha, beta))
 	require.NoError(t, m.TopoSort())
 
-	// Nothing has started: nothing is ready.
 	require.Error(t, m.Ready(context.Background()))
 
 	m.c.stats.update("alpha", func(stat *entity.SupervisorStats) { stat.Ready = true })
@@ -43,9 +40,6 @@ func TestSupervisorReady(t *testing.T) {
 	assert.NotContains(t, err.Error(), "alpha")
 }
 
-// Alive escalates only when in-process recovery is spent: a liveness
-// failure with restarts exhausted (or never configured). While the monitor
-// is still restarting, and under unlimited retries, the process stays alive.
 func TestSupervisorAlive(t *testing.T) {
 	t.Run("bounded retries escalate when exhausted", func(t *testing.T) {
 		svc := newMockService("omega")
@@ -89,10 +83,8 @@ func TestSupervisorAlive(t *testing.T) {
 	})
 }
 
-// flappingService alternates both probes between healthy and failing so a
-// monitor sweep exercises every stat write path — liveness errors, readiness
-// flips, and the restart bookkeeping behind them. Its counters are atomic so
-// the only unsynchronized state left is the supervisor's own.
+// flappingService flips both probes to hit every stat write path; atomic
+// counters leave only the supervisor's state for the race detector.
 type flappingService struct {
 	name  string
 	alive atomic.Int64
@@ -116,11 +108,7 @@ func (s *flappingService) Ready(ctx context.Context) error {
 	return nil
 }
 
-// A supervisor serves Alive/Ready/Stats/Info from request goroutines
-// (/healthz, /readyz, debug endpoints) while its monitor goroutine sweeps
-// probes and restarts failing services. Every one of those paths touches the
-// same per-service stats, so run the whole ensemble concurrently and let the
-// race detector judge the synchronization.
+// run under -race: health endpoints and the monitor share per-service stats
 func TestHealthServesConcurrentlyWithMonitor(t *testing.T) {
 	svc := &flappingService{name: "flappy"}
 	m := newTestManager(
@@ -158,8 +146,6 @@ func TestHealthServesConcurrentlyWithMonitor(t *testing.T) {
 	require.NoError(t, m.Stop(context.Background()))
 }
 
-// Info renders one row per service; the whole table must share a single
-// sweep instead of re-probing shared dependencies once per row.
 func TestInfoSharesOneSweep(t *testing.T) {
 	dep := newMockService("shared-dep")
 	a := newMockService("svc-a")

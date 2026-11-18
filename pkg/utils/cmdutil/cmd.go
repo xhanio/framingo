@@ -70,7 +70,6 @@ func newCMD(bin string, args []string, opts ...Option) *cmd {
 	return c
 }
 
-// stream is where one of the command's outputs goes: its writer, or else its buffer.
 func (c *cmd) stream(w io.Writer, buff *bytes.Buffer) io.Writer {
 	switch {
 	case w != nil:
@@ -111,9 +110,6 @@ func (c *cmd) Start() error {
 	return nil
 }
 
-// Wait is exec.Cmd's: once per run, never concurrently. A second call returns
-// exec's "Wait was already called" error rather than standing in for the first
-// one's result.
 func (c *cmd) Wait() error {
 	return errors.Wrap(c.p.Wait())
 }

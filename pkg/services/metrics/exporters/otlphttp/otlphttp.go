@@ -1,6 +1,4 @@
-// Package otlphttp registers the OTLP-over-HTTP metric exporter under
-// metrics.OTLPHTTP. Blank-import it to enable `metrics.exporter: otlphttp`
-// without forcing every binary to carry exporters it doesn't use.
+// Package otlphttp registers metrics.OTLPHTTP when blank-imported.
 package otlphttp
 
 import (
@@ -18,15 +16,11 @@ func init() {
 	metrics.Register(metrics.OTLPHTTP, factory)
 }
 
-// config is this transport's own shape: the shared otlp core plus the
-// http-only url_path.
 type config struct {
 	otelutil.Config `yaml:",inline"`
 	URLPath         string `yaml:"url_path"`
 }
 
-// factory builds the exporter without dialing: otlp connects lazily, so an
-// unreachable collector never fails the metrics service's Init.
 func factory(ctx context.Context, raw []byte) (sdkmetric.Exporter, error) {
 	var cfg config
 	if err := otelutil.Decode(raw, &cfg); err != nil {

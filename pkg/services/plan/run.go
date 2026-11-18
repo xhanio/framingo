@@ -23,8 +23,6 @@ var (
 	_ common.Message = entity.PlanRunFinished{}
 )
 
-// run is one run of a plan, from its start to its end: its record, its log file and
-// the tail of its output.
 type run struct {
 	entity.PlanRun
 	reg  *registration
@@ -32,7 +30,6 @@ type run struct {
 	tail ioutil.TailWriter
 }
 
-// runJob is a plan's job: every execution of it is a run doing body.
 func (m *manager) runJob(reg *registration, header string, body func(job.Context, io.Writer) (plans.Outcome, error)) job.Func {
 	return func(jc job.Context) error {
 		r := m.startRun(reg, jc, header)
@@ -45,8 +42,7 @@ func (m *manager) runJob(reg *registration, header string, body func(job.Context
 	}
 }
 
-// startRun begins a run of reg's plan. A firing of Trigger gives its source to all its runs and
-// the ID Trigger returned to the first, as retries and requeues are runs of their own.
+// a firing's source goes to all its runs, Trigger's run ID only to the first
 func (m *manager) startRun(reg *registration, jc job.Context, header string) *run {
 	r := &run{
 		PlanRun: entity.PlanRun{
@@ -71,7 +67,6 @@ func (m *manager) startRun(reg *registration, jc job.Context, header string) *ru
 	return r
 }
 
-// out is where the run's output goes: its log file, if it has one, and its tail.
 func (r *run) out() io.Writer {
 	if r.log == nil {
 		return r.tail
@@ -90,7 +85,7 @@ func (m *manager) endRun(r *run, o plans.Outcome) {
 	m.report(entity.PlanRunFinished{PlanRun: r.PlanRun})
 }
 
-// openRunLog creates the run's log file and records its path; a run without one still runs.
+// a run whose log file fails still runs
 func (m *manager) openRunLog(r *run, header string) *os.File {
 	if m.logDir == "" {
 		return nil

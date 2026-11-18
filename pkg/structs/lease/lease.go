@@ -99,7 +99,6 @@ func (l *lease) Start() {
 	l.initialize()
 	l.Unlock()
 
-	// ensure done is closed when loop exits
 	defer func() {
 		l.Lock()
 		close(l.done)
@@ -152,7 +151,7 @@ func (l *lease) Start() {
 				}
 				// l.log.Debugf("%s expired at %s", l.id, l.expiresAt.Local().Format("15:04:05.00"))
 				l.Unlock()
-				// Do not close channels here to avoid race with writers
+				// channels stay open: closing would race with writers
 				return
 			}
 			l.Unlock()

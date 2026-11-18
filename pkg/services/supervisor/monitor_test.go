@@ -12,9 +12,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
-// A monitoring sweep must probe every service exactly once: shared
-// dependencies are not re-probed for each dependent, but their results still
-// roll up into every dependent's healthcheck error.
 func TestSweepProbesSharedDependencyOnce(t *testing.T) {
 	db := newMockService("db")
 	repo := newMockService("repo")
@@ -37,8 +34,6 @@ func TestSweepProbesSharedDependencyOnce(t *testing.T) {
 	assert.Equal(t, 1, b.readyCalled)
 }
 
-// Memoization must not swallow the rollup: a dependency's failure still
-// surfaces in each dependent's healthcheck error.
 func TestSweepRollsUpMemoizedDependencyFailure(t *testing.T) {
 	db := newMockService("db")
 	db.readyErr = errors.Newf("db down")
@@ -62,8 +57,6 @@ func TestSweepRollsUpMemoizedDependencyFailure(t *testing.T) {
 	}
 }
 
-// TopoSort rejects cycles at wiring time; if one slips through anyway, an
-// ad-hoc healthcheck must terminate instead of recursing forever.
 func TestHealthcheckSurvivesDependencyCycle(t *testing.T) {
 	x := newMockService("x")
 	y := newMockService("y")
@@ -84,9 +77,6 @@ func TestHealthcheckSurvivesDependencyCycle(t *testing.T) {
 	}
 }
 
-// The monitor's restart re-checks Stopped under the operation lock: a
-// deliberate stop that lands after the sweep's snapshot must stay stopped,
-// not be resurrected by an in-flight recovery decision.
 func TestMonitorRestartSkipsStoppedService(t *testing.T) {
 	svc := newMockService("svc")
 	m := newTestManager()
@@ -106,9 +96,6 @@ func TestMonitorRestartSkipsStoppedService(t *testing.T) {
 	assert.True(t, stat.Stopped, "the deliberate stop survives")
 }
 
-// Manual per-service operations serialize behind the same operation lock as
-// restarts, so a StopService can never interleave with an in-flight
-// stop-init-start cycle at the service level.
 func TestManualOpsSerializeWithRestart(t *testing.T) {
 	svc := newMockService("svc")
 	m := newTestManager()
@@ -134,8 +121,6 @@ func TestManualOpsSerializeWithRestart(t *testing.T) {
 	assert.Equal(t, 1, svc.stopCalled)
 }
 
-// A restart delay must not outlive the monitor's context: cancellation during
-// the delay returns promptly instead of sleeping through it.
 func TestRestartDelayHonorsCancel(t *testing.T) {
 	svc := newMockService("svc")
 	svc.aliveErr = errors.Newf("dead")

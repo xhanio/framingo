@@ -18,7 +18,6 @@ func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
 
-// newManager returns the concrete manager, the form package tests construct.
 func newManager(_ platform.Platform, repo Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,

@@ -9,7 +9,6 @@ type HelloWorld struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
-// TableName specifies the table name for GORM
 func (HelloWorld) TableName() string {
 	return "helloworld_messages"
 }

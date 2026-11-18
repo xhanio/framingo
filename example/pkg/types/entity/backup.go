@@ -5,7 +5,7 @@ const (
 	BackupAssetTypeConfig = "config"
 	BackupAssetTypeCmdb   = "cmdb"
 
-	BackupDatabaseTypeFull    = "full_backup" // Full backup of the database
+	BackupDatabaseTypeFull    = "full_backup"
 	BackupDatabaseTypePartial = "partial_backup"
 )
 

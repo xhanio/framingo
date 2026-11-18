@@ -58,10 +58,7 @@ func ParsePEMKey(b []byte, password string) (crypto.PrivateKey, error) {
 		}
 		if strings.Contains(block.Type, "PRIVATE KEY") {
 			pwd := password
-			// Deprecated on purpose: these handle legacy RFC-1423 encrypted PEM
-			// keys ("DEK-Info" headers), which older tooling still emits and
-			// which we must keep reading. Modern keys take the PKCS#8 path
-			// below instead. Do not use these to WRITE keys.
+			// legacy RFC-1423 ("DEK-Info") keys must stay readable; never use these to write keys
 			//nolint:staticcheck // SA1019: required for legacy PEM keys
 			if x509.IsEncryptedPEMBlock(block) {
 				//nolint:staticcheck // SA1019: required for legacy PEM keys

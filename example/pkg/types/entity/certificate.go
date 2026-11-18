@@ -68,6 +68,6 @@ type CertUpdateOptions struct {
 }
 
 type CertListOptions struct {
-	IsCA    *bool //If nil, return all certificates; if true, return only CA certificates; if false, return only non-CA certificates
+	IsCA    *bool // nil: all; true: CA only; false: non-CA only
 	IsLocal bool  // filter only certificates with key stored locally
 }

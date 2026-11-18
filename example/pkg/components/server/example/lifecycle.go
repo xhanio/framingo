@@ -14,12 +14,10 @@ func (m *manager) Init(ctx context.Context) error {
 		return errors.Wrap(err)
 	}
 
-	// create all service instances
 	if err := m.initServices(); err != nil {
 		return errors.Wrap(err)
 	}
 
-	// register system services; a name taken by another instance fails here
 	if err := m.services.Register(
 		m.repository,
 		m.user,
@@ -31,16 +29,14 @@ func (m *manager) Init(ctx context.Context) error {
 		return errors.Wrap(err)
 	}
 
-	// register business services
 	if err := m.services.Register(
 		m.example,
 	); err != nil {
 		return errors.Wrap(err)
 	}
 
-	// register infra last, telemetry at the end: the topo sort pops
-	// dependency-less services in reverse registration order, so telemetry
-	// inits first and, with stop reversed, flushes last
+	// telemetry registers last: the topo sort pops dependency-less services in
+	// reverse order, so it inits first and flushes last
 	if err := m.services.Register(
 		m.db,
 		m.pubsub,
@@ -51,35 +47,25 @@ func (m *manager) Init(ctx context.Context) error {
 		return errors.Wrap(err)
 	}
 
-	// perform a topo sort to ensure the dependencies
 	if err := m.services.TopoSort(); err != nil {
 		return errors.Wrap(err)
 	}
 
-	// append api & grpc after topo sort to ensure the latest start. An
-	// ordering only, on purpose not a dependency: the listener (and the
-	// health listener with it) must come up even when a service behind some
-	// route failed its init, which a dependency would block
+	// api after the sort starts last, as an ordering not a dependency: the
+	// listener must come up even when a service behind a route failed init
 	if err := m.services.Register(
 		m.api,
 	); err != nil {
 		return errors.Wrap(err)
 	}
 
-	// register all services with messagebus; modules without MessageHandler /
-	// RawMessageHandler are skipped automatically.
 	for _, svc := range m.services.Services() {
 		m.messagebus.Register(svc)
 	}
 
-	/* pre initialization */
-
-	// init all services
 	if err := m.services.Init(ctx); err != nil {
 		m.log.Error(err)
 	}
-
-	/* post initialization */
 
 	if err := m.initAPI(); err != nil {
 		return errors.Wrap(err)
@@ -93,7 +79,6 @@ func (m *manager) Start(ctx context.Context) error {
 		m.log.Warn("manager already started, skipping")
 		return nil
 	}
-	// enable pprof
 	pport := m.config.GetUint("pprof.port")
 	if pport != 0 {
 		go func() {

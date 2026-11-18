@@ -16,19 +16,17 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
-// manager implements the Manager interface
 type manager struct {
 	name  string
 	log   log.Logger
 	debug bool
 
-	servers map[string]*server // map of server name to server instance
+	servers map[string]*server
 
 	handlerFuncs map[handlerKey]any // an echo.HandlerFunc, or a wsHandler for a WS route
 	middlewares  map[string]api.Middleware
 }
 
-// New creates a new server instance with the given options
 func New(opts ...Option) Manager {
 	return newManager(opts...)
 }
@@ -48,10 +46,7 @@ type echoValidator struct {
 	v *validator.Validate
 }
 
-// Validate checks i against its validate tags. A failed tag is the caller's
-// input, so it is an InvalidArgument - a 400 - not the 500 an uncategorized
-// error becomes; handing it something that is not a struct is the handler's
-// bug, and stays one.
+// a failed tag is InvalidArgument (400); a non-struct argument is the handler's bug and stays a 500
 func (ev *echoValidator) Validate(i any) error {
 	err := ev.v.Struct(i)
 	if err == nil {
@@ -72,30 +67,16 @@ func (m *manager) newEcho() *echo.Echo {
 	return e
 }
 
-// ============================================================================
-// Service Interface Implementation
-// ============================================================================
-
 func (m *manager) Name() string {
 	return m.name
 }
 
-// Dependencies is nil on purpose. To a supervisor a dependency is more than
-// an ordering: a dependency that fails its init keeps the dependent's Init
-// from ever running, and dependencies' failures roll up into the dependent's
-// healthcheck. The listener - the health listener with it - must come up
-// even when a service behind some route did not, so those routes answer
-// with errors while /healthz and /readyz report the truth. Starting it after
-// the services is an ordering only, which the wiring gives by registering
-// the server once the rest is sorted. Nor is the meter a listener carries a
-// dependency - see WithMeter.
+// nil on purpose: the listener (and /healthz, /readyz) must come up even when a service behind a route failed
 func (m *manager) Dependencies() []common.Service {
 	return nil
 }
 
-// Init rebuilds every server's echo instance and re-registers all routes
-// from the persisted handler metadata. Required because net/http forbids
-// reusing a server after Shutdown — on restart we need fresh echos.
+// rebuilds every echo: net/http forbids reusing a server after Shutdown
 func (m *manager) Init(ctx context.Context) error {
 	for _, s := range m.servers {
 		if err := m.rebuildServer(s); err != nil {
@@ -105,8 +86,6 @@ func (m *manager) Init(ctx context.Context) error {
 	return nil
 }
 
-// rebuildServer gives the server a fresh echo instance and reinstalls every
-// route it holds.
 func (m *manager) rebuildServer(s *server) error {
 	if err := m.buildEcho(s); err != nil {
 		return err
@@ -120,8 +99,6 @@ func (m *manager) rebuildServer(s *server) error {
 	return nil
 }
 
-// buildEcho creates a fresh echo instance for the given server and applies
-// its middleware chain. Replaces any prior s.echo.
 func (m *manager) buildEcho(s *server) error {
 	e := m.newEcho()
 	e.HTTPErrorHandler = s.errorHandler
@@ -130,33 +107,11 @@ func (m *manager) buildEcho(s *server) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse middleware configs for server %s", s.name)
 	}
-	// Each position in the chain is forced by a dependency: metrics
-	// outermost of all - it reads the finished record and records (into noop
-	// instruments when the listener has no meter), nothing in it can panic,
-	// and outside recover a recovered panic still counts as the 500 it
-	// became; then recover, because everything inside it - the user's
-	// middlewares most of all - may panic; then the user's server-level
-	// middlewares, in WithMiddlewares order; logger wrapping info, whose
-	// records it reads; error innermost, normalizing failures closest to the
-	// work.
-	//
-	// The user slot sits where it does because the lifecycle trio admits no
-	// insertion: between logger and info a short-circuiting middleware would
-	// leave logger reading records info never wrote, masking the real error,
-	// and inside info is just a route middleware with extra steps - router.yaml
-	// already expresses that. Ahead of the trio is the one position router.yaml
-	// cannot express: every request, matched or not - which is why an app's
-	// cors middleware belongs here, answering preflight requests that match no
-	// route. A request rejected in this slot still gets its error normalized
-	// and printed by the errorHandler fallback.
+	// order is load-bearing: metrics outside recover so a recovered panic counts as its 500;
+	// user middlewares see every request, ahead of logger/info/error, which must stay adjacent
 	mw := newMiddleware(s)
 	funcs := []echo.MiddlewareFunc{mw.Metrics, mw.Recover}
-	// Server-level middlewares are standard api.Middlewares. WithMiddlewares
-	// declares the roster and its order; the server's middleware configs
-	// activate each entry - a name with no entry stays dormant, `name:` or
-	// `name: true` enables with no config, a block enables and configures,
-	// and `name: false` switches it off. One that returns no function has
-	// declined attachment.
+	// a name with no middleware config entry stays dormant
 	for _, umw := range s.middlewares {
 		raw, configured := configs[umw.Name()]
 		enabled, switched := switches[umw.Name()]
@@ -179,10 +134,7 @@ func (m *manager) buildEcho(s *server) error {
 	return nil
 }
 
-// Add adds a new echo server instance with the given configuration
 func (m *manager) Add(name string, opts ...ServerOption) error {
-	// a second Add under one name would silently replace a listener that may
-	// already be serving - the same Conflict RegisterMiddlewares raises
 	if _, exists := m.servers[name]; exists {
 		return errors.Conflict.Newf("server %s already added", name)
 	}
@@ -196,8 +148,6 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	if s.endpoint == nil {
 		return errors.Newf("server must have a valid endpoint")
 	}
-	// once per instance: the provider's identity never changes, so the
-	// rebuilt echo a restart performs keeps recording into the same series
 	inst, err := s.newInstruments()
 	if err != nil {
 		return errors.Wrapf(err, "server %s: failed to build metrics instruments", name)
@@ -210,7 +160,6 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	return nil
 }
 
-// Get returns the Server interface for the given server name
 func (m *manager) Get(name string) (Server, error) {
 	s, ok := m.servers[name]
 	if !ok {
@@ -219,7 +168,6 @@ func (m *manager) Get(name string) (Server, error) {
 	return s, nil
 }
 
-// List returns all registered servers
 func (m *manager) List() []Server {
 	servers := make([]Server, 0, len(m.servers))
 	for _, s := range m.servers {
@@ -228,16 +176,7 @@ func (m *manager) List() []Server {
 	return servers
 }
 
-// ============================================================================
-// Router Registration
-// ============================================================================
-
-// registerRouter loads the router's configuration - one handler group per
-// YAML document - and resolves every handler it declares. A mistake anywhere
-// fails here, naming the router and the group: registration is where a
-// router's config is checked, so the wiring fails startup on it.
 func (m *manager) registerRouter(router api.Router) ([]*handlerGroupConfig, error) {
-	// Get embedded router.yaml configuration
 	data := router.Config()
 	if len(data) == 0 {
 		return nil, errors.Newf("router %s has empty config", router.Name())
@@ -246,7 +185,6 @@ func (m *manager) registerRouter(router api.Router) ([]*handlerGroupConfig, erro
 	if err != nil {
 		return nil, errors.Wrapf(err, "router %s: failed to parse config", router.Name())
 	}
-	// Get handler functions from router
 	handlers := router.Handlers()
 	if handlers == nil {
 		return nil, errors.Newf("router %s: Handlers() returned nil", router.Name())
@@ -262,10 +200,7 @@ func (m *manager) registerRouter(router api.Router) ([]*handlerGroupConfig, erro
 	return groups, nil
 }
 
-// resolveHandlers binds each handler a group declares to its function. A
-// route is one server, method and path wherever it is declared: a second
-// declaration - in another group of the same router or in another router -
-// would silently replace the first, so it fails registration instead.
+// a route declared twice, in any group or router, is a Conflict rather than a silent replacement
 func (m *manager) resolveHandlers(group *handlerGroupConfig, handlers map[string]any) error {
 	for _, handler := range group.Handlers {
 		handler.Method = strings.ToUpper(handler.Method)
@@ -301,22 +236,18 @@ func (m *manager) resolveHandlers(group *handlerGroupConfig, handlers map[string
 	return nil
 }
 
-// RegisterRouters registers one or more routers with the server
 func (m *manager) RegisterRouters(routers ...api.Router) error {
 	for _, r := range routers {
-		// Register router and get its handler groups
 		groups, err := m.registerRouter(r)
 		if err != nil {
 			return err
 		}
 		for _, g := range groups {
-			// Determine which server to use
 			serverName := g.Server
 			if serverName == "" {
 				return errors.Newf("router %s: server name not specified in handler group %q", r.Name(), g.Prefix)
 			}
 
-			// Get the echo instance for this server
 			s, ok := m.servers[serverName]
 			if !ok {
 				return errors.Newf("server %s not found, please call AddServer first", serverName)
@@ -335,12 +266,8 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 	return nil
 }
 
-// installHandler registers a single handler on the server's echo instance.
-// Used by both RegisterRouters (initial wiring) and Init (rebuild on restart).
 func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerConfig) error {
-	// Create echo group with API prefix.
-	// Trim trailing slash so Echo's literal prefix+path concatenation
-	// doesn't produce double slashes (e.g., "/" + "/health" → "//health").
+	// echo concatenates prefix+path literally, so trim to avoid "//health"
 	prefix := strings.TrimSuffix(path.Join(s.endpoint.Path, g.Prefix), "/")
 	group := s.echo.Group(prefix)
 
@@ -350,10 +277,7 @@ func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerCon
 	}
 
 	key := newHandlerKey(g, h)
-	// Normalize root path "/" to "" so the route registers at the
-	// group prefix without a trailing slash. Combined with the
-	// RemoveTrailingSlash pre-middleware, both /prefix and /prefix/
-	// resolve to the same handler.
+	// "/" -> "": with RemoveTrailingSlash both /prefix and /prefix/ match
 	routePath := strings.TrimSuffix(h.Path, "/")
 	m.log.Infof("register handler %s %s", h.Method, path.Join(prefix, h.Path))
 
@@ -364,7 +288,6 @@ func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerCon
 
 	switch h.Method {
 	case api.MethodWS:
-		// WebSocket handshake comes in as HTTP GET; webSocket upgrades it.
 		group.Add(http.MethodGet, routePath, m.webSocket(s, fn.(wsHandler)), mwfuncs...)
 	case api.MethodAny:
 		group.Any(routePath, fn.(echo.HandlerFunc), mwfuncs...)
@@ -374,12 +297,7 @@ func (m *manager) installHandler(s *server, g *handlerGroupConfig, h *handlerCon
 	return nil
 }
 
-// collectMiddlewares resolves the handler's and group's middleware refs into
-// functions for one route. Handler refs come first - they wrap outermost - and
-// a name the handler already claimed is skipped at group level, so a handler's
-// entry overrides the group's rather than stacking a second run. The switch
-// and the config resolve independently through resolveMiddleware; each ref
-// costs one Func call, at registration, so a bad config fails startup.
+// handler refs wrap outermost and shadow same-named group refs; Func runs at registration so a bad config fails startup
 func (m *manager) collectMiddlewares(s *server, h *handlerConfig, g *handlerGroupConfig) ([]echo.MiddlewareFunc, error) {
 	groupRefs := make(map[string]*middlewareConfig, len(g.Middlewares))
 	for _, ref := range g.Middlewares {
@@ -392,10 +310,6 @@ func (m *manager) collectMiddlewares(s *server, h *handlerConfig, g *handlerGrou
 		return nil, errors.Wrapf(err, "failed to parse middleware configs for server %s", s.name)
 	}
 
-	// One pass, handler refs first so they wrap outermost and shadow the
-	// group's entries. The candidate chain is the same for both scopes: a
-	// group ref's own config IS groupConfigs[name], so walking it twice is
-	// harmless.
 	refs := make([]*middlewareConfig, 0, len(h.Middlewares)+len(g.Middlewares))
 	refs = append(refs, h.Middlewares...)
 	refs = append(refs, g.Middlewares...)
@@ -409,8 +323,7 @@ func (m *manager) collectMiddlewares(s *server, h *handlerConfig, g *handlerGrou
 		seen[ref.Name] = true
 		mw, ok := m.middlewares[ref.Name]
 		if !ok {
-			// Checked before the switch: turning off a middleware that does
-			// not exist is a typo, not a no-op.
+			// checked before the switch: disabling an unknown middleware is a typo
 			return nil, errors.NotImplemented.Newf("middleware %s not found", ref.Name)
 		}
 		enabled, cfg := resolveMiddleware(ref, groupRefs[ref.Name], serverSwitches, serverConfigs)
@@ -419,8 +332,6 @@ func (m *manager) collectMiddlewares(s *server, h *handlerConfig, g *handlerGrou
 			return nil, errors.Wrapf(err, "middleware %s failed to build for %s %s", ref.Name, h.Method, h.Path)
 		}
 		if fn == nil {
-			// Attachment declined - switched off, or the middleware's own
-			// choice; the route serves as if the middleware were absent.
 			continue
 		}
 		mwfuncs = append(mwfuncs, fn)
@@ -428,10 +339,7 @@ func (m *manager) collectMiddlewares(s *server, h *handlerConfig, g *handlerGrou
 	return mwfuncs, nil
 }
 
-// resolveMiddleware walks a route attachment's chain - handler entry, group
-// entry, server mapping, most specific first - already split by parsing:
-// the first switch decides enabled (defaulting to true, since the ref's
-// presence is the intent), the first config wins, independently.
+// most specific first (handler, group, server); switch and config resolve independently; enabled defaults true
 func resolveMiddleware(h, g *middlewareConfig, serverSwitches map[string]bool, serverConfigs map[string][]byte) (enabled bool, cfg []byte) {
 	enabled, decided := true, false
 	for _, ref := range []*middlewareConfig{h, g} {
@@ -454,9 +362,6 @@ func resolveMiddleware(h, g *middlewareConfig, serverSwitches map[string]bool, s
 	return enabled, cfg
 }
 
-// RegisterMiddlewares registers middlewares with the server. The middleware
-// itself is kept, not a function: functions are minted per attachment point
-// once router.yaml configs are known.
 func (m *manager) RegisterMiddlewares(middlewares ...api.Middleware) error {
 	for _, mw := range middlewares {
 		name := mw.Name()
@@ -468,11 +373,6 @@ func (m *manager) RegisterMiddlewares(middlewares ...api.Middleware) error {
 	return nil
 }
 
-// ============================================================================
-// Lifecycle
-// ============================================================================
-
-// Start starts all servers in goroutines
 func (m *manager) Start(ctx context.Context) error {
 	for _, s := range m.servers {
 		go s.serve()
@@ -480,9 +380,7 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop shuts the servers down, waiting for the requests going on until ctx ends; then it closes
-// their connections, though a handler that ignores its request's context runs on. WebSocket
-// connections are closed going away, and their handlers waited for the same way.
+// Stop waits for in-flight requests and WebSocket handlers until ctx ends, then closes connections; a handler ignoring its context runs on.
 func (m *manager) Stop(ctx context.Context) error {
 	var errs []error
 	for _, s := range m.servers {

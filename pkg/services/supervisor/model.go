@@ -6,16 +6,11 @@ import (
 )
 
 type Manager interface {
-	// business
 	model.Supervisor
-	// health.go: Alive fails only when in-process recovery is spent (a
-	// service dead with restarts exhausted) - the signal to let the platform
-	// replace the process. Ready is the roll-up: nil iff every registered
-	// service is ready. Both judge from cached stats; probing stays the
-	// monitor's job.
+	// Alive fails only once in-process recovery is spent; Ready is nil iff every
+	// service is ready. Both read cached stats, never probe.
 	common.Liveness
 	common.Readiness
-	// lifecycle
 	common.Initializable
 	common.Daemon
 	common.Debuggable

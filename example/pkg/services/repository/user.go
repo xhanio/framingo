@@ -18,7 +18,6 @@ func (m *manager) CreateUser(ctx context.Context, opts repo.UserCreateOptions) (
 	var user *orm.User
 	var contact *orm.Contact
 	err := tx.Transaction(func(itx *gorm.DB) error {
-		// Create user contact record
 		contact = &orm.Contact{
 			Email:          opts.Email,
 			FirstName:      opts.FirstName,
@@ -34,7 +33,6 @@ func (m *manager) CreateUser(ctx context.Context, opts repo.UserCreateOptions) (
 				return errors.DBFailed.Wrap(err)
 			}
 		}
-		// Create user record
 		user = &orm.User{
 			OrganizationID:       opts.OrganizationID,
 			Username:             opts.Username,
@@ -104,7 +102,7 @@ func (m *manager) ListUsers(ctx context.Context, opts entity.UserListOptions) ([
 		if opts.SortBy != "" {
 			query = query.Order(clause.OrderByColumn{Column: clause.Column{Name: opts.SortBy}, Desc: opts.Desc})
 		}
-		// If organization ID is not default ViewAllOrganizationID (0), but some speficic organization ID
+		// 0 is ViewAllOrganizationID
 		if opts.OrganizationID != 0 {
 			query = query.Where("organization_id = ?", opts.OrganizationID)
 		}
@@ -114,8 +112,7 @@ func (m *manager) ListUsers(ctx context.Context, opts entity.UserListOptions) ([
 				return errors.DBFailed.Wrap(err)
 			}
 		}
-		// Fetch every contact in one query rather than one per user: the
-		// per-user form made listing N users cost N+1 round trips.
+		// one query for all contacts, avoiding N+1
 		ids := make([]int32, 0, len(users))
 		for _, user := range users {
 			ids = append(ids, user.ContactID)
@@ -130,8 +127,7 @@ func (m *manager) ListUsers(ctx context.Context, opts entity.UserListOptions) ([
 				byID[c.ID] = c
 			}
 		}
-		// Preserve the previous behaviour for a user whose contact is missing:
-		// a nil entry, keeping contacts index-aligned with users.
+		// a missing contact is a nil entry, keeping contacts index-aligned with users
 		for _, user := range users {
 			contacts = append(contacts, byID[user.ContactID])
 		}
@@ -282,8 +278,7 @@ func (m *manager) UpdateUser(ctx context.Context, userID int32, opts entity.User
 	return toUser(user, contact), nil
 }
 
-// SetUserPasswordHash stores the hash it is given, and clears the
-// password-reset requirement.
+// SetUserPasswordHash also clears the password-reset requirement.
 func (m *manager) SetUserPasswordHash(ctx context.Context, userID int32, passwordHash string) error {
 	tx := m.db.FromContext(ctx)
 	err := tx.Transaction(func(itx *gorm.DB) error {
@@ -322,8 +317,7 @@ func (m *manager) GetUserByName(ctx context.Context, organizationID int32, usern
 	return toUser(user, contact), nil
 }
 
-// GetUserPasswordHash reads the stored hash alone: entity.User does not carry
-// it, so it never reaches a response.
+// GetUserPasswordHash is separate because entity.User never carries the hash.
 func (m *manager) GetUserPasswordHash(ctx context.Context, userID int32) (string, error) {
 	var user orm.User
 	tx := m.db.FromContext(ctx)

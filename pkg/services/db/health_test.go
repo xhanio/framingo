@@ -10,8 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// stubConnector hands out connections or refuses them - all PingContext
-// exercises.
 type stubConnector struct {
 	err error
 }
@@ -43,19 +41,15 @@ func TestReadyPingsDatabase(t *testing.T) {
 }
 
 func TestAliveChecksOwnWiringOnly(t *testing.T) {
-	// Connected handle: alive.
 	m := newManager()
 	m.sqlDB = sql.OpenDB(stubConnector{})
 	require.NoError(t, m.Alive(context.Background()))
 
-	// An unreachable database must NOT fail liveness: restarting the client
-	// does not raise a database server, so the futile-restart loop stays off.
-	// That is Ready's story.
+	// unreachable database: still alive
 	m.sqlDB = sql.OpenDB(stubConnector{err: sql.ErrConnDone})
 	assert.NoError(t, m.Alive(context.Background()))
 
-	// No handle at all is broken wiring - Init reconnects, so a restart is
-	// exactly the remedy.
+	// no handle: not alive
 	m.sqlDB = nil
 	require.Error(t, m.Alive(context.Background()))
 	require.Error(t, m.Ready(context.Background()))

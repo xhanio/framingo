@@ -38,8 +38,7 @@ func (m *manager) Login(ctx context.Context, organization, username, password st
 	return session, nil
 }
 
-// The system attempts authentication using the LDAP method first.
-// If the LDAP authentication fails or is not enabled, then it attempts local user authentication
+// AuthenticateUser tries LDAP first, then the local user; if both fail the LDAP error is returned.
 func (m *manager) AuthenticateUser(ctx context.Context, organization, username, password string) (*entity.Credential, error) {
 	cred, ldapErr := m.authenticateLDAPUser(ctx, username, password)
 	if ldapErr == nil {
@@ -50,7 +49,6 @@ func (m *manager) AuthenticateUser(ctx context.Context, organization, username, 
 	if localUserErr == nil {
 		return cred, nil
 	} else {
-		// If both LDAP and local user authentication fail, return the LDAP error
 		if baseErr, ok := ldapErr.(errors.Error); ok {
 			if baseErr.Category() == errors.Forbidden {
 				return nil, errors.Wrap(ldapErr)
@@ -139,14 +137,8 @@ func (m *manager) createSession(ctx context.Context, credential *entity.Credenti
 	return session
 }
 
-// lookupSession returns the session under a read lock and nothing else.
-//
-// Lease methods MUST NOT be called while holding m's lock. The lease runs its
-// OnExpired/OnCancel callbacks from its own goroutine while holding the
-// lease's lock, and those callbacks take m's lock — so calling into the lease
-// with m held inverts the acquisition order and deadlocks both goroutines
-// permanently (every later GetSession then blocks, hanging all authenticated
-// requests). Always snapshot here, release, then touch the lease.
+// Never call a lease method while holding m's lock: lease callbacks take m's
+// lock under the lease's, so that order deadlocks. Snapshot, release, then touch the lease.
 func (m *manager) lookupSession(sessionID string) (*entity.Session, bool) {
 	m.RLock()
 	defer m.RUnlock()
@@ -154,9 +146,7 @@ func (m *manager) lookupSession(sessionID string) (*entity.Session, bool) {
 	return session, ok
 }
 
-// GetSession returns the stored session. Sharing it is safe because
-// entity.Credential is immutable once built — nothing request-scoped is
-// written back onto it.
+// GetSession shares the stored session: entity.Credential is immutable once built.
 func (m *manager) GetSession(ctx context.Context, sessionID string) (*entity.Session, bool) {
 	return m.lookupSession(sessionID)
 }
@@ -187,7 +177,7 @@ func (m *manager) CloseSession(ctx context.Context, sessionID string) bool {
 }
 
 func (m *manager) Logout(ctx context.Context, credential *entity.Credential) bool {
-	// Collect the leases under the lock, cancel them after releasing it.
+	// collect leases under the lock, cancel after releasing it
 	m.Lock()
 	var leases []lease.Lease
 	if sessions, ok := m.users[credential.UID()]; ok {
@@ -206,17 +196,13 @@ func (m *manager) Logout(ctx context.Context, credential *entity.Credential) boo
 	return len(leases) > 0
 }
 
-// revokeLocalUsers ends every session held by the given local users and
-// reports how many it ended. It matches on the user ID, not on
-// Credential.UID: the UID is built from the organization and user names, so
-// it misses a renamed user and cannot be rebuilt from an ID alone.
+// revokeLocalUsers matches on user ID, not Credential.UID: the UID is built from names and misses a renamed user.
 func (m *manager) revokeLocalUsers(userIDs ...int32) int {
 	ids := make(map[int32]struct{}, len(userIDs))
 	for _, id := range userIDs {
 		ids[id] = struct{}{}
 	}
-	// Collect the leases under the lock, cancel them after releasing it; each
-	// lease's OnCancel takes the lock to unindex its session.
+	// collect leases under the lock, cancel after: OnCancel takes the lock to unindex
 	m.RLock()
 	var leases []lease.Lease
 	for _, session := range m.sessions {

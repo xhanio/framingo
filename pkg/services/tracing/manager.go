@@ -19,22 +19,14 @@ type manager struct {
 	exporterConfig map[string]any
 	sampleRatio    float64
 
-	// exporter is an injected instance that bypasses the registry - the
-	// package tests' seam, assigned directly on the concrete manager (along
-	// with enabled) to observe spans through tracetest. nil means Init
-	// builds one from exporterName. Never written after construction time -
-	// safe to read without the lock. Production custom exporters go through
-	// Register instead: an app-owned Factory captures any construction.
+	// exporter is the tests' seam bypassing the registry; nil means Init builds
+	// one. Never written after construction, so read unlocked.
 	exporter sdktrace.SpanExporter
 
-	// propagator is fixed at construction and never swapped - safe to read
-	// without the lock.
+	// never swapped, so read unlocked
 	propagator propagation.TextMapPropagator
 
-	// mu guards the dynamic config fields above (enabled, exporterName,
-	// exporterConfig, sampleRatio): Init rewrites them on every restart
-	// while Alive and Info keep reading them. The provider pipeline has its
-	// own lock inside controller.
+	// mu guards enabled, exporterName, exporterConfig and sampleRatio.
 	mu         sync.RWMutex
 	controller *controller
 }
@@ -45,7 +37,6 @@ func New(opts ...Option) Manager {
 	return newManager(opts...)
 }
 
-// newManager returns the concrete manager, the form package tests construct.
 func newManager(opts ...Option) *manager {
 	m := &manager{
 		controller: newController(),

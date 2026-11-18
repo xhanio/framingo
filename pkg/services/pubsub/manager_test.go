@@ -109,7 +109,6 @@ func TestManagerHierarchicalTopics(t *testing.T) {
 	leafCh, err := m.Subscribe("leaf", "app/module/component")
 	require.NoError(t, err)
 
-	// Publishing to a leaf topic notifies all ancestor subscribers.
 	err = m.Publish(context.Background(), "publisher", "app/module/component", "leaf", nil)
 	require.NoError(t, err)
 
@@ -117,7 +116,6 @@ func TestManagerHierarchicalTopics(t *testing.T) {
 	assert.Len(t, drain(t, childCh, 100*time.Millisecond), 1)
 	assert.Len(t, drain(t, leafCh, 100*time.Millisecond), 1)
 
-	// Publishing to "app" only notifies the root subscriber.
 	err = m.Publish(context.Background(), "publisher", "app", "root", nil)
 	require.NoError(t, err)
 
@@ -137,11 +135,9 @@ func TestManagerUnsubscribe(t *testing.T) {
 
 	require.NoError(t, m.Unsubscribe("subscriber", "topic"))
 
-	// Channel is closed by Unsubscribe.
 	_, ok := <-ch
 	assert.False(t, ok, "channel should be closed after Unsubscribe")
 
-	// Further publishes should not panic.
 	require.NoError(t, m.Publish(context.Background(), "publisher", "topic", "after", nil))
 }
 
@@ -152,7 +148,6 @@ func TestManagerEmptyNameSubscribeNoop(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, ch, "empty name should yield no channel")
 
-	// Unsubscribe with empty name is also a no-op.
 	require.NoError(t, m.Unsubscribe("", "topic"))
 }
 
@@ -214,7 +209,6 @@ func TestManagerGracefulShutdown(t *testing.T) {
 	require.NoError(t, m.Publish(context.Background(), "publisher", "topic", "test", nil))
 	assert.Len(t, drain(t, ch, 100*time.Millisecond), 1)
 
-	// Stop closes the driver, which closes all subscriber channels.
 	require.NoError(t, m.Stop(context.Background()))
 	_, ok := <-ch
 	assert.False(t, ok, "channel should be closed after Stop")

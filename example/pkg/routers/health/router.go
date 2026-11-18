@@ -14,10 +14,7 @@ import (
 
 var _ fapi.Router = (*router)(nil)
 
-// Supervisor is the narrow view this router needs: the two graph verdicts,
-// plus the stats behind the readiness body. supervisor.Manager satisfies it;
-// model interfaces stay lifecycle-free and the service package stays out of
-// the router.
+// Supervisor is narrow so the service package stays out of the router; supervisor.Manager satisfies it.
 type Supervisor interface {
 	common.Liveness
 	common.Readiness
@@ -31,14 +28,13 @@ type router struct {
 	name string
 	log  log.Logger
 
-	sv Supervisor // read-only view over the service graph's stats
+	sv Supervisor
 }
 
 func New(sv Supervisor, log log.Logger) fapi.Router {
 	return newRouter(sv, log)
 }
 
-// newRouter returns the concrete router, the form package tests construct.
 func newRouter(sv Supervisor, log log.Logger) *router {
 	r := &router{
 		sv:  sv,
@@ -52,8 +48,7 @@ func (r *router) Name() string {
 	return r.name
 }
 
-// Dependencies is deliberately empty: this router reads the supervisor
-// itself, which orchestrates the graph and cannot be a node inside it.
+// Dependencies is empty: the supervisor orchestrates the graph and cannot be a node in it.
 func (r *router) Dependencies() []common.Service {
 	return nil
 }

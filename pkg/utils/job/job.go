@@ -81,7 +81,6 @@ func (j *job) initialize() {
 
 func (j *job) Run(ctx context.Context, params any) bool {
 	j.RLock()
-	// return if job is running, or is done without running once or without cooldown.
 	if IsPending(j.state) {
 		j.log.Debugf("job %s is still running", j.id)
 		j.RUnlock()
@@ -89,10 +88,8 @@ func (j *job) Run(ctx context.Context, params any) bool {
 	}
 	j.RUnlock()
 
-	// run job
 	j.wg.Add(1)
 	go func() {
-		// finalize
 		defer func() {
 			j.Lock()
 			if r := recover(); r != nil {
@@ -113,22 +110,16 @@ func (j *job) Run(ctx context.Context, params any) bool {
 			}
 			// j.sendEvent(JobActionUpdate)
 			j.Unlock()
-			// unblock job
 			j.wg.Done()
 		}()
 		j.Lock()
-		// initialize
 		j.initialize()
-		// set params
 		j.params = params
-		// ctx/cancel are read by Cancel() and Context() from other goroutines,
-		// so they must be published under the same lock as the rest of the
-		// state, not after it.
+		// published under the lock: Cancel and Context read them concurrently
 		j.ctx, j.cancel = context.WithCancel(ctx)
 		j.Unlock()
 
-		// Run fn without the lock held, then publish its error under it:
-		// Stats() reads j.err concurrently while the job is still running.
+		// fn runs unlocked; err is published under the lock since Stats reads it concurrently
 		err := j.fn(j)
 		j.Lock()
 		j.err = err
@@ -143,8 +134,7 @@ func (j *job) Wait() {
 
 func (j *job) Cancel() bool {
 	j.Lock()
-	// Read state directly: State() takes the read lock, and this mutex is not
-	// reentrant.
+	// not State(): the mutex is not reentrant
 	if j.state != StateRunning || j.cancel == nil {
 		j.Unlock()
 		return false
@@ -160,8 +150,7 @@ func (j *job) Cancel() bool {
 	return true
 }
 
-// Signal sends sig to the execution going on now, being canceled included, and reports
-// whether there was one. It never reaches a later execution.
+// Signal reaches only the current execution (canceling included), never a later one.
 func (j *job) Signal(sig Signal) bool {
 	j.Lock()
 	defer j.Unlock()

@@ -11,10 +11,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 )
 
-// describe fills in what can be read off the certificate itself - version,
-// serial, subject and issuer, validity, fingerprint, extensions - from the
-// bundle the repository decoded. It is derivation, not storage, so it lives
-// here rather than in the repository: it holds whatever the storage.
+// describe derives the parsed fields from the decoded bundle; derivation, not storage, so it lives here.
 func describe(c *entity.Certificate) (*entity.Certificate, error) {
 	if c.Bundle == nil {
 		return nil, errors.Newf("certificate %s holds no bundle", c.Name)

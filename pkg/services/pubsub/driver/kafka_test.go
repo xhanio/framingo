@@ -119,7 +119,6 @@ func TestKafkaCrossInstance(t *testing.T) {
 		_ = b2.Stop(context.Background())
 	}()
 
-	// Give Kafka time to set up consumer groups
 	time.Sleep(5 * time.Second)
 
 	err = b1.Publish(context.Background(), "publisher", "cross/topic", "cross-event", map[string]string{"key": "value"})
@@ -176,7 +175,6 @@ func TestKafkaDoubleStop(t *testing.T) {
 	err = b.Stop(context.Background())
 	require.NoError(t, err)
 
-	// Second stop should not panic
 	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }
@@ -189,7 +187,6 @@ func TestKafkaStopWithoutStart(t *testing.T) {
 
 	_, _ = b.Subscribe("svc", "topic")
 
-	// Stop without Start should not panic
 	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }

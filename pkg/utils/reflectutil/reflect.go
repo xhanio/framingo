@@ -13,7 +13,7 @@ import (
 
 const tagKey = "scan"
 
-// returns the package import path and type name
+// Locate returns obj's package path and type name, through pointers.
 func Locate(obj any) (string, string) {
 	ot := reflect.TypeOf(obj)
 	if ot == nil {
@@ -207,11 +207,9 @@ func FromBytes(t reflect.Type, b []byte) (reflect.Value, error) {
 			return reflect.ValueOf(v), nil
 		}
 	case reflect.Slice:
-		// store []byte directly
 		if t.Elem().Kind() == reflect.Uint8 {
 			return reflect.ValueOf(b), nil
 		}
-		// store json bytes for other kind of slices
 		v := reflect.New(t)
 		err := json.Unmarshal(b, v.Interface())
 		if err != nil {

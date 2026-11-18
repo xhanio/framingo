@@ -17,8 +17,6 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/api"
 )
 
-// fakeSupervisor implements health.Supervisor with canned verdicts and
-// stats - the router must consult the supervisor, not re-derive health.
 type fakeSupervisor struct {
 	alive error
 	ready error

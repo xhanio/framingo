@@ -8,12 +8,8 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/paramutil"
 )
 
-// query is the notation of a URL-style query: pairs joined by "&", opened by a
-// "?" that follows something which is not a pair.
 var query = paramutil.NewParams("=", "&", paramutil.WithOpener("?"))
 
-// keyword is the notation of a libpq-style connection string, which is nothing
-// but pairs joined by spaces.
 var keyword = paramutil.NewParams("=", " ")
 
 func TestParams_Parse(t *testing.T) {

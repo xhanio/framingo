@@ -47,9 +47,7 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
-// WithLocation sets the timezone cron schedules are read in; the default is
-// time.Local. To schedule by the system's named setting instead, pass what
-// osutil.Timezone returns.
+// WithLocation defaults to time.Local; pass osutil.Timezone() for the system's named zone.
 func WithLocation(loc *time.Location) Option {
 	return func(m *manager) {
 		m.loc = loc

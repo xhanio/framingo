@@ -11,8 +11,6 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// deflateOf returns n zero bytes compressed - the shape of a decompression
-// bomb: tiny on the wire, enormous once inflated.
 func deflateOf(t *testing.T, n int) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -26,7 +24,6 @@ func deflateOf(t *testing.T, n int) []byte {
 	return buf.Bytes()
 }
 
-// funcOf builds the attachment the way the server does, with no config.
 func funcOf(t *testing.T, m interface {
 	Func(bool, []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)
 }) echo.MiddlewareFunc {
@@ -54,13 +51,11 @@ func serve(t *testing.T, mw echo.MiddlewareFunc, body []byte) (int64, error) {
 	return read, err
 }
 
-// A body-size limit upstream bounds the COMPRESSED bytes, so the inflated
-// stream must be bounded here or a small payload exhausts memory.
 func TestDecompressionIsBounded(t *testing.T) {
-	const limit = 64 << 10 // 64 KiB
+	const limit = 64 << 10
 	mw := funcOf(t, New(WithMaxDecompressed(limit)))
 
-	bomb := deflateOf(t, 50<<20) // 50 MiB of zeros
+	bomb := deflateOf(t, 50<<20)
 	t.Logf("compressed %d bytes -> 50 MiB inflated (%.0fx)", len(bomb), float64(50<<20)/float64(len(bomb)))
 
 	read, err := serve(t, mw, bomb)
@@ -72,9 +67,8 @@ func TestDecompressionIsBounded(t *testing.T) {
 	}
 }
 
-// Bodies under the cap must still round-trip untouched.
 func TestBodyUnderLimitPassesThrough(t *testing.T) {
-	payload := bytes.Repeat([]byte("framingo"), 512) // 4 KiB
+	payload := bytes.Repeat([]byte("framingo"), 512)
 	var buf bytes.Buffer
 	zw := zlib.NewWriter(&buf)
 	if _, err := zw.Write(payload); err != nil {
@@ -91,7 +85,6 @@ func TestBodyUnderLimitPassesThrough(t *testing.T) {
 	}
 }
 
-// A non-deflate request must be left completely alone.
 func TestUncompressedRequestUntouched(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader([]byte("plain")))

@@ -7,28 +7,20 @@ import (
 
 type Service interface {
 	Named
-	// Dependencies are the services this one needs initialized and started
-	// first. A nil entry is skipped, so an optional dependency the app may
-	// not have wired is listed as is, set or not.
+	// Dependencies are initialized and started first; nil entries are skipped.
 	Dependencies() []Service
 }
 
-// Daemon is a service that runs. Start and Stop are called on one instance, and more than once.
-//
-// Stop ends what Start began: it takes no new work, cancels the work going on, and waits for all
-// of it to end, what an earlier Stop left included, until ctx ends. If ctx ends first, it ends
-// the work hard where it can and returns an error wrapping ctx's, leaving the rest to end on its
-// own; an ended ctx makes it a forced stop. Either way it returns only once whatever takes new
-// work has returned. Start works right after any Stop, and what a Stop left must not reach
-// into it.
+// Daemon may be started and stopped repeatedly on one instance. Stop refuses new
+// work, cancels and awaits the rest (an earlier Stop's leftovers included) until
+// ctx ends, then forces what it can and returns an error wrapping ctx's; it
+// returns only after intake has stopped, and leftovers must not reach a later Start.
 type Daemon interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
 }
 
-// Initializable is implemented by services that require initialization.
-// Init is called on first startup and on every restart, making it the
-// appropriate place to load dynamic configuration that may change between runs.
+// Init runs on first startup and every restart: load dynamic config here.
 type Initializable interface {
 	Init(ctx context.Context) error
 }
@@ -37,10 +29,7 @@ type Debuggable interface {
 	Info(w io.Writer, debug bool)
 }
 
-// Liveness and Readiness probes take the caller's context: probes may do
-// I/O (a database ping), and the caller owns the deadline budget and the
-// shutdown signal. Implementations may layer their own tighter timeout on
-// top, never a looser one.
+// Probes honour the caller's ctx deadline; an implementation may only tighten it.
 type Liveness interface {
 	Alive(ctx context.Context) error
 }

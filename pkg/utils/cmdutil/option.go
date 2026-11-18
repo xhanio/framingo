@@ -33,11 +33,7 @@ func WithEnv(envs ...string) Option {
 	}
 }
 
-// WithInput feeds the command, and calling it with no readers hands over the
-// parent's stdin. That substitution stays here rather than in setDefaults -
-// the exception to the rule - because it turns on the *call* having happened,
-// which a zero field cannot express: never calling WithInput leaves in nil,
-// and exec reads such a command from the null device.
+// WithInput with no readers passes the parent's stdin; without WithInput stdin is the null device.
 func WithInput(inputs ...io.Reader) Option {
 	return func(c *cmd) {
 		if len(inputs) == 0 {

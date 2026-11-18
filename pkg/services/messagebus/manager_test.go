@@ -22,8 +22,7 @@ type target struct {
 	raw   atomic.Int64
 }
 
-// target is a handler and nothing more: a name and the two handle methods, no
-// Dependencies - a handler need not be a service.
+// no Dependencies: a handler need not be a service
 var (
 	_ common.MessageHandler    = (*target)(nil)
 	_ common.RawMessageHandler = (*target)(nil)
@@ -175,7 +174,6 @@ func TestNewMessenger_ReceivesAndSends(t *testing.T) {
 	require.NoError(t, err)
 	defer m2.Close()
 
-	// m1 sends; m2 receives; m1 does NOT receive its own message.
 	require.NoError(t, m1.Send(context.Background(), "greet", "hello"))
 
 	select {
@@ -210,7 +208,7 @@ func TestNewMessenger_CloseClosesChannel(t *testing.T) {
 }
 
 func TestNewMessenger_JSONRoundTrip(t *testing.T) {
-	// Verifies the wire format wsutil.Bridge puts on a WebSocket.
+	// the wire format wsutil.Bridge puts on a WebSocket
 	original := entity.PubsubMessage{From: "a", Topic: "/t", Kind: "k", Payload: "p"}
 	data, err := json.Marshal(original)
 	require.NoError(t, err)
@@ -224,7 +222,7 @@ func TestNewMessenger_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, original, decoded)
 }
 
-// hanging takes a message and holds it, whatever its context says, until released.
+// ignores its context until released
 type hanging struct {
 	took    chan struct{}
 	release chan struct{}

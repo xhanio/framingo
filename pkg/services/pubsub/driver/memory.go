@@ -45,7 +45,6 @@ func (b *memoryDriver) Subscribe(name string, topic string) (<-chan entity.Pubsu
 	return sub.ch, nil
 }
 
-// GetSubscribers returns the names of all subscribers for the given topic and its parent topics.
 func (b *memoryDriver) GetSubscribers(topic string) []string {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -58,7 +57,6 @@ func (b *memoryDriver) GetSubscribers(topic string) []string {
 	return names
 }
 
-// getSubscribers returns all subscribers for the given topic and its parent topics.
 func (b *memoryDriver) getSubscribers(topic string) []*subscriber {
 	var subscribers []*subscriber
 
@@ -128,8 +126,7 @@ func (b *memoryDriver) Publish(_ context.Context, from string, topic string, kin
 	}
 	b.mu.RUnlock()
 
-	// Eviction needs the write lock, which cannot be taken while Publish holds
-	// the read lock: Go's RWMutex is not upgradable.
+	// after RUnlock: RWMutex is not upgradable
 	b.evict(lagged)
 	return nil
 }
@@ -147,9 +144,7 @@ func (b *memoryDriver) evict(lagged []laggard) {
 	}
 }
 
-// remove drops target from topic by identity. Removing by name would race a
-// subscriber that unsubscribed and resubscribed under the same name between
-// the read lock being released and the write lock being taken.
+// by identity, not name: a same-name resubscribe can land between RUnlock and Lock
 func (b *memoryDriver) remove(topic string, target *subscriber) {
 	node, ok := b.topics.Find(topic)
 	if !ok {
@@ -173,7 +168,7 @@ func (b *memoryDriver) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop waits for the pumps whatever ctx says: they end as soon as they are stopped.
+// Stop ignores ctx: the pumps end as soon as they are stopped.
 func (b *memoryDriver) Stop(_ context.Context) error {
 	b.mu.Lock()
 	var stopped []*subscriber

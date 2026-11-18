@@ -1,8 +1,7 @@
 server: health # the probe listener - stays off the public server
 prefix: /
 handlers:
-  # No middlewares on purpose: kubelet probes must be unauthenticated,
-  # unthrottled, and cheap.
+  # no middlewares: kubelet probes must be unauthenticated, unthrottled and cheap
   - method: GET
     path: /healthz
     func: Healthz

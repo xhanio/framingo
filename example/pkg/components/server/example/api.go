@@ -22,11 +22,7 @@ func (m *manager) initAPI() error {
 		deflate.New(),
 		authnuser.New(m.auth),
 		authz.New(m.role),
-		// Routers opt in through router.yaml, where a handler may also carry
-		// its own limit under the middleware's name; the server's middleware
-		// defaults (api.<name>.middlewares in config.yaml) cover the rest.
-		// With no limit anywhere it passes everything, so attaching it is
-		// safe with no config at all.
+		// passes everything unless router.yaml or api.<name>.middlewares sets a limit
 		throttle.New(),
 	}
 	routers := []api.Router{

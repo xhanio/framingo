@@ -6,8 +6,7 @@ import (
 	"sync"
 )
 
-// WaitGroup counts goroutines like sync.WaitGroup, but Wait gives up once its context ends,
-// and Add may come at any time, even while a Wait that gave up has left its count going.
+// WaitGroup is a sync.WaitGroup whose Wait honours ctx and whose Add is legal at any time.
 type WaitGroup struct {
 	mu   sync.Mutex
 	n    int
@@ -34,7 +33,6 @@ func (g *WaitGroup) Done() {
 	g.Add(-1)
 }
 
-// Go runs f in a goroutine the group counts.
 func (g *WaitGroup) Go(f func()) {
 	g.Add(1)
 	go func() {
@@ -43,7 +41,6 @@ func (g *WaitGroup) Go(f func()) {
 	}()
 }
 
-// Wait returns nil once the count drops to zero, or ctx's error if ctx ends first.
 func (g *WaitGroup) Wait(ctx context.Context) error {
 	g.mu.Lock()
 	idle := g.idle

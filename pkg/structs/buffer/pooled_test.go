@@ -29,7 +29,6 @@ func TestNewPooledBuffer(t *testing.T) {
 func TestPooledBufferWrite(t *testing.T) {
 	buffer := NewPooledBuffer(10, test_pool)
 
-	// Test normal write
 	data := []byte("hello")
 	n, err := buffer.Write(data)
 	if err != nil {
@@ -42,7 +41,6 @@ func TestPooledBufferWrite(t *testing.T) {
 		t.Errorf("Buffer length should be %d, got %d", len(data), buffer.Len())
 	}
 
-	// Test write empty data
 	n, err = buffer.Write([]byte{})
 	if err != nil {
 		t.Errorf("Write empty failed: %v", err)
@@ -51,7 +49,6 @@ func TestPooledBufferWrite(t *testing.T) {
 		t.Errorf("Expected to write 0 bytes, wrote %d", n)
 	}
 
-	// Test expansion
 	moreData := []byte(" world and more data to trigger expansion")
 	n, err = buffer.Write(moreData)
 	if err != nil {
@@ -71,13 +68,11 @@ func TestPooledBufferRead(t *testing.T) {
 	buffer := NewPooledBuffer(10, test_pool)
 	testData := []byte("hello world")
 
-	// Write test data
 	_, err := buffer.Write(testData)
 	if err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	// Test normal read
 	readBuf := make([]byte, 5)
 	n, err := buffer.Read(readBuf)
 	if err != nil {
@@ -93,7 +88,6 @@ func TestPooledBufferRead(t *testing.T) {
 		t.Errorf("Available should be 6, got %d", buffer.Available())
 	}
 
-	// Test read remaining data
 	readBuf2 := make([]byte, 10)
 	n, err = buffer.Read(readBuf2)
 	if err != nil {
@@ -106,7 +100,6 @@ func TestPooledBufferRead(t *testing.T) {
 		t.Errorf("Expected ' world', got '%s'", string(readBuf2[:n]))
 	}
 
-	// Test read at EOF
 	n, err = buffer.Read(readBuf2)
 	if err != io.EOF {
 		t.Errorf("Expected EOF, got %v", err)
@@ -115,7 +108,6 @@ func TestPooledBufferRead(t *testing.T) {
 		t.Errorf("Expected to read 0 bytes at EOF, read %d", n)
 	}
 
-	// Test read empty buffer
 	readBuf3 := make([]byte, 0)
 	n, err = buffer.Read(readBuf3)
 	if err != nil {
@@ -176,7 +168,6 @@ func TestPooledBufferReset(t *testing.T) {
 	buffer := NewPooledBuffer(10, test_pool)
 	testData := []byte("hello world")
 
-	// Write and read some data
 	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
 	readBuf := make([]byte, 5)
@@ -190,7 +181,6 @@ func TestPooledBufferReset(t *testing.T) {
 		t.Errorf("Expected available 6, got %d", buffer.Available())
 	}
 
-	// Reset should clear data and position
 	buffer.Reset()
 
 	if buffer.Len() != 0 {
@@ -200,7 +190,6 @@ func TestPooledBufferReset(t *testing.T) {
 		t.Errorf("After reset, available should be 0, got %d", buffer.Available())
 	}
 
-	// Should be able to write again
 	newData := []byte("new data")
 	n, err := buffer.Write(newData)
 	if err != nil {
@@ -215,7 +204,6 @@ func TestPooledBufferResetRead(t *testing.T) {
 	buffer := NewPooledBuffer(10, test_pool)
 	testData := []byte("hello")
 
-	// Write and read some data
 	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
 	readBuf := make([]byte, 3)
@@ -226,7 +214,6 @@ func TestPooledBufferResetRead(t *testing.T) {
 		t.Errorf("Expected available 2, got %d", buffer.Available())
 	}
 
-	// Reset read position only
 	buffer.ResetRead()
 
 	if buffer.Len() != 5 {
@@ -236,7 +223,6 @@ func TestPooledBufferResetRead(t *testing.T) {
 		t.Errorf("After ResetRead, available should be 5, got %d", buffer.Available())
 	}
 
-	// Should be able to read from beginning again
 	fullReadBuf := make([]byte, 5)
 	n, err := buffer.Read(fullReadBuf)
 	if err != nil {
@@ -256,7 +242,6 @@ func TestPooledBufferClose(t *testing.T) {
 	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
 
-	// Close the buffer
 	err := buffer.Close()
 	if err != nil {
 		t.Errorf("Close failed: %v", err)
@@ -266,7 +251,6 @@ func TestPooledBufferClose(t *testing.T) {
 		t.Error("Buffer should be closed")
 	}
 
-	// Operations should fail after close
 	_, err = buffer.Write([]byte("test"))
 	if err == nil {
 		t.Error("Write should fail on closed buffer")
@@ -283,13 +267,11 @@ func TestPooledBufferClose(t *testing.T) {
 		t.Error("Seek should fail on closed buffer")
 	}
 
-	// Double close should not error
 	err = buffer.Close()
 	if err != nil {
 		t.Errorf("Double close should not error, got: %v", err)
 	}
 
-	// Properties should return zero/empty after close
 	if buffer.Len() != 0 {
 		t.Errorf("Closed buffer Len() should be 0, got %d", buffer.Len())
 	}
@@ -304,13 +286,11 @@ func TestPooledBufferClose(t *testing.T) {
 func TestPooledBufferData(t *testing.T) {
 	buffer := NewPooledBuffer(10, test_pool)
 
-	// Empty buffer
 	data := buffer.Data()
 	if data != nil {
 		t.Error("Empty buffer Data() should return nil")
 	}
 
-	// With data
 	testData := []byte("hello world")
 	//nolint:errcheck // in-memory write; the assertions below surface any failure
 	buffer.Write(testData)
@@ -323,7 +303,6 @@ func TestPooledBufferData(t *testing.T) {
 		t.Errorf("Expected '%s', got '%s'", string(testData), string(data))
 	}
 
-	// Modifying returned data should not affect buffer (it's a copy)
 	data[0] = 'H'
 	originalData := buffer.Data()
 	if originalData[0] != 'h' {
@@ -336,7 +315,6 @@ func TestPooledBufferExpansion(t *testing.T) {
 
 	originalCap := buffer.Cap()
 
-	// Write data that exceeds capacity
 	largeData := make([]byte, originalCap*3) // Make sure it's larger than original capacity
 	for i := range largeData {
 		largeData[i] = byte('a' + (i % 26))
@@ -350,12 +328,10 @@ func TestPooledBufferExpansion(t *testing.T) {
 		t.Errorf("Expected to write %d bytes, wrote %d", len(largeData), n)
 	}
 
-	// Buffer should have expanded
 	if buffer.Cap() <= originalCap {
 		t.Errorf("Buffer should have expanded, original cap %d, new cap %d", originalCap, buffer.Cap())
 	}
 
-	// Data should be preserved
 	if buffer.Len() != len(largeData) {
 		t.Errorf("Buffer length should be %d, got %d", len(largeData), buffer.Len())
 	}
@@ -374,7 +350,6 @@ func TestPooledBufferExpansion(t *testing.T) {
 }
 
 func TestPooledBufferGenericTypes(t *testing.T) {
-	// Test with int buffer
 	intBuffer := NewPooledBuffer(10, NewPool[int]())
 
 	intData := []int{1, 2, 3, 4, 5}
@@ -402,7 +377,6 @@ func TestPooledBufferGenericTypes(t *testing.T) {
 		}
 	}
 
-	// Test with string buffer
 	stringBuffer := NewPooledBuffer(5, NewPool[string]())
 
 	stringData := []string{"hello", "world", "test"}

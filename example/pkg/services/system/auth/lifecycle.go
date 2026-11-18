@@ -16,8 +16,7 @@ func (m *manager) Info(w io.Writer, debug bool) {
 	if !debug {
 		return
 	}
-	// Snapshot under the lock; Lease.Expired/ExpiresAt take the lease's own
-	// lock and must not be called while m is held (see lookupSession).
+	// snapshot under the lock; lease methods must not run while m is held (see lookupSession)
 	type row struct {
 		sid   string
 		cred  string
@@ -49,9 +48,7 @@ func (m *manager) Info(w io.Writer, debug bool) {
 	t.Flush()
 }
 
-// HandleMessage ends the sessions of local users whose account changed under
-// them: a session must not outlive the deletion, password or identity it was
-// issued against.
+// HandleMessage: a session must not outlive the deletion, password or identity it was issued against.
 func (m *manager) HandleMessage(ctx context.Context, e common.Message) error {
 	switch evt := e.(type) {
 	case message.LocalUsersDeleted:

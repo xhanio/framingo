@@ -12,8 +12,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/confutil"
 )
 
-// enabledCtx drives the whole exporter choice through config, the authority
-// Init reloads from: enabling, the registry name, and the factory's block.
 func enabledCtx(config map[string]any) context.Context {
 	v := viper.New()
 	v.Set("tracing.enabled", true)
@@ -24,8 +22,7 @@ func enabledCtx(config map[string]any) context.Context {
 	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
-// The otlp exporters connect lazily, so building the provider must succeed
-// with no collector listening - a collector outage never fails Init.
+// no collector is listening: otlp connects lazily
 func TestRegistersOTLPGRPCExporter(t *testing.T) {
 	m := tracing.New()
 	require.NoError(t, m.Init(enabledCtx(map[string]any{
@@ -43,8 +40,6 @@ func TestRegistersOTLPGRPCExporter(t *testing.T) {
 }
 
 func TestRejectsUnknownCompression(t *testing.T) {
-	// a typo'd compressor must fail Init like the http factory's does, not
-	// surface silently at export time
 	m := tracing.New()
 	err := m.Init(enabledCtx(map[string]any{"compression": "gzp"}))
 	require.Error(t, err)
@@ -52,8 +47,7 @@ func TestRejectsUnknownCompression(t *testing.T) {
 }
 
 func TestRejectsUnknownConfigKeys(t *testing.T) {
-	// url_path is an http-transport key: the grpc factory's strict decode
-	// rejects it instead of silently ignoring it
+	// url_path is http-only
 	m := tracing.New()
 	require.Error(t, m.Init(enabledCtx(map[string]any{"url_path": "/v1/traces"})))
 }

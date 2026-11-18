@@ -6,9 +6,7 @@ import (
 )
 
 type Manager interface {
-	// business
 	model.MessageBus
-	// lifecycle
 	common.Daemon
 	common.Debuggable
 }

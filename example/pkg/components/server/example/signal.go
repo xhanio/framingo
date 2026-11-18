@@ -9,8 +9,7 @@ import (
 	"syscall"
 )
 
-// listenSignals stops on SIGINT or SIGTERM and keeps listening while it does: the same signal
-// again forces the stop, and a third exits at once.
+// listenSignals: a second SIGINT/SIGTERM forces the stop, a third exits at once.
 func (m *manager) listenSignals(ctx context.Context) {
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGUSR1, syscall.SIGUSR2)

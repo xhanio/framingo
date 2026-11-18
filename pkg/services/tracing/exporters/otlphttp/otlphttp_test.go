@@ -12,8 +12,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/confutil"
 )
 
-// enabledCtx drives the whole exporter choice through config, the authority
-// Init reloads from: enabling, the registry name, and the factory's block.
 func enabledCtx(config map[string]any) context.Context {
 	v := viper.New()
 	v.Set("tracing.enabled", true)
@@ -24,8 +22,7 @@ func enabledCtx(config map[string]any) context.Context {
 	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
-// The otlp exporters connect lazily, so building the provider must succeed
-// with no collector listening - a collector outage never fails Init.
+// no collector is listening: otlp connects lazily
 func TestRegistersOTLPHTTPExporter(t *testing.T) {
 	m := tracing.New()
 	require.NoError(t, m.Init(enabledCtx(map[string]any{

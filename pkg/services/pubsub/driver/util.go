@@ -12,29 +12,17 @@ import (
 
 const channelBufferSize = 256
 
-// delivery is the outcome of offering a message to a subscriber.
 type delivery int
 
 const (
-	// delivered means the message was queued for the subscriber.
 	delivered delivery = iota
-	// droppedMessage means the queue was full and the message was discarded.
 	droppedMessage
-	// lagging means the queue was full and the subscriber must be evicted by
-	// the caller, once it has released the driver lock.
+	// lagging: the caller evicts once it has released the driver lock
 	lagging
 )
 
-// subscriber owns a delivery channel and the pending queue that feeds it.
-//
-// Publish appends to the queue while holding the driver's read lock; a pump
-// goroutine drains the queue into the channel while holding no lock at all.
-// That split is the whole point: it lets the send into a slow subscriber's
-// channel block without stalling the bus, because the goroutine that blocks
-// holds nothing that Subscribe or Unsubscribe needs.
-//
-// The pump also owns close(ch). Closing from anywhere else would race the
-// pump's send.
+// Publish queues under the driver's read lock; a lock-free pump drains into ch so a slow
+// subscriber blocks only its pump. The pump alone closes ch, or it races its own send.
 type subscriber struct {
 	name string
 	ch   chan entity.PubsubMessage
@@ -68,8 +56,7 @@ func newSubscriber(name string, opts *options) *subscriber {
 	return s
 }
 
-// offer appends msg to the pending queue. It never blocks, so it is safe to
-// call while holding the driver's read lock.
+// never blocks, so safe under the driver's read lock
 func (s *subscriber) offer(msg entity.PubsubMessage) (delivery, uint64) {
 	s.mu.Lock()
 	if s.stopped {
@@ -92,8 +79,7 @@ func (s *subscriber) offer(msg entity.PubsubMessage) (delivery, uint64) {
 	return delivered, 0
 }
 
-// claimEviction reports whether this call is the one responsible for evicting
-// the subscriber. Concurrent publishes can all observe a full queue.
+// concurrent publishes can all see a full queue; only one claims the eviction
 func (s *subscriber) claimEviction() bool {
 	return s.evicting.CompareAndSwap(false, true)
 }
@@ -129,9 +115,7 @@ func (s *subscriber) next() (entity.PubsubMessage, bool) {
 	return msg, true
 }
 
-// stop tears the subscription down and is safe to call more than once: a
-// subscriber that was evicted for lagging may still be explicitly
-// unsubscribed, and Stop may run after either.
+// idempotent: eviction, Unsubscribe and Stop may all reach it
 func (s *subscriber) stop() {
 	s.stopOnce.Do(func() {
 		s.mu.Lock()
@@ -143,25 +127,18 @@ func (s *subscriber) stop() {
 	})
 }
 
-// wait blocks until the pump has exited and ch is closed.
 func (s *subscriber) wait() { <-s.done }
 
-// shouldLogDrop throttles the drop warning. A subscriber that is wedged under
-// sustained load would otherwise turn every dropped message into a log line.
 func shouldLogDrop(n uint64) bool {
 	return n == 1 || n%1024 == 0
 }
 
-// laggard is a subscriber that filled its queue, paired with the topic it
-// subscribed to. That is not necessarily the topic the message was published
-// to: a subscriber on "app" receives messages published to "app/module", and
-// evicting it means removing it from "app".
+// topic is the subscribed one, possibly an ancestor of the publish topic
 type laggard struct {
 	sub   *subscriber
 	topic string
 }
 
-// dispatcher holds the delivery policy and counters shared by every driver.
 type dispatcher struct {
 	log  log.Logger
 	opts *options
@@ -174,17 +151,11 @@ func newDispatcher(logger log.Logger, opts ...Option) *dispatcher {
 	return &dispatcher{log: logger, opts: newOptions(opts...)}
 }
 
-// Dropped returns the number of messages discarded because a subscriber could
-// not keep up.
 func (d *dispatcher) Dropped() uint64 { return d.dropped.Load() }
 
-// Evicted returns the number of subscribers removed because they could not
-// keep up.
 func (d *dispatcher) Evicted() uint64 { return d.evicted.Load() }
 
-// offer hands msg to sub and reports whether sub must now be evicted. It never
-// blocks, so it is safe under the driver's read lock. Eviction itself is not:
-// it needs the write lock, and Go's RWMutex is not upgradable.
+// safe under the read lock; a true result must be evicted after releasing it
 func (d *dispatcher) offer(sub *subscriber, subTopic string, msg entity.PubsubMessage) bool {
 	switch result, drops := sub.offer(msg); result {
 	case lagging:
@@ -199,9 +170,7 @@ func (d *dispatcher) offer(sub *subscriber, subTopic string, msg entity.PubsubMe
 	return false
 }
 
-// fanout offers msg to every local subscriber whose subscription topic matches,
-// skipping the publisher itself, and returns the laggards for the caller to
-// evict once it has released the read lock. Callers must hold the read lock.
+// caller holds the read lock and evicts the returned laggards after releasing it
 func (d *dispatcher) fanout(topics map[string][]*subscriber, from string, msg entity.PubsubMessage) []laggard {
 	var lagged []laggard
 	for subTopic, subs := range topics {
@@ -220,8 +189,6 @@ func (d *dispatcher) fanout(topics map[string][]*subscriber, from string, msg en
 	return lagged
 }
 
-// claim reports whether this caller owns evicting l, logging the eviction when
-// it does. Concurrent publishes can all observe the same full queue.
 func (d *dispatcher) claim(l laggard) bool {
 	if !l.sub.claimEviction() {
 		return false
@@ -239,8 +206,7 @@ type eventMessage struct {
 	Payload   json.RawMessage `json:"payload"`
 }
 
-// topicMatches checks if a subscription topic matches a publish topic.
-// "app" matches "app", "app/module", "app/module/component".
+// "app" matches "app", "app/module", "app/module/component"
 func topicMatches(subTopic, eventTopic string) bool {
 	if subTopic == eventTopic {
 		return true

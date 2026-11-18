@@ -1,16 +1,5 @@
-// Package cors answers cross-origin requests, the one concern that must run
-// ahead of routing: a preflight OPTIONS matches no route, so no
-// route-attached middleware could ever see it. Attach it server-level -
-// server.WithMiddlewares(cors.New()) at Add time - and activate it per
-// server through the middleware configs under "cors":
-//
-//	cors: true      # or `cors:` - echo's permissive defaults, a development setting
-//	cors:           # a policy tightens it field by field
-//	  allow_origins:
-//	    - https://app.example.com
-//
-// With no cors entry at all the attachment stays dormant, so a server whose
-// config carries none - the health listener, say - serves without it.
+// Package cors must attach server-level, since a preflight OPTIONS matches no route;
+// it stays dormant on a server whose middleware configs carry no "cors" entry.
 package cors
 
 import (
@@ -55,8 +44,7 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 	if config == nil {
 		return em.CORS(), nil
 	}
-	// Decode strictly: a typo'd field in a security policy must fail startup,
-	// not silently leave the permissive defaults in place.
+	// strict: a typo in a security policy must fail startup, not keep the permissive defaults
 	dec := yaml.NewDecoder(bytes.NewReader(config))
 	dec.KnownFields(true)
 	var cfg api.CORSConfig

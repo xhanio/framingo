@@ -15,10 +15,9 @@ import (
 	"github.com/xhanio/framingo/example/pkg/utils/infra"
 )
 
-// Import a certificate
 func (m *manager) Import(ctx context.Context, opts entity.CertCreateOptions) (*entity.Certificate, error) {
 	if opts.Source == "" {
-		opts.Source = entity.CertSourceUser // Default source is user
+		opts.Source = entity.CertSourceUser
 	}
 	if opts.Source != entity.CertSourceUser && opts.Source != entity.CertSourceFactory {
 		return nil, errors.InvalidArgument.Newf("Invalid source %s", opts.Source)
@@ -30,9 +29,7 @@ func (m *manager) Import(ctx context.Context, opts entity.CertCreateOptions) (*e
 	return describe(certificate)
 }
 
-// Issue a certificate signed by a CA
 func (m *manager) Issue(ctx context.Context, opts entity.CertIssueOptions) (*entity.Certificate, error) {
-	// Get the CA certificate
 	ca, err := m.repository.GetCertificate(ctx, opts.CAID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get the CA certificate %d", opts.CAID)
@@ -42,7 +39,6 @@ func (m *manager) Issue(ctx context.Context, opts entity.CertIssueOptions) (*ent
 		return nil, errors.BadRequest.Newf("The CA certificate %d is not a CA", opts.CAID)
 	}
 
-	// Parse common certName and subject alt certName to see if they are IP or domain certName
 	dns, ips, _, _ := x509util.SplitSANs([]string{
 		opts.CommonName, opts.SubjectAltName,
 	})
@@ -56,12 +52,11 @@ func (m *manager) Issue(ctx context.Context, opts entity.CertIssueOptions) (*ent
 		return nil, errors.Wrap(err)
 	}
 
-	// Import the signed cert
 	importOpts := entity.CertCreateOptions{
 		Name:    opts.Name,
 		IsCA:    false,
 		IsLocal: true,
-		Type:    entity.CertTypeCertKey, // Generated certificate default type
+		Type:    entity.CertTypeCertKey,
 		Bundle:  serverBundle,
 	}
 
@@ -72,7 +67,6 @@ func (m *manager) Issue(ctx context.Context, opts entity.CertIssueOptions) (*ent
 	return cert, nil
 }
 
-// Get the certificate with all parsed details
 func (m *manager) Get(ctx context.Context, certID int32) (*entity.Certificate, error) {
 	cert, err := m.repository.GetCertificate(ctx, certID)
 	if err != nil {
@@ -81,8 +75,7 @@ func (m *manager) Get(ctx context.Context, certID int32) (*entity.Certificate, e
 	return describe(cert)
 }
 
-// List leaves out the default CA: it is the system's own, signs what Issue
-// produces, and is neither listed nor deleted (see Delete).
+// List leaves out the default CA: the system's own, never listed nor deleted.
 func (m *manager) List(ctx context.Context, opts entity.CertListOptions) ([]*entity.Certificate, error) {
 	certs, err := m.repository.ListCertificates(ctx, opts)
 	if err != nil {
@@ -105,20 +98,16 @@ func (m *manager) List(ctx context.Context, opts entity.CertListOptions) ([]*ent
 func (m *manager) Delete(ctx context.Context, certIDs []int32) error {
 	err := m.repository.Transaction(ctx, func(_ctx context.Context) error {
 		for _, certID := range certIDs {
-			// Check if the certificate exists or not
 			cert, err := m.repository.GetCertificate(_ctx, certID)
 			if err != nil {
 				return errors.Wrap(err)
 			}
-			// Cannot delete the default CA
 			if cert.Name == preset.CAName {
 				return errors.BadRequest.Newf("Default CA cannot be deleted")
 			}
-			// Check if the certificate is being referenced
 			if cert.RefCount > 0 {
 				return errors.Conflict.Newf("The certificate %s cannot be deleted as it is being referenced", cert.Name)
 			}
-			// Delete the target certificate
 			if err := m.repository.DeleteCertificate(_ctx, certID); err != nil {
 				return errors.Wrap(err)
 			}
@@ -171,14 +160,12 @@ func (m *manager) DefaultCA() (certutil.CABundle, error) {
 	return m.ca, nil
 }
 
-// Get the default CA from the database, if not found, generate it
 func (m *manager) defaultCA(ctx context.Context) (certutil.CABundle, error) {
 	defaultCA, err := m.repository.GetCertificateByName(ctx, preset.CAName)
 	if err != nil {
 		if !errors.Is(err, errors.NotFound) {
 			return nil, errors.Wrap(err)
 		}
-		// Generate the default CA bundle
 		cm, err := certutil.New(
 			certutil.WithCommonName(info.ProductName),
 		)

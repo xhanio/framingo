@@ -17,8 +17,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
-// --- test helpers ---
-
 type mockService struct {
 	name        string
 	deps        []common.Service
@@ -65,7 +63,6 @@ func (s *mockService) Stop(ctx context.Context) error {
 	return s.stopErr
 }
 
-// stuck stops only once its context ends.
 func stuck(ctx context.Context) error {
 	<-ctx.Done()
 	return ctx.Err()
@@ -90,7 +87,6 @@ func (s *mockService) Ready(ctx context.Context) error {
 	return s.readyErr
 }
 
-// initOnlyService implements Service + Initializable but not Daemon
 type initOnlyService struct {
 	name       string
 	deps       []common.Service
@@ -112,8 +108,6 @@ func testLogger() log.Logger {
 func newTestManager(opts ...Option) *manager {
 	return newManager(nil, append([]Option{WithLogger(testLogger()), WithName("test")}, opts...)...)
 }
-
-// --- tests ---
 
 func TestNew(t *testing.T) {
 	m := New(nil, WithLogger(testLogger()), WithName("my-app"))
@@ -147,8 +141,6 @@ func TestRegister(t *testing.T) {
 		assert.NotNil(t, m.c.stats.records["svc"])
 	})
 
-	// A name stands for one instance. Meeting the same instance again -
-	// registered directly and again as someone's dependency - is routine.
 	t.Run("the same instance again is a no-op", func(t *testing.T) {
 		m := newTestManager()
 		dep := newMockService("dep")
@@ -160,9 +152,6 @@ func TestRegister(t *testing.T) {
 		assert.Len(t, m.Services(), 2)
 	})
 
-	// A second instance under a taken name used to vanish: the graph and the
-	// stats key on the name, so it was never initialized or started, and a
-	// service depending on it got an instance nobody ran.
 	t.Run("another instance under a taken name is refused", func(t *testing.T) {
 		m := newTestManager()
 		require.NoError(t, m.Register(newMockService("db")))
@@ -211,7 +200,6 @@ func TestTopoSort(t *testing.T) {
 		require.NoError(t, m.TopoSort())
 		require.Len(t, m.Services(), 1)
 
-		// register a new service after TopoSort — appended to end
 		api := newMockService("api")
 		api.deps = []common.Service{db}
 		require.NoError(t, m.Register(api))
@@ -229,7 +217,6 @@ func TestTopoSort(t *testing.T) {
 		require.NoError(t, m.TopoSort())
 		require.Len(t, m.Services(), 1)
 
-		// register service with a new dependency — both appended
 		dep := newMockService("dep")
 		svc := newMockService("svc")
 		svc.deps = []common.Service{dep}
@@ -345,7 +332,6 @@ func TestStopOrder(t *testing.T) {
 		_ = origDB
 		_ = origAPI
 
-		// Track stop order via a channel
 		stopOrder := make([]string, 0, 2)
 		dbStop := db.stopErr
 		apiStop := api.stopErr
@@ -359,12 +345,9 @@ func TestStopOrder(t *testing.T) {
 
 		require.NoError(t, m.Stop(context.Background()))
 
-		// After topo sort: [db, api]. Stop is reversed: api first, then db
-		// We verify both were stopped
 		assert.Equal(t, 1, api.stopCalled)
 		assert.Equal(t, 1, db.stopCalled)
 
-		// Verify stats
 		for _, name := range []string{"db", "api"} {
 			stat := m.c.stats.snapshot(name)
 			assert.True(t, stat.Stopped)
@@ -413,8 +396,6 @@ func TestPerServiceLifecycle(t *testing.T) {
 	})
 }
 
-// A failed restart records its error in the healthcheck verdict at once,
-// instead of leaving the previous sweep's stale value until the next one.
 func TestFailedRestartRecordsHealthcheckErr(t *testing.T) {
 	svc := newMockService("svc")
 	m := newTestManager()
@@ -449,9 +430,6 @@ func TestStats(t *testing.T) {
 	}
 }
 
-// Stats reports in topological order - dependencies above dependents, the
-// same order services init - so a red dependency explains the red services
-// below it.
 func TestStatsTopologicalOrder(t *testing.T) {
 	m := newTestManager()
 	alpha := newMockService("alpha")
@@ -618,7 +596,6 @@ func TestShutdownTimeout(t *testing.T) {
 	require.NoError(t, m.Init(context.Background()))
 	require.NoError(t, m.Start(context.Background()))
 
-	// Normal stop should succeed within timeout
 	err := m.Stop(context.Background())
 	assert.NoError(t, err)
 }
@@ -631,12 +608,10 @@ func TestDoubleStartStop(t *testing.T) {
 	require.NoError(t, m.Init(context.Background()))
 
 	require.NoError(t, m.Start(context.Background()))
-	// second start is a no-op
 	require.NoError(t, m.Start(context.Background()))
 	assert.Equal(t, 1, svc.startCalled)
 
 	require.NoError(t, m.Stop(context.Background()))
-	// second stop is a no-op
 	require.NoError(t, m.Stop(context.Background()))
 	assert.Equal(t, 1, svc.stopCalled)
 }
@@ -662,18 +637,14 @@ func TestReadyStateTransitions(t *testing.T) {
 	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 
-	// before init: not ready
 	assert.False(t, m.c.stats.snapshot("svc").Ready)
 
-	// after init: ready
 	require.NoError(t, m.Init(context.Background()))
 	assert.True(t, m.c.stats.snapshot("svc").Ready)
 
-	// after start: ready
 	require.NoError(t, m.Start(context.Background()))
 	assert.True(t, m.c.stats.snapshot("svc").Ready)
 
-	// after stop: not ready
 	require.NoError(t, m.Stop(context.Background()))
 	assert.False(t, m.c.stats.snapshot("svc").Ready)
 }
@@ -799,9 +770,6 @@ func TestRestartOfAStuckServiceEndsAtTheStopDeadline(t *testing.T) {
 	require.NoError(t, m.Stop(context.Background()))
 }
 
-// An optional dependency the app did not wire is a nil entry in
-// Dependencies: registering, initialising and probing the service all skip
-// it, and the service runs as one without that dependency.
 func TestNilDependencyIsSkipped(t *testing.T) {
 	db := newMockService("db")
 	svc := newMockService("svc")

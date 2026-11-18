@@ -1,13 +1,5 @@
-// Package sqlite registers the SQLite GORM dialector, golang-migrate driver,
-// DSN builder, and cleanup hooks with pkg/services/db. Blank-import it to
-// enable SQLite support without forcing every binary to pull in SQLite when
-// they only use other engines.
-//
-// The engine is github.com/mattn/go-sqlite3, which wraps the C SQLite library
-// and registers the "sqlite3" database/sql driver. Both the dialector and the
-// migration driver run on it, so a binary links one SQLite engine. Building
-// with CGO_ENABLED=0 still compiles, but connecting fails at runtime with
-// "go-sqlite3 requires cgo to work".
+// Package sqlite registers the SQLite driver (mattn/go-sqlite3) with
+// pkg/services/db; blank-import it. Needs cgo: CGO_ENABLED=0 builds but fails to connect.
 package sqlite
 
 import (

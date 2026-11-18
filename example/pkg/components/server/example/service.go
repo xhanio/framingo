@@ -47,7 +47,6 @@ import (
 	"github.com/xhanio/framingo/example/pkg/utils/infra"
 )
 
-// newLogger builds the process logger from log.*.
 func (m *manager) newLogger() log.Logger {
 	return log.New(
 		log.WithLevel(m.config.GetInt("log.level")),
@@ -60,15 +59,10 @@ func (m *manager) newLogger() log.Logger {
 	)
 }
 
-// newDatabase builds the database manager from db.*, for the daemon and the
-// migrate command alike, plus whatever extra options the caller adds.
 func (m *manager) newDatabase(opts ...db.Option) db.Manager {
 	base := []db.Option{
 		db.WithType(m.config.GetString("db.type")),
-		// Each key is overridable from the environment (FRAMINGO_EXAMPLE_DB_SOURCE_HOST
-		// and so on, see newConfig), and viper ranks the environment above
-		// the file - so a secret injected into the pod wins over config.yaml.
-		// The fallbacks apply only when neither sets a value.
+		// env beats config.yaml; fallbacks apply only when neither sets a value
 		db.WithDataSource(db.Source{
 			Host:     sliceutil.First(m.config.GetString("db.source.host"), "127.0.0.1"),
 			Port:     sliceutil.First(m.config.GetUint("db.source.port"), 5432),
@@ -76,8 +70,7 @@ func (m *manager) newDatabase(opts ...db.Option) db.Manager {
 			Password: m.config.GetString("db.source.password"),
 			DBName:   m.config.GetString("db.source.dbname"),
 		}),
-		// An empty dir leaves migrating to someone else - in prod, the
-		// migrate Job; the daemon then never touches the schema.
+		// empty dir: the daemon never touches the schema (the migrate Job does)
 		db.WithMigration(
 			m.config.GetString("db.migration.dir"),
 			m.config.GetUint("db.migration.version"),
@@ -95,23 +88,17 @@ func (m *manager) newDatabase(opts ...db.Option) db.Manager {
 }
 
 func (m *manager) initServices() error {
-	// init logger
 	m.log = m.newLogger()
 	infra.Debug = (m.log.Level() == zapcore.DebugLevel)
 
-	// init service manager - the wiring layer owns the viper (file, env
-	// prefix, watch); services see it only as the read-side Config the
-	// supervisor carries into Init
+	// services see the viper only as the read-side Config the supervisor carries into Init
 	m.services = supervisor.New(confutil.New(m.config),
 		supervisor.WithLogger(m.log),
-		// within the platform's own stop timeout, so the shutdown ends here and not in a SIGKILL
+		// within the platform's stop timeout, so shutdown ends here, not in a SIGKILL
 		supervisor.WithStopPolicy(20*time.Second),
 	)
 
-	/* init infra level services */
-
-	// tracing.* is read here like every other service's config; Init re-reads
-	// the same keys, so a restart picks up changes to any of them
+	// Init re-reads these keys, so a restart picks up changes
 	m.tracing = tracing.New(
 		tracing.WithEnabled(m.config.GetBool("tracing.enabled")),
 		tracing.WithExporter(
@@ -122,8 +109,7 @@ func (m *manager) initServices() error {
 		tracing.WithLogger(m.log),
 	)
 
-	// metrics.* follows the same rule; the meter's provider is stable, so
-	// services create their instruments once at construction
+	// the meter's provider is stable, so services create instruments once at construction
 	m.metrics = metrics.New(
 		metrics.WithEnabled(m.config.GetBool("metrics.enabled")),
 		metrics.WithExporter(
@@ -134,11 +120,7 @@ func (m *manager) initServices() error {
 		metrics.WithLogger(m.log),
 	)
 
-	// per-statement spans, nested under whatever span the caller's context
-	// carries. Off in practice until tracing.enabled is true: the plugin
-	// resolves a noop provider then. Bound values are left out of
-	// db.query.text - upstream includes them by default, and they are where
-	// the credentials and the PII are.
+	// bound values are left out of db.query.text: upstream includes them, and they carry credentials and PII
 	dbTracing, err := otelgorm.New(m.tracing, gormtracing.WithoutQueryVariables())
 	if err != nil {
 		return errors.Wrap(err)
@@ -156,21 +138,15 @@ func (m *manager) initServices() error {
 		messagebus.WithLogger(m.log),
 	)
 
-	// combine the services business constructors consume
 	m.platform = platform.New(m.db, m.metrics, m.pubsub, m.messagebus)
 
-	// One repository instance implements every repo contract; each service
-	// takes it as its own Repository interface, which names the contracts it
-	// reads and writes through.
+	// one instance implements every repo contract; each service sees it through its own Repository interface
 	m.repository = repository.New(
 		m.platform,
 		repository.WithLogger(m.log),
 	)
 
-	/* init system level services */
-
-	// the user service publishes the account changes the auth service ends
-	// sessions on
+	// user publishes the account changes auth ends sessions on
 	m.user = user.New(
 		m.platform,
 		m.repository,
@@ -203,22 +179,16 @@ func (m *manager) initServices() error {
 		auth.WithLogger(m.log),
 	)
 
-	/* init business level components */
-
 	m.example = example.New(
 		m.platform,
 		m.repository,
 		example.WithLogger(m.log),
 	)
 
-	/* init api level components and register all routers and grpc services */
-
-	// init api manager
 	m.api = server.New(
 		server.WithLogger(m.log),
 	)
 
-	// iterate over api configurations
 	servers := m.config.GetStringMap("api")
 	for name := range servers {
 		opts := []server.ServerOption{
@@ -227,28 +197,17 @@ func (m *manager) initServices() error {
 				m.config.GetUint(fmt.Sprintf("api.%s.port", name)),
 				m.config.GetString(fmt.Sprintf("api.%s.prefix", name)),
 			),
-			// trace and cors must see every request - spans should cover the
-			// whole chain, and a preflight OPTIONS matches no route - so both
-			// ride the server-level slot, trace first so cors runs inside the
-			// span. The api.<name>.middlewares mapping activates each by name
-			// ("trace: true", "cors: true"); with no entry an attachment
-			// stays dormant, so the health listener serves with neither.
+			// server-level so they see every request (a preflight matches no route),
+			// trace first so cors runs inside the span; dormant unless
+			// api.<name>.middlewares enables them by name
 			server.WithMiddlewares(
 				tracemw.New(m.tracing),
 				corsmw.New(),
 			),
-			// every listener records HTTP metrics through the metrics service -
-			// request duration, active requests and body sizes, matched or
-			// not. metrics.enabled is the only switch: series are keyed by
-			// listener and route, so probe polls land in the health
-			// listener's own and never distort the public one's.
+			// series are keyed by listener, so health probes never distort the public one's
 			server.WithMeter(m.metrics),
 		}
-		// Per-server middleware configs: a plain mapping of middleware name to
-		// its default config, unordered - order only matters in router.yaml,
-		// where attachment lives. Each block reaches its middleware wherever
-		// nothing more specific is configured, the server's own built-ins
-		// (metrics, recover, logger, info, error) included.
+		// per-server middleware defaults, unordered; order lives in router.yaml
 		if mws := m.config.GetStringMap(fmt.Sprintf("api.%s.middlewares", name)); len(mws) > 0 {
 			raw, err := yaml.Marshal(mws)
 			if err != nil {
@@ -256,7 +215,6 @@ func (m *manager) initServices() error {
 			}
 			opts = append(opts, server.WithMiddlewareConfigs(raw))
 		}
-		// add TLS if configured
 		if m.config.IsSet(fmt.Sprintf("api.%s.cert", name)) {
 			opts = append(opts, server.WithTLS(
 				certutil.MustCAFromFile(
@@ -272,7 +230,6 @@ func (m *manager) initServices() error {
 		}
 	}
 
-	// init grpc manager
 	// m.grpc = grpc.New(
 	// 	grpc.WithLogger(m.log),
 	// )

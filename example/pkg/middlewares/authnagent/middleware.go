@@ -44,8 +44,7 @@ func (m *middleware) Dependencies() []common.Service {
 	return []common.Service{m.cert}
 }
 
-// Func implements api.Middleware. The middleware takes no router.yaml config,
-// so a block under its name is a mistake worth failing startup for.
+// Func takes no router.yaml config: a block under its name fails startup.
 func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
 	if !enabled {
 		return nil, nil
@@ -70,7 +69,6 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 					m.log.Debugf("Error: Cert was not signed by ca")
 					return errors.Unauthorized.Wrapf(err, "cert was not signed by ca")
 				}
-				// get agent id from cert common name
 				commonName := cert.Subject.CommonName
 				m.log.Debugf("cert common name: %s", commonName)
 				parts := strings.Split(commonName, "=")
@@ -113,7 +111,6 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 				m.log.Debugf("Error: Cert not signed by CA")
 				return errors.Unauthorized.Wrapf(err, "cert was not signed by ca")
 			}
-			// get agent id from cert common name
 			commonName := cert.Subject.CommonName
 			m.log.Debugf("cert common name: %s", commonName)
 			parts := strings.Split(commonName, "=")

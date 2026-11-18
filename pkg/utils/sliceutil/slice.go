@@ -2,14 +2,11 @@ package sliceutil
 
 import "slices"
 
-// This function checks whether the first element is present in the subsequent elements
-// It has a time complexity of O(n)
 func In[T comparable](element T, elements ...T) bool {
 	return slices.Contains(elements, element)
 }
 
-// This function returns the first non-default element in the elements
-// It has a time complexity of O(n)
+// First returns the first non-zero element, or zero.
 func First[T comparable](elements ...T) T {
 	var undefined T
 	for _, e := range elements {
@@ -20,8 +17,7 @@ func First[T comparable](elements ...T) T {
 	return undefined
 }
 
-// This function returns the last non-default element in the elements
-// It has a time complexity of O(n)
+// Last returns the last non-zero element, or zero.
 func Last[T comparable](elements ...T) T {
 	var undefined T
 	for i := len(elements) - 1; i >= 0; i-- {

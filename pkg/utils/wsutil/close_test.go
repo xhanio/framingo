@@ -15,12 +15,8 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// closeAfter serves one connection whose handler returned handlerErr under
-// ctx, and reports what Close returned and, when read is set, the error the
-// client's next read ended with; read is unset when the handler's error was
-// the peer's own close, which leaves Close nothing to send. The handler holds
-// its connection open until the client has read, so whatever ended that read
-// was Close's doing.
+// closeAfter: the handler holds the connection until the client has read, so the read's end is
+// Close's doing; leave read unset for a peer close, which leaves Close nothing to send.
 func closeAfter(t *testing.T, ctx context.Context, handlerErr error, read bool) (returned, readErr error) {
 	t.Helper()
 	release := make(chan struct{})
@@ -60,7 +56,6 @@ func closeAfter(t *testing.T, ctx context.Context, handlerErr error, read bool) 
 	return returned, readErr
 }
 
-// closeFrame is the close frame a client's read ended with.
 func closeFrame(t *testing.T, readErr error) websocket.CloseError {
 	t.Helper()
 	var ce websocket.CloseError
@@ -98,8 +93,6 @@ func TestClose_PeerCloseIsNotAFailure(t *testing.T) {
 	}
 }
 
-// A peer that dropped the connection is gone, not failed: Close only releases
-// the connection - the client's read ends on it closing, not on a frame.
 func TestClose_PeerDropIsReleasedNotAFailure(t *testing.T) {
 	for _, dropped := range []error{io.EOF, io.ErrUnexpectedEOF, errors.Wrap(io.EOF)} {
 		returned, readErr := closeAfter(t, context.Background(), dropped, true)

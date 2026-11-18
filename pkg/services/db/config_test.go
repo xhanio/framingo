@@ -14,9 +14,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/confutil"
 )
 
-// newSQLiteMgr builds a file-backed SQLite manager and Inits it against the
-// given config keys. The pool Init configures is observable through
-// sql.DB.Stats, which is how these tests see which root was read.
+// sql.DB.Stats exposes the pool settings, showing which config root was read
 func newSQLiteMgr(t *testing.T, keys map[string]any, opts ...db.Option) db.Manager {
 	t.Helper()
 	v := viper.New()
@@ -32,16 +30,11 @@ func newSQLiteMgr(t *testing.T, keys map[string]any, opts ...db.Option) db.Manag
 	return mgr
 }
 
-// An unnamed instance reads under its package name - db.connection.* - so
-// every existing config file keeps working.
 func TestInitReadsUnderPackageRoot(t *testing.T) {
 	mgr := newSQLiteMgr(t, map[string]any{"db.connection.max_open": 2})
 	assert.Equal(t, 2, mgr.DB().Stats().MaxOpenConnections)
 }
 
-// A named instance reads under its name - how a second database (clickhouse
-// next to postgres) gets its own pool settings - and ignores the package
-// root entirely.
 func TestInitReadsUnderNameRoot(t *testing.T) {
 	mgr := newSQLiteMgr(t, map[string]any{
 		"analytics.connection.max_open": 3,

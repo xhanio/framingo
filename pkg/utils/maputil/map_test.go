@@ -34,7 +34,6 @@ func TestCopyKeys(t *testing.T) {
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("CopyKeys() = %v, want %v", result, tt.expected)
 			}
-			// Ensure it's a copy, not the same reference
 			if len(tt.input) > 0 && &result == &tt.input {
 				t.Error("CopyKeys() should return a new map, not the same reference")
 			}
@@ -181,7 +180,6 @@ func TestKeys(t *testing.T) {
 				t.Errorf("Keys() length = %v, want %v", len(result), len(tt.m))
 			}
 
-			// Check all keys are present
 			keyMap := make(map[string]bool)
 			for _, key := range result {
 				keyMap[key] = true
@@ -222,7 +220,6 @@ func TestValues(t *testing.T) {
 				t.Errorf("Values() length = %v, want %v", len(result), len(tt.m))
 			}
 
-			// Check all values are present
 			valueMap := make(map[int]bool)
 			for _, value := range result {
 				valueMap[value] = true

@@ -14,15 +14,13 @@ type pool[T any] struct {
 	}
 }
 
-// NewPool creates a new generic buffer pool instance
+// NewPool defaults to sizes 1K, 4K, 16K, 64K, 256K and 1M elements.
 func NewPool[T any](sizes ...int) PoolG[T] {
 	return newPool[T](sizes...)
 }
 
-// newPool creates a buffer pool
 func newPool[T any](sizes ...int) *pool[T] {
 	if len(sizes) == 0 {
-		// predefined buffer sizes: 1KB, 4KB, 16KB, 64KB, 256KB, 1MB
 		sizes = []int{1024, 4096, 16384, 65536, 262144, 1048576}
 	}
 
@@ -31,7 +29,6 @@ func newPool[T any](sizes ...int) *pool[T] {
 		sizes: sizes,
 	}
 
-	// create a pool for each size
 	for _, size := range sizes {
 		p.pools[size] = &sync.Pool{
 			New: func() any {
@@ -46,7 +43,7 @@ func newPool[T any](sizes ...int) *pool[T] {
 	return p
 }
 
-// Get retrieves a buffer of the specified size
+// Get returns an empty slice with capacity >= required, allocating when no size class fits.
 func (p *pool[T]) Get(required int) []T {
 	p.stats.Lock()
 	p.stats.gets++
@@ -74,8 +71,7 @@ func (p *pool[T]) Get(required int) []T {
 	return buffer[:0]
 }
 
-// Put returns a buffer to the pool for reuse
-// Only buffers with exact capacity matches to predefined sizes will be reused
+// Put keeps only buffers whose capacity exactly matches a size class.
 func (p *pool[T]) Put(buffer []T) {
 	if buffer == nil {
 		return
@@ -89,16 +85,12 @@ func (p *pool[T]) Put(buffer []T) {
 
 	if pool, exists := p.pools[capacity]; exists {
 		buffer = buffer[:0]
-		// Slice rather than *[]T, so each Put allocates the 3-word header.
-		// Accepted: switching to *[]T would change what Get must unwrap and is
-		// a larger change than this pool's contention profile justifies.
-		//nolint:staticcheck // SA6002: see above
+		//nolint:staticcheck // SA6002: the header allocation per Put is accepted over switching to *[]T
 		pool.Put(buffer)
 	}
 }
 
-// findBestSize finds the smallest predefined size that can accommodate the required capacity
-// Returns 0 if no suitable size is found
+// findBestSize returns 0 when no size class fits.
 func (p *pool[T]) findBestSize(required int) int {
 	for _, size := range p.sizes {
 		if size >= required {
@@ -108,7 +100,7 @@ func (p *pool[T]) findBestSize(required int) int {
 	return 0
 }
 
-// Stats returns pool statistics including get/put counts, hits, creates, and hit rate percentage
+// Stats reports hitRate as a percentage.
 func (p *pool[T]) Stats() (gets, puts, hits, creates int64, hitRate float64) {
 	p.stats.RLock()
 	defer p.stats.RUnlock()

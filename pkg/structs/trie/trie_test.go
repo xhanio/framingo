@@ -141,7 +141,6 @@ func TestRemoveRoot(t *testing.T) {
 		t.Error("Expected 0 keys")
 	}
 
-	// Try to write some data after the trie was purged
 	trie.Add("root", nil)
 	_, ok = trie.Find("root")
 	if !ok {

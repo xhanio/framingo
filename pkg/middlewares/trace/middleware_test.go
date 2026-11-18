@@ -25,8 +25,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
-// stubTracer implements model.Tracer over an in-memory exporter, keeping the
-// middleware tests independent of the tracing service package.
 type stubTracer struct {
 	tp trace.TracerProvider
 }
@@ -44,7 +42,6 @@ func newStubTracer() (*stubTracer, *tracetest.InMemoryExporter) {
 	return &stubTracer{tp: tp}, exp
 }
 
-// mockRouter implements fapi.Router for testing.
 type mockRouter struct {
 	name     string
 	config   []byte
@@ -69,9 +66,7 @@ func freePort(t *testing.T) uint {
 	return uint(port)
 }
 
-// startServer runs a server manager with the trace middleware attached
-// server-level and activated through the middleware configs - the canonical
-// wiring. A nil configs slice leaves the attachment dormant.
+// nil configs leaves the attachment dormant
 func startServer(t *testing.T, st *stubTracer, configs []byte, routers ...*mockRouter) (baseURL string, m server.Manager, cleanup func()) {
 	t.Helper()
 	port := freePort(t)
@@ -138,17 +133,13 @@ func TestNameAndDependencies(t *testing.T) {
 	mw := tracemw.New(st)
 	assert.Equal(t, "trace", mw.Name())
 
-	// WithName renames the attachment - the config key follows the name, so
-	// an app can dodge a collision or run two differently-named instances
 	assert.Equal(t, "trace2", tracemw.New(st, tracemw.WithName("trace2")).Name())
-	// an empty override keeps the default
 	assert.Equal(t, "trace", tracemw.New(st, tracemw.WithName("")).Name())
 	deps := mw.Dependencies()
 	require.Len(t, deps, 1)
 	assert.Same(t, st, deps[0])
 
-	// a nil tracer must not leak a nil dependency - the supervisor panics on
-	// nil elements inside a non-nil Dependencies slice
+	// the supervisor panics on nil elements in a non-nil Dependencies slice
 	assert.Nil(t, tracemw.New(nil).Dependencies())
 }
 
@@ -179,8 +170,6 @@ func TestFuncContract(t *testing.T) {
 }
 
 func TestDormantWithoutConfigEntry(t *testing.T) {
-	// the health-listener story: attached in code, but with no "trace" entry
-	// in the server's middleware configs the attachment stays dormant
 	st, exp := newStubTracer()
 	base, _, cleanup := startServer(t, st, nil, itemsRouter())
 	defer cleanup()

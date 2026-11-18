@@ -15,10 +15,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/confutil"
 )
 
-// newTransactionTestMgr builds a SQLite-backed db.Manager with the connection
-// pool capped at maxOpen, then creates a single "items" table for the tests
-// below. Capping max_open=1 reproduces the deadlock condition that motivated
-// the nested-transaction reuse change in context.go.
+// max_open=1 reproduces the pool deadlock nested transactions avoid
 func newTransactionTestMgr(t *testing.T, maxOpen int) db.Manager {
 	t.Helper()
 

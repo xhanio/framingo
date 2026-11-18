@@ -25,15 +25,13 @@ func (m *manager) setDefaults() {
 	}
 }
 
-// WithLogDir is where command plans keep one log file per run, under a directory per plan.
-// Empty keeps no files.
+// WithLogDir: one log file per run, a directory per plan; empty keeps none.
 func WithLogDir(dir string) Option {
 	return func(m *manager) {
 		m.logDir = dir
 	}
 }
 
-// WithOutputTailBytes is how much trailing output a command plan's run reports.
 func WithOutputTailBytes(n int) Option {
 	return func(m *manager) {
 		m.tailBytes = n

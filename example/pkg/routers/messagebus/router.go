@@ -28,7 +28,6 @@ func New(mb model.MessageBus, log log.Logger) fapi.Router {
 	return newRouter(mb, log)
 }
 
-// newRouter returns the concrete router, the form package tests construct.
 func newRouter(mb model.MessageBus, log log.Logger) *router {
 	r := &router{
 		mb:  mb,

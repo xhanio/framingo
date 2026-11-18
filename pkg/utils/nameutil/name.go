@@ -8,24 +8,16 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/reflectutil"
 )
 
-// Root is the project layout root stripped from every name so the category
-// stays visible (services/db/manager, routers/user/router). Projects with a
-// different layout may override or clear it.
+// Root is stripped from every name so the category leads (services/db/manager); may be overridden or cleared.
 var Root = "pkg"
 
-// Package returns the base name of obj's package dir - the identity
-// middlewares default to, where the package name is the middleware name
-// (middlewares/cors -> cors).
 func Package(obj any) string {
 	pkg, _ := reflectutil.Locate(obj)
 	return path.Base(pkg)
 }
 
-// Name returns obj's service name: its package dir relative to the project
-// root, with Root stripped, joined with the type name (pkg/services/db +
-// manager -> services/db/manager). Optional prefixes are stripped after
-// Root, whole segments only, first match wins - Name(m, "services") turns
-// services/db/manager into db/manager.
+// Name returns the project-relative package dir minus Root, joined with the type name
+// (services/db/manager); strip removes the first matching whole-segment prefix.
 func Name(obj any, strip ...string) string {
 	pkg, typeName := reflectutil.Locate(obj)
 	dir := trimPrefix(relative(pkg), Root)
@@ -38,8 +30,6 @@ func Name(obj any, strip ...string) string {
 	return path.Join(dir, typeName)
 }
 
-// trimPrefix removes a whole-segment prefix; empty or unmatched prefixes
-// leave the dir unchanged.
 func trimPrefix(dir, prefix string) string {
 	if prefix == "" {
 		return dir
@@ -53,23 +43,16 @@ func trimPrefix(dir, prefix string) string {
 	return dir
 }
 
-// relative turns a package import path into a project-relative dir by
-// cutting it through its overlap with the gopro-injected info.ProjectPath.
-// ProjectPath is relative to $GOPATH/src (xhanio/framingo) while import
-// paths carry the module host prefix (github.com/xhanio/framingo/pkg/...),
-// so the overlap can start mid-path; a dependency's packages may share only
-// the leading segments. Without the injection, or without an overlap, the
-// import path is returned unchanged.
+// relative cuts pkgPath at its overlap with info.ProjectPath, which lacks the module host
+// prefix so the overlap can start mid-path; without ProjectPath or an overlap it is unchanged.
 func relative(pkgPath string) string {
 	if pkgPath == "" || info.ProjectPath == "" {
 		return pkgPath
 	}
 	segs := strings.Split(pkgPath, "/")
 	proj := strings.Split(info.ProjectPath, "/")
-	// longest contiguous run of project segments found segment-aligned in
-	// the import path; ties go to the rightmost, cutting the most. A single
-	// shared segment counts only when it is the entire ProjectPath - an org
-	// name shared with an unrelated dependency must not cut it.
+	// longest aligned run, ties to the rightmost; a single segment counts only if it is the
+	// whole ProjectPath, so a shared org name in a dependency does not cut
 	cut, best := 0, 0
 	for i := range segs {
 		for j := range proj {
@@ -87,13 +70,8 @@ func relative(pkgPath string) string {
 	return strings.Join(segs[cut:], "/")
 }
 
-// ConfigRoot returns the config key root a service reads its dynamic keys
-// under, derived from its name alone: the package segment of a
-// category-visible name (services/db/manager -> db, so an unnamed db
-// instance reads db.connection.*), or the whole name when it has no path (a
-// second instance named clickhouse reads clickhouse.connection.*). The auto
-// name itself can never be a root - an env override cannot spell its
-// slashes - which is why the segment, not the name, is the fallback.
+// ConfigRoot is the package segment of a pathed name (services/db/manager -> db) or the name
+// itself when unpathed; never a slashed name, which an env override cannot spell.
 func ConfigRoot(name string) string {
 	dir := path.Dir(name)
 	if dir == "." || dir == "/" {

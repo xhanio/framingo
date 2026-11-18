@@ -32,8 +32,7 @@ func (m *middleware) Dependencies() []common.Service {
 	return nil
 }
 
-// Func implements api.Middleware. The middleware takes no router.yaml config,
-// so a block under its name is a mistake worth failing startup for.
+// Func takes no router.yaml config: a block under its name fails startup.
 func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
 	if !enabled {
 		return nil, nil

@@ -206,7 +206,6 @@ func TestReset(t *testing.T) {
 
 	je := New(j, WithRetry(2, 100*time.Millisecond))
 
-	// First execution with retries
 	_ = je.Start(context.Background(), nil)
 
 	stats := je.Stats()
@@ -214,10 +213,8 @@ func TestReset(t *testing.T) {
 		t.Errorf("expected 2 retries, got %d", stats.Retries)
 	}
 
-	// Reset the executor
 	je.(*executor).Reset()
 
-	// Stats should show reset values
 	stats = je.Stats()
 	if stats.Retries != 0 {
 		t.Errorf("expected 0 retries after reset, got %d", stats.Retries)
@@ -230,7 +227,6 @@ func TestNilContext(t *testing.T) {
 	}))
 
 	je := New(j)
-	// Test that nil context is handled (converted to Background)
 	err := je.Start(nil, nil) //nolint:staticcheck // Testing nil context handling
 	if err != nil {
 		t.Fatalf("job with nil context failed: %v", err)
@@ -242,10 +238,8 @@ func TestInvalidRetryAttempts(t *testing.T) {
 		return errors.Newf("error")
 	}))
 
-	// WithRetry with 0 or negative attempts should be ignored
 	je := New(j, WithRetry(0, 1*time.Second))
 	err := je.Start(context.Background(), nil)
-	// Should fail immediately without retries
 	if err == nil {
 		t.Fatal("expected error without retries")
 	}
@@ -262,7 +256,6 @@ func TestInvalidTimeout(t *testing.T) {
 		return nil
 	}))
 
-	// WithTimeout with 0 or negative duration should be ignored
 	je := New(j, WithTimeout(0))
 	err := je.Start(context.Background(), nil)
 	if err != nil {
@@ -291,14 +284,12 @@ func TestJobAlreadyRunning(t *testing.T) {
 
 	je := New(j)
 
-	// Start the job
 	go func() {
 		_ = je.Start(context.Background(), nil)
 	}()
 
 	time.Sleep(50 * time.Millisecond) // Let it start
 
-	// Try to start again while running
 	err := je.Start(context.Background(), nil)
 	if err == nil || !strings.Contains(err.Error(), "still pending") {
 		t.Fatalf("expected 'still pending' error, got: %v", err)

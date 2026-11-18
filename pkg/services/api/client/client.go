@@ -107,14 +107,12 @@ func (c *client) NewRequest(ctx context.Context, request *Request, opts ...Reque
 		return nil, errors.Wrap(err)
 	}
 	for key, val := range c.headers {
-		// apply global headers
 		r.Header.Set(key, val)
 	}
 	for _, header := range request.Headers {
 		r.Header.Set(header.GetKey(), header.GetValue())
 	}
 	for _, cookie := range c.cookies {
-		// apply global cookies
 		r.AddCookie(cookie)
 	}
 	for _, cookie := range request.Cookies {
@@ -152,13 +150,10 @@ func (c *client) Do(req *http.Request) (*http.Response, error) {
 			return nil, errors.Wrapf(err, "failed to read response body")
 		}
 		resp.Body.Close()
-		// !!! overwrite resp body by an empty readcloser
-		// so that outside call could do "defer resp.Body.Close()" anyway
+		// keep resp.Body closable for callers that defer Close
 		resp.Body = io.NopCloser(bytes.NewReader(nil))
 		var body api.ErrorBody
 		if err := json.Unmarshal(b, &body); err != nil || body.Source == "" {
-			// resp body is not a valid json
-			// or the source of the error is unknown
 			return resp, &api.ErrorBody{
 				Source:  api.ErrorSourceUnknown,
 				Status:  resp.StatusCode,

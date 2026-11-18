@@ -12,9 +12,7 @@ func (m *manager) Init(ctx context.Context) error {
 	return m.c.initAll(ctx)
 }
 
-// The lifecycle methods - Init, Start, Stop, Restart - are not safe for
-// concurrent use: m.cancel is unsynchronized. Call them from one goroutine,
-// or serialize a signal handler's Stop externally.
+// Init/Start/Stop/Restart are not concurrency-safe: m.cancel is unsynchronized.
 func (m *manager) Start(ctx context.Context) error {
 	if m.cancel != nil {
 		m.log.Warnf("%s already started", m.Name())
@@ -41,8 +39,7 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the services in reverse order, within the stop policy's timeout if one is set. A
-// stopped supervisor returns at once: what its services left is theirs to wait for.
+// Stop on a stopped supervisor returns at once.
 func (m *manager) Stop(ctx context.Context) error {
 	if m.cancel == nil {
 		m.log.Warnf("%s already stopped", m.Name())

@@ -8,11 +8,9 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 )
 
-// Rows become entities as they leave the database: the repo contracts speak
-// entity only, so nothing above this package handles an orm model.
+// repo contracts speak entity only; no orm model leaves this package
 
-// toUser joins a user row with its contact row; a missing contact leaves the
-// contact fields empty.
+// a missing contact leaves the contact fields empty
 func toUser(u *orm.User, c *orm.Contact) *entity.User {
 	if u == nil {
 		return nil
@@ -67,10 +65,7 @@ func toHelloWorld(h *orm.HelloWorld) *entity.HelloWorld {
 	}
 }
 
-// toCertificate copies a certificate row and decodes its stored bundle - the
-// inverse of the encoding CreateCertificate writes. What is read out of the
-// certificate in that bundle (subject, serial, validity, fingerprint,
-// extensions) is the certificate service's to work out, not stored here.
+// toCertificate decodes the bundle CreateCertificate encodes; parsing it is the certificate service's job.
 func toCertificate(c *orm.Certificate) (*entity.Certificate, error) {
 	if c == nil {
 		return nil, nil

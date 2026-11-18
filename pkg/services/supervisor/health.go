@@ -6,11 +6,7 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// Ready implements common.Readiness as the graph's roll-up: nil iff every
-// registered service is ready, judged from the stats the monitor already
-// maintains. Probing stays the monitor's job; readiness is the transient
-// signal - stop routing traffic here, keep the process, let the monitor
-// work the problem.
+// Ready is nil iff every service is ready, judged from cached stats.
 func (m *manager) Ready(_ context.Context) error {
 	var errs []error
 	for _, svc := range m.c.services {
@@ -27,12 +23,8 @@ func (m *manager) Ready(_ context.Context) error {
 	return errors.Combine(errs...)
 }
 
-// Alive implements common.Liveness for the one failure the supervisor
-// cannot recover from itself: a service whose liveness keeps failing after
-// in-process recovery is spent - restarts exhausted, or restarts never
-// configured (maxRetries 0), in which case the platform is the recovery
-// path and escalation is immediate. Unlimited retries (maxRetries < 0)
-// never escalate: the monitor keeps trying, so the process stays alive.
+// Alive fails only when a service's liveness fails with restarts exhausted (or
+// maxRetries 0); unlimited retries never escalate.
 func (m *manager) Alive(_ context.Context) error {
 	maxRetries := m.monitor.policy.MaxRetries
 	if maxRetries < 0 {

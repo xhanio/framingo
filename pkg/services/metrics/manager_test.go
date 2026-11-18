@@ -19,8 +19,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 )
 
-// memExporter captures exported metrics in memory - the metrics analogue of
-// tracetest.InMemoryExporter, which the metric SDK does not ship.
+// memExporter stands in for tracetest.InMemoryExporter, which the metric SDK lacks.
 type memExporter struct {
 	mu       sync.Mutex
 	exports  []metricdata.ResourceMetrics
@@ -69,18 +68,13 @@ func (e *memExporter) isShutdown() bool {
 	return e.shutdown
 }
 
-// newTestManager injects exp directly on the concrete manager - the package
-// tests' seam, since instance injection has no public option. Pair it with
-// enabledCtx: Init reloads from config, so setting enabled here would not
-// survive the call.
+// pair with enabledCtx: Init reloads enabled from config
 func newTestManager(exp sdkmetric.Exporter) *manager {
 	m := newManager()
 	m.exporter = exp
 	return m
 }
 
-// enabledCtx turns metrics on the way production does - through config, the
-// only authority Init consults. Extra key-value pairs land on the same viper.
 func enabledCtx(kv ...any) context.Context {
 	v := viper.New()
 	v.Set("metrics.enabled", true)
@@ -90,7 +84,6 @@ func enabledCtx(kv ...any) context.Context {
 	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
-// disabledCtx builds a config context without turning metrics on.
 func disabledCtx(kv ...any) context.Context {
 	v := viper.New()
 	for i := 0; i+1 < len(kv); i += 2 {
@@ -99,7 +92,6 @@ func disabledCtx(kv ...any) context.Context {
 	return confutil.WrapContext(context.Background(), confutil.New(v))
 }
 
-// sumValue digs the int64 sum of the named instrument out of one export.
 func sumValue(t *testing.T, rm metricdata.ResourceMetrics, name string) int64 {
 	t.Helper()
 	total, found := testutil.SumInt64(rm, name)
@@ -111,7 +103,6 @@ func TestProviderIsStableAndAlwaysReal(t *testing.T) {
 	m := newManager()
 	p1 := m.Provider()
 	require.NotNil(t, p1)
-	// disabled Init must not replace the provider - that is the whole point
 	require.NoError(t, m.Init(context.Background()))
 	assert.Same(t, p1, m.Provider())
 	require.NoError(t, m.Alive(context.Background()))
@@ -143,9 +134,6 @@ func TestInjectedExporterReceivesMetrics(t *testing.T) {
 	assert.Equal(t, int64(3), sumValue(t, exp.last(), "test.count"))
 }
 
-// TestInstrumentSurvivesRestart is the design's reason to exist: a counter
-// created before a restart must record into the exporter installed after
-// it, because the provider identity never changes - only the export path.
 func TestInstrumentSurvivesRestart(t *testing.T) {
 	expA := &memExporter{}
 	m := newTestManager(expA)
@@ -154,13 +142,11 @@ func TestInstrumentSurvivesRestart(t *testing.T) {
 	require.NoError(t, err)
 	c.Add(context.Background(), 1)
 
-	// the restart: a fresh Init retires expA and installs expB
 	expB := &memExporter{}
 	m.exporter = expB
 	require.NoError(t, m.Init(enabledCtx()))
 	assert.True(t, expA.isShutdown(), "the retired exporter must be shut down")
 
-	// the SAME cached instrument keeps recording - cumulative state included
 	c.Add(context.Background(), 1)
 	require.NoError(t, m.export(context.Background()))
 	require.Equal(t, 1, expB.count())
@@ -183,9 +169,6 @@ func TestInitUnknownExporterFails(t *testing.T) {
 }
 
 func TestExporterConfigFromViper(t *testing.T) {
-	// metrics.config is an opaque kv block: the manager records it verbatim
-	// and hands it to the exporter factory, which strict-decodes its own
-	// struct - the same contract as tracing.config.
 	m := newManager() // disabled: Init records config and stops
 	require.NoError(t, m.Init(disabledCtx("metrics.config", map[string]any{
 		"endpoint": "collector:4317",
@@ -197,22 +180,15 @@ func TestExporterConfigFromViper(t *testing.T) {
 }
 
 func TestExporterOptionDoesNotEnable(t *testing.T) {
-	// configuring where metrics would go is not the same act as turning the
-	// service on: metrics.enabled is the only thing that does it. Were it
-	// otherwise this Init would reach the registry and fail on the
-	// unimported stdout exporter.
+	// enabling would fail here: the stdout exporter is not imported
 	m := newManager(WithExporter(Stdout, nil))
 	require.NoError(t, m.Init(context.Background()))
 }
 
 func TestIntervalZeroMeansDefault(t *testing.T) {
-	// Go cannot tell an unset interval from an explicit zero, so the option
-	// reads zero as "use the default" - letting a wiring layer pass an
-	// absent config key straight through without an IsSet dance
 	assert.Equal(t, defaultInterval, newManager(WithInterval(0)).interval)
 	assert.Equal(t, 5*time.Second, newManager(WithInterval(5*time.Second)).interval)
 
-	// Init reloads through the same option, so the rule holds there too
 	m := newManager(WithInterval(5 * time.Second))
 	require.NoError(t, m.Init(context.Background()))
 	assert.Equal(t, defaultInterval, m.interval)
@@ -223,8 +199,6 @@ func TestIntervalZeroMeansDefault(t *testing.T) {
 }
 
 func TestViperOverridesOptions(t *testing.T) {
-	// a set key wins over the constructed state: enabled=false switches an
-	// injected-exporter manager off...
 	exp := &memExporter{}
 	m := newTestManager(exp)
 	off := viper.New()
@@ -233,7 +207,6 @@ func TestViperOverridesOptions(t *testing.T) {
 	live, _ := m.controller.state()
 	assert.False(t, live)
 
-	// ...and a later restart with enabled=true switches it back on
 	require.NoError(t, m.Init(enabledCtx()))
 	c, err := m.Provider().Meter("test").Int64Counter("test.toggle")
 	require.NoError(t, err)
@@ -250,8 +223,7 @@ func TestResourceIsBuildIdentity(t *testing.T) {
 	info.ApplicationName = "exampleapp"
 	info.ApplicationVersion = "v1.2.3"
 
-	// the resource is fixed at construction, so info must be set before
-	// newManager - unlike tracing, where Init rebuilds the pipeline
+	// the resource is fixed at construction, so set info before newManager
 	exp := &memExporter{}
 	m := newTestManager(exp)
 	require.NoError(t, m.Init(enabledCtx()))
@@ -294,14 +266,11 @@ func TestStopFlushesAndShutsDown(t *testing.T) {
 	require.NoError(t, m.Stop(context.Background()))
 	require.NoError(t, m.Stop(context.Background())) // idempotent
 
-	// the final flush carried the last window out before shutdown
 	require.Equal(t, 1, exp.count())
 	assert.Equal(t, int64(7), sumValue(t, exp.last(), "test.count"))
 	assert.True(t, exp.isShutdown())
 
-	// after a deliberate stop liveness must NOT fail: the monitor probes
-	// stopped services through dependents' chains, and a failing Alive
-	// would cascade restarts
+	// a stopped manager stays alive, or dependents would cascade-restart
 	require.NoError(t, m.Alive(context.Background()))
 }
 
@@ -325,8 +294,7 @@ func TestReInitDoesNotLeakGoroutines(t *testing.T) {
 func TestConcurrentProbesDuringLifecycle(t *testing.T) {
 	exp := &memExporter{}
 	m := newTestManager(exp)
-	// a populated viper makes every Init actually rewrite the config fields,
-	// which is the write side of the race this test guards against
+	// a populated viper makes every Init write the fields under race
 	ctx := enabledCtx("metrics.interval", "5ms", "metrics.exporter", "race-test")
 	require.NoError(t, m.Init(ctx))
 	c, err := m.Provider().Meter("test").Int64Counter("test.count")
@@ -360,9 +328,6 @@ func TestConcurrentProbesDuringLifecycle(t *testing.T) {
 	}
 }
 
-// A named manager reads its keys under that name and ignores the package
-// root; an unnamed one reads metrics.*. Both stay disabled, so Init records
-// the config and stops - interval is the observable.
 func TestConfigRootFollowsName(t *testing.T) {
 	v := viper.New()
 	v.Set("telemetry.interval", "5s")

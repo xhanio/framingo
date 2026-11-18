@@ -1,7 +1,4 @@
-// Package otlpgrpc registers the OTLP-over-gRPC span exporter under
-// tracing.OTLPGRPC. Blank-import it to enable `tracing.exporter: otlpgrpc`
-// without forcing every binary to link the grpc stack when it only uses
-// other exporters.
+// Package otlpgrpc registers tracing.OTLPGRPC when blank-imported, keeping grpc out of other binaries.
 package otlpgrpc
 
 import (
@@ -23,14 +20,10 @@ func init() {
 	tracing.Register(tracing.OTLPGRPC, factory)
 }
 
-// config is this transport's own shape: the shared otlp core and nothing
-// else, so http-only keys like url_path fail the strict decode here.
 type config struct {
 	model.Config `yaml:",inline"`
 }
 
-// factory builds the exporter without dialing: otlp connects lazily, so an
-// unreachable collector never fails the tracing service's Init.
 func factory(ctx context.Context, raw []byte) (sdktrace.SpanExporter, error) {
 	var cfg config
 	if err := model.Decode(raw, &cfg); err != nil {
@@ -47,9 +40,7 @@ func factory(ctx context.Context, raw []byte) (sdktrace.SpanExporter, error) {
 		opts = append(opts, otlptracegrpc.WithHeaders(cfg.Headers))
 	}
 	if cfg.Compression != "" && cfg.Compression != "none" {
-		// any compressor registered with grpc works (gzip ships
-		// blank-imported), but an unregistered name is checked here so a
-		// typo fails Init instead of surfacing at export time
+		// fail a typo at Init rather than at export time
 		if encoding.GetCompressor(cfg.Compression) == nil {
 			return nil, errors.Newf("unsupported otlpgrpc compression: %s", cfg.Compression)
 		}

@@ -4,9 +4,7 @@ middlewares:
   - throttle
   - authnuser
   - authz
-# authz refuses a role that lacks the handler's permission, and fails closed:
-# a handler that declares none is refused too. A route open to every
-# signed-in user switches it off with `- authz: false`.
+# authz fails closed: a handler declaring no permission is refused; open ones set `- authz: false`
 handlers:
   - method: POST
     path: /

@@ -45,7 +45,6 @@ func TestCommandHeaderIsTheCommandLine(t *testing.T) {
 	}
 }
 
-// run runs c once as a job's function, with ctx as the job's context.
 func run(ctx context.Context, c Command) (Outcome, string, error) {
 	var out strings.Builder
 	var o Outcome

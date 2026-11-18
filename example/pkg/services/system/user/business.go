@@ -15,24 +15,17 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
-// validate is safe for concurrent use and caches struct metadata, so it is
-// built once per package rather than per call.
+// concurrency-safe and caches struct metadata, so built once
 var validate = validator.New()
 
-// The service acts on accounts by ID and does not ask who is calling (see
-// model.User): which caller may use an operation is its route's permission,
-// and /user resolves the caller's own account in the router. What is
-// decided here are the rules about an account itself, which no caller lifts.
+// accounts are acted on by ID without asking who calls: route permissions
+// decide the caller; the rules here hold for every caller
 
-// POST /users/local-users
-// Create new user for all given organizations.
 func (m *manager) Create(ctx context.Context, opts entity.UserCreateOptions) (*entity.User, error) {
 	if opts.Username == "" || opts.Password == "" {
 		return nil, errors.InvalidArgument.Newf("Invalid Arguments: Username, Password cannot be empty")
 	}
-	// A user named into no organization joins the default one - what the
-	// HTTP API sends. Left at zero it would land in an organization login
-	// never looks in.
+	// zero would land in an organization login never looks in
 	if opts.OrganizationID == 0 {
 		opts.OrganizationID = preset.DefaultOrganizationID
 	}
@@ -59,12 +52,9 @@ func (m *manager) Create(ctx context.Context, opts entity.UserCreateOptions) (*e
 	return user, nil
 }
 
-// GET /users/local-users
 // TODO: Support multiple sort field and filtering.
 func (m *manager) List(ctx context.Context, opts entity.UserListOptions) ([]*entity.User, error) {
-	// Validated here rather than in the router so every caller is covered, not
-	// just HTTP. InvalidArgument is what the server's error handler turns into
-	// a 400.
+	// validated here to cover every caller; InvalidArgument becomes a 400
 	if err := validate.Struct(opts); err != nil {
 		return nil, errors.InvalidArgument.Wrap(err)
 	}
@@ -75,7 +65,6 @@ func (m *manager) List(ctx context.Context, opts entity.UserListOptions) ([]*ent
 	return users, nil
 }
 
-// DEL /users/local-users
 func (m *manager) Delete(ctx context.Context, userIDs []int32) error {
 	if sliceutil.In(preset.AdminUserID, userIDs...) {
 		return errors.Forbidden.Newf("Cannot delete system built-in default admin user")
@@ -96,7 +85,6 @@ func (m *manager) Delete(ctx context.Context, userIDs []int32) error {
 	return nil
 }
 
-// GET /users/local-users/{userID}
 func (m *manager) Get(ctx context.Context, userID int32) (*entity.User, error) {
 	user, err := m.repository.GetUser(ctx, userID)
 	if err != nil {
@@ -105,7 +93,6 @@ func (m *manager) Get(ctx context.Context, userID int32) (*entity.User, error) {
 	return user, nil
 }
 
-// PATCH /users/local-users/{userID}
 func (m *manager) Update(ctx context.Context, userID int32, opts entity.UserUpdateOptions) (*entity.User, error) {
 	if opts.Username != nil && *opts.Username == "" {
 		return nil, errors.InvalidArgument.Newf("Invalid Arguments: Username cannot be empty")
@@ -127,16 +114,13 @@ func (m *manager) Update(ctx context.Context, userID int32, opts entity.UserUpda
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	// A session's credential carries the username and role it was issued
-	// with; once either changes, the auth service ends those sessions.
+	// credentials carry username and role, so auth ends sessions when either changes
 	if before.Username != after.Username || before.Role != after.Role {
 		m.publish(ctx, message.LocalUserIdentityChanged{UserID: userID})
 	}
 	return after, nil
 }
 
-// PUT /users/:id/passwords
-// Sets the password without the old one.
 func (m *manager) ResetPassword(ctx context.Context, userID int32, opts entity.UserResetPasswordOptions) error {
 	if opts.Password == "" {
 		return errors.InvalidArgument.Newf("Invalid Arguments: Password cannot be empty")
@@ -153,8 +137,6 @@ func (m *manager) ResetPassword(ctx context.Context, userID int32, opts entity.U
 	return nil
 }
 
-// PUT /user/passwords
-// Changes the password given the old one, and refuses a wrong one.
 func (m *manager) ChangePassword(ctx context.Context, userID int32, opts entity.UserChangePasswordOptions) error {
 	if opts.Password == "" {
 		return errors.InvalidArgument.Newf("Invalid Arguments: Password cannot be empty")
@@ -162,8 +144,7 @@ func (m *manager) ChangePassword(ctx context.Context, userID int32, opts entity.
 	if opts.OldPassword == "" {
 		return errors.InvalidArgument.Newf("Invalid Arguments: Old password cannot be empty")
 	}
-	// Hashed before the transaction opens, so bcrypt's time is not spent
-	// holding it.
+	// hashed before the transaction so bcrypt's time is not spent holding it
 	hash, err := hashPassword(opts.Password)
 	if err != nil {
 		return errors.Wrap(err)
@@ -201,7 +182,6 @@ func (m *manager) ChangePassword(ctx context.Context, userID int32, opts entity.
 // 	return nil
 // }
 
-// Validate the existance of the user with given username.
 func (m *manager) Validate(ctx context.Context, organization, username string) (bool, error) {
 	organizationID, err := m.organizationID(ctx, organization)
 	if err != nil {
@@ -218,19 +198,19 @@ func (m *manager) Authenticate(ctx context.Context, organization, username, pass
 
 	organizationID, err := m.organizationID(ctx, organization)
 	if err != nil {
-		// Result intentionally discarded: this runs for its cost, not its answer.
+		// timing decoy, result discarded
 		_ = checkPassword(dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	user, err := m.repository.GetUserByName(ctx, organizationID, username)
 	if err != nil {
-		// Result intentionally discarded: this runs for its cost, not its answer.
+		// timing decoy, result discarded
 		_ = checkPassword(dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	hash, err := m.repository.GetUserPasswordHash(ctx, user.ID)
 	if err != nil {
-		// Result intentionally discarded: this runs for its cost, not its answer.
+		// timing decoy, result discarded
 		_ = checkPassword(dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}

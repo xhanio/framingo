@@ -20,7 +20,6 @@ type priority[T PriorityItem] struct {
 	pushed *sync.Cond // broadcast as elements are pushed, for those waiting on an empty queue
 }
 
-// New initializes an empty priority queue.
 func NewPriority[T PriorityItem](opts ...Option[T]) Priority[T] {
 	p := &priority[T]{
 		items: make(map[string]T),
@@ -71,7 +70,7 @@ func (p *priority[T]) Update(items ...T) error {
 	}
 	for _, item := range items {
 		i := p.items[item.Key()]
-		// out of the tree while its priority changes, which is where the tree finds it
+		// removed before its priority changes: the tree locates items by priority
 		if _, found := p.tree.Delete(i); !found {
 			panic(errors.Newf("inconsistent queue: item %s is not in the tree", item.Key()))
 		}
@@ -136,18 +135,14 @@ func (p *priority[T]) MustShift() T {
 	return element
 }
 
-// WaitPop is Pop that waits while the queue is empty, until ctx ends.
 func (p *priority[T]) WaitPop(ctx context.Context) (T, error) {
 	return p.wait(ctx, p.tree.DeleteMax)
 }
 
-// WaitShift is Shift that waits while the queue is empty, until ctx ends.
 func (p *priority[T]) WaitShift(ctx context.Context) (T, error) {
 	return p.wait(ctx, p.tree.DeleteMin)
 }
 
-// wait takes an element with take once there is one. Once ctx ends it returns ctx's error and
-// takes nothing.
 func (p *priority[T]) wait(ctx context.Context, take func() (T, bool)) (T, error) {
 	stop := context.AfterFunc(ctx, func() {
 		p.Lock()
@@ -169,7 +164,7 @@ func (p *priority[T]) wait(ctx context.Context, take func() (T, bool)) (T, error
 	}
 }
 
-// !! the order of items is not guaranteed
+// Items is unordered.
 func (p *priority[T]) Items() []T {
 	p.RLock()
 	defer p.RUnlock()

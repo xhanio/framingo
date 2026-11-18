@@ -12,8 +12,7 @@ import (
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	// dynamic configs, read under this instance's root - db.connection.* for
-	// the default instance, <name>.connection.* for a named one
+	// read under db.connection.*, or <name>.connection.* when named
 	config := confutil.FromContext(ctx)
 	root := nameutil.ConfigRoot(m.name)
 	m.applyOptions(
@@ -26,17 +25,14 @@ func (m *manager) Init(ctx context.Context) error {
 		),
 	)
 	m.setDefaults()
-	// connect to database
 	err := m.connect(m.dbtype, m.source)
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	// set up connection pool
 	m.sqlDB.SetMaxOpenConns(m.connection.MaxOpen)
 	m.sqlDB.SetMaxIdleConns(m.connection.MaxIdle)
 	m.sqlDB.SetConnMaxLifetime(m.connection.MaxLifetime)
 	m.sqlDB.SetConnMaxIdleTime(m.connection.MaxIdleTime)
-	// migration
 	if m.migration.Directory != "" {
 		err = m.migrate(fmt.Sprintf("file://%s", m.migration.Directory), m.migration.Version)
 		if err != nil {

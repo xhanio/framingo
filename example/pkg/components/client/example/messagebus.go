@@ -14,9 +14,6 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
-// StreamMessages opens a WebSocket to the /messages/stream endpoint and prints
-// every PubsubMessage it receives as pretty JSON until the context is canceled
-// or the connection closes.
 func (c *cli) StreamMessages(ctx context.Context) error {
 	wsURL, err := buildStreamURL(c.endpoint)
 	if err != nil {
@@ -30,15 +27,11 @@ func (c *cli) StreamMessages(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	// Best-effort teardown: by the time this runs the connection is either
-	// already closed cleanly below, or being abandoned on an error path.
-	//nolint:errcheck // nothing to do with a failure to close here
+	//nolint:errcheck // best-effort teardown
 	defer conn.CloseNow()
 
-	// On signal, send a proper close frame so the server sees a clean shutdown
-	// instead of an abrupt EOF. Reads use a background context so the close
-	// frame round-trip can complete; the Read loop returns when the server
-	// echoes the close.
+	// on cancel send a close frame; reads use a background context so the close
+	// handshake completes and Read returns on the server's echo
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -74,8 +67,6 @@ func (c *cli) StreamMessages(ctx context.Context) error {
 	}
 }
 
-// buildStreamURL converts the client's HTTP endpoint (e.g. http://host/api/v1)
-// into the WebSocket URL for the message stream (ws://host/api/v1/messages/stream).
 func buildStreamURL(endpoint string) (string, error) {
 	if endpoint == "" {
 		endpoint = DefaultEndpoint

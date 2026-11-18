@@ -12,6 +12,5 @@ func TestNameDefaultsToPackage(t *testing.T) {
 
 func TestWithNameOverrides(t *testing.T) {
 	assert.Equal(t, "authnagent2", New(nil, WithName("authnagent2")).Name())
-	// an empty override keeps the default
 	assert.Equal(t, "authnagent", New(nil, WithName("")).Name())
 }

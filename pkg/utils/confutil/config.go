@@ -13,9 +13,7 @@ type config struct {
 
 var _ Config = (*config)(nil)
 
-// New wraps a viper instance. A nil viper wraps an empty one, so the result
-// is always usable and every getter yields the zero value - the same
-// never-nil doctrine FromContext follows.
+// New accepts a nil viper, yielding a Config whose getters all read zero.
 func New(v *viper.Viper) Config {
 	if v == nil {
 		v = viper.New()
@@ -23,8 +21,7 @@ func New(v *viper.Viper) Config {
 	return &config{v: v}
 }
 
-// key is the one place a format becomes a key: untouched without args, so a
-// literal key never meets Sprintf and a stray % in it stays literal.
+// key skips Sprintf without args, so a literal % in a key survives.
 func key(format string, args ...any) string {
 	if len(args) == 0 {
 		return format

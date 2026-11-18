@@ -22,11 +22,6 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
-// With the gopro-injected ProjectPath in place, service names are
-// project-relative - and identically so whether the package belongs to the
-// application or to framingo as a dependency, since names key supervisor
-// stats and the messagebus registry. Without the injection names keep the
-// full import path.
 func TestServiceNamesAreProjectRelative(t *testing.T) {
 	info.ProjectPath = "xhanio/framingo/example"
 	t.Cleanup(func() { info.ProjectPath = "" })
@@ -38,10 +33,7 @@ func TestServiceNamesAreProjectRelative(t *testing.T) {
 	assert.Equal(t, "services/supervisor/manager", sv.Name())
 }
 
-// fakeRepo stands in for the service's whole data layer: repo.HelloWorld is
-// one method wide, so that method is all a fake needs, with Name and
-// Dependencies left to the embedded nil interface - a call to either is a
-// test bug and panics.
+// unimplemented methods hit the embedded nil interface and panic
 type fakeRepo struct {
 	repo.HelloWorld
 }
@@ -50,8 +42,6 @@ func (fakeRepo) CreateHelloWorld(_ context.Context, message string) (*entity.Hel
 	return &entity.HelloWorld{ID: 1, Message: message}, nil
 }
 
-// fakeMB embeds the nil interface the same way: SendRawMessage is the one
-// method HelloWorld drives.
 type fakeMB struct {
 	fmodel.MessageBus
 }
@@ -77,8 +67,7 @@ func TestHelloWorldIncrementsCounter(t *testing.T) {
 	assert.Equal(t, int64(2), total)
 }
 
-// Init reads the greeting under the service's config root - its package
-// name, example, since the service carries no WithName.
+// with no WithName the config root is the package name
 func TestInitReadsGreetingUnderRoot(t *testing.T) {
 	_, provider := testutil.NewMeterRecorder()
 	m := newManager(platform.New(nil, testutil.NewMeter(provider), nil, fakeMB{}), fakeRepo{})
@@ -88,8 +77,6 @@ func TestInitReadsGreetingUnderRoot(t *testing.T) {
 	assert.Equal(t, "hi there", m.greeting)
 }
 
-// The meter is optional: a service given none still initialises, and its
-// business path records into noop instruments rather than nil-checking.
 func TestHelloWorldWithoutMeter(t *testing.T) {
 	m := newManager(platform.New(nil, nil, nil, fakeMB{}), fakeRepo{})
 	require.NoError(t, m.Init(context.Background()))

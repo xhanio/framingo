@@ -9,8 +9,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
-// Connection pool defaults, applied by setDefaults to whatever the options
-// and the db.connection.* keys left zero.
 const (
 	defaultMaxOpen     = 10
 	defaultMaxIdle     = 5
@@ -33,8 +31,7 @@ func (m *manager) setDefaults() {
 	if m.name == "" {
 		m.name = nameutil.Name(m)
 	}
-	// MaxIdleTime has no default: zero means "never idle out", which is
-	// database/sql's own behaviour and a real choice.
+	// MaxIdleTime has no default: zero (never idle out) is a real choice
 	if m.connection.MaxOpen == 0 {
 		m.connection.MaxOpen = defaultMaxOpen
 	}
@@ -55,9 +52,7 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
-// WithName sets the service name, which also decides the config root Init
-// reads the dynamic keys under (nameutil.ConfigRoot): WithName("clickhouse")
-// reads clickhouse.connection.*, an unnamed instance reads db.connection.*.
+// WithName also sets the config root: <name>.connection.* instead of db.connection.*.
 func WithName(name string) Option {
 	return func(m *manager) {
 		m.name = name
@@ -85,9 +80,7 @@ func WithMigration(sqlDir string, version uint) Option {
 	}
 }
 
-// WithConnection sets the pool knobs. A zero reads as unset - setDefaults
-// fills it - so a wiring layer can pass an absent config key straight
-// through.
+// WithConnection treats zeros as unset; setDefaults fills them.
 func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, maxIdleTime time.Duration, execTimeout time.Duration) Option {
 	return func(m *manager) {
 		m.connection = connectionConfig{
@@ -100,13 +93,7 @@ func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, maxIdle
 	}
 }
 
-// WithPlugins adds GORM plugins to install on the connection. They are
-// installed in order every time the manager connects, so a restart re-applies
-// them to the rebuilt *gorm.DB. Repeated calls append rather than replace.
-//
-// The core package stays free of concrete plugin imports the same way it
-// stays free of concrete drivers: framingo's own plugins live in
-// pkg/services/db/plugins/*, and an app pulls in only the ones it wires.
+// WithPlugins appends; plugins are reinstalled in order on every connect.
 func WithPlugins(plugins ...gorm.Plugin) Option {
 	return func(m *manager) {
 		m.plugins = append(m.plugins, plugins...)

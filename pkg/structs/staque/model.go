@@ -40,12 +40,10 @@ type Queue[T any] interface {
 type Priority[T PriorityItem] interface {
 	Queue[T]
 	Stack[T]
-	// WaitPop and WaitShift take an element like Pop and Shift, waiting while the queue is
-	// empty. Once ctx ends they return its error and take nothing.
+	// WaitPop and WaitShift block while empty; once ctx ends they return its error and take nothing.
 	WaitPop(ctx context.Context) (T, error)
 	WaitShift(ctx context.Context) (T, error)
-	// Update gives the queued elements under the items' keys the items' priorities, all in one
-	// go, or none if a key is not queued: NotFound. Change a queued element's priority only so.
+	// Update is all-or-nothing (NotFound if any key is not queued); the only safe way to change a priority.
 	Update(items ...T) error
 	Remove(item T) (T, bool)
 	Items() []T

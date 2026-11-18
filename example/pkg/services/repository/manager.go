@@ -11,9 +11,7 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 )
 
-// manager has no lifecycle of its own: to the supervisor it is a name and an
-// edge to the database, whose probes already report health to everything
-// downstream - there is nothing for the repository to probe on top.
+// no lifecycle: the database's probes already cover health
 type manager struct {
 	name string
 	log  log.Logger
@@ -24,7 +22,6 @@ func New(platform platform.Platform, opts ...Option) Repository {
 	return newManager(platform, opts...)
 }
 
-// newManager returns the concrete manager, the form package tests construct.
 func newManager(platform platform.Platform, opts ...Option) *manager {
 	m := &manager{db: platform.DB()}
 	m.applyOptions(opts...)

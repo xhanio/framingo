@@ -15,9 +15,7 @@ type UserCreateResponse struct {
 	UserID int32 `json:"user_id"`
 }
 
-// UserProfileUpdateRequest is PATCH /user: the caller's own contact details.
-// A username or role in the body has no field to land in, so the caller
-// cannot change who they are through it.
+// UserProfileUpdateRequest has no username or role: the caller cannot change who they are through it.
 type UserProfileUpdateRequest struct {
 	Title     *string `json:"title,omitempty"`
 	FirstName *string `json:"first_name,omitempty"`
@@ -25,8 +23,7 @@ type UserProfileUpdateRequest struct {
 	Email     *string `json:"email,omitempty"`
 }
 
-// UserUpdateRequest is PATCH /users/:id. A field left out is left as it is -
-// change_password included, hence the pointer.
+// UserUpdateRequest: a field left out is left as it is, hence the pointers.
 type UserUpdateRequest struct {
 	Username       *string `json:"username,omitempty"`
 	Title          *string `json:"title,omitempty"`
@@ -37,13 +34,11 @@ type UserUpdateRequest struct {
 	ChangePassword *bool   `json:"change_password,omitempty"`
 }
 
-// UserChangePasswordRequest is PUT /user/passwords.
 type UserChangePasswordRequest struct {
 	Password    string `json:"password" validate:"required"`
 	OldPassword string `json:"old_password" validate:"required"`
 }
 
-// UserResetPasswordRequest is PUT /users/:id/passwords.
 type UserResetPasswordRequest struct {
 	Password string `json:"password" validate:"required"`
 }

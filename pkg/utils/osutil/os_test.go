@@ -6,8 +6,7 @@ import (
 	"time"
 )
 
-// Timezone reads timedatectl, which only systemd hosts have; elsewhere there
-// is nothing to test.
+// timedatectl exists only on systemd hosts
 func TestTimezoneLoadsAsALocation(t *testing.T) {
 	if _, err := exec.LookPath("timedatectl"); err != nil {
 		t.Skip("timedatectl not available:", err)

@@ -51,7 +51,6 @@ func TestNewPriorityWithOptions(t *testing.T) {
 		t.Error("NewPriority with options should return a non-nil priority queue")
 	}
 
-	// Test that custom less function is applied
 	item1 := &testPriorityItem{key: "test1", priority: 5}
 	item2 := &testPriorityItem{key: "test2", priority: 10}
 
@@ -84,7 +83,6 @@ func TestPriorityQueuePushAndPop(t *testing.T) {
 		t.Error("Queue should not be empty after push")
 	}
 
-	// Pop should return highest priority item first
 	item, err := pq.Pop()
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -116,14 +114,12 @@ func TestPriorityQueueUpdate(t *testing.T) {
 	item := &testPriorityItem{key: "test", priority: 5}
 	pq.Push(item)
 
-	// Update priority
 	updatedItem := &testPriorityItem{key: "test", priority: 15}
 	err := pq.Update(updatedItem)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
 
-	// Check that the priority was updated
 	items := pq.Items()
 	if len(items) != 1 {
 		t.Errorf("Expected 1 item, got %d", len(items))
@@ -189,7 +185,7 @@ func TestPriorityQueueUpdateWithAKeyNotQueuedChangesNothing(t *testing.T) {
 	}
 }
 
-// popOrder empties the queue, greatest first.
+// popOrder drains the queue, greatest first.
 func popOrder(pq Priority[*testPriorityItem]) string {
 	var order []string
 	for {
@@ -221,7 +217,6 @@ func TestPriorityQueueRemove(t *testing.T) {
 	}
 	pq.Push(items...)
 
-	// Remove middle item
 	removed, found := pq.Remove(&testPriorityItem{key: "item2", priority: 2})
 	if !found {
 		t.Error("Expected to find and remove item2")
@@ -262,7 +257,6 @@ func TestPriorityQueueItems(t *testing.T) {
 		t.Errorf("Expected 3 items, got %d", len(queueItems))
 	}
 
-	// Verify all items are present
 	keyMap := make(map[string]bool)
 	for _, item := range queueItems {
 		keyMap[item.Key()] = true
@@ -283,7 +277,6 @@ func TestPriorityQueueDuplicateKeys(t *testing.T) {
 
 	pq.Push(item1, item2)
 
-	// Should only have one item since keys are the same
 	if pq.Length() != 1 {
 		t.Errorf("Expected length 1 for duplicate keys, got %d", pq.Length())
 	}
@@ -296,7 +289,6 @@ func TestPriorityQueueConcurrency(t *testing.T) {
 	numGoroutines := 10
 	itemsPerGoroutine := 10
 
-	// Concurrent push operations
 	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
@@ -330,14 +322,12 @@ func TestDefaultLessFunc(t *testing.T) {
 	}
 
 	item3 := &testPriorityItem{key: "item3", priority: 5}
-	// With updated LessFunc, equal priority items are ordered by key
 	if DefaultLessFunc(item1, item3) != (item1.Key() < item3.Key()) {
 		t.Error("LessFunc should order by key when priorities are equal")
 	}
 }
 
 func TestWithLessFuncOption(t *testing.T) {
-	// Test nil less function (should not change default)
 	pq := NewPriority(WithLessFunc[*testPriorityItem](nil))
 
 	item1 := &testPriorityItem{key: "item1", priority: 5}

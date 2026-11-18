@@ -31,8 +31,7 @@ func (m *manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop waits for the handlers until ctx ends; a handler that ignores its canceled context is
-// left to return on its own.
+// Stop waits for handlers until ctx ends; one ignoring its canceled context is left running.
 func (m *manager) Stop(ctx context.Context) error {
 	m.mu.Lock()
 	started := m.started
@@ -45,7 +44,7 @@ func (m *manager) Stop(ctx context.Context) error {
 	m.mu.Unlock()
 
 	if started {
-		// Unsubscribe each module — closes their channels so listen() exits.
+		// closes their channels so listen() exits
 		for _, name := range modules {
 			if err := m.bus.Unsubscribe(name, m.topic); err != nil {
 				m.log.Errorf("failed to unsubscribe %s: %v", name, err)

@@ -29,22 +29,12 @@ func (m *manager) FromContextTimeout(ctx context.Context, timeout time.Duration)
 }
 
 func WrapContext(ctx context.Context, tx *gorm.DB) context.Context {
-	// The key is a plain string on purpose: the same value indexes echo's
-	// per-request store (echo.Context.Get/Set takes a string), so the api
-	// server can bridge the two. A private key type would not be reachable
-	// from the echo side. Collisions are avoided by the _-prefixed names in
-	// common/context.go rather than by the type system.
-	//nolint:staticcheck // SA1029: see above
+	//nolint:staticcheck // SA1029: a string key so echo.Context.Get/Set can share it
 	return context.WithValue(ctx, common.ContextKeyTX, tx)
 }
 
-// Transaction runs fn inside a database transaction. If ctx already carries
-// an active transaction (placed by an outer Transaction call), fn is nested
-// on it via a GORM savepoint instead of acquiring a new connection — this
-// keeps callers from deadlocking on small connection pools (e.g. SQLite with
-// max_open=1) and gives nested calls savepoint rollback semantics. In the
-// nested case opts is ignored, since the outer transaction's isolation level
-// and access mode are already fixed.
+// Transaction nests on a transaction already in ctx via a savepoint (no new
+// connection, so small pools can't deadlock); opts is then ignored.
 func (m *manager) Transaction(ctx context.Context, fn func(ctx context.Context) error, opts ...*sql.TxOptions) error {
 	if existing, ok := ctx.Value(common.ContextKeyTX).(*gorm.DB); ok {
 		return existing.Transaction(func(tx *gorm.DB) error {

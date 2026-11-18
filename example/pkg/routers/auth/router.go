@@ -29,7 +29,6 @@ func New(am model.Auth, rm model.Role, log log.Logger) fapi.Router {
 	return newRouter(am, rm, log)
 }
 
-// newRouter returns the concrete router, the form package tests construct.
 func newRouter(am model.Auth, rm model.Role, log log.Logger) *router {
 	r := &router{
 		am:  am,

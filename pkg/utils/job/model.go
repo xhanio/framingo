@@ -51,11 +51,10 @@ type Job interface {
 	Stats() *Stats
 }
 
-// Signal is a request to a job's running execution beyond its context; what it means to
-// the job is up to the job's function.
+// Signal is an out-of-band request to the running execution; its meaning is up to the job's function.
 type Signal string
 
-// SignalKill asks the execution to end now, cutting short whatever it was doing to stop.
+// SignalKill asks the execution to cut short even its own stopping.
 const SignalKill Signal = "kill"
 
 type State string

@@ -7,11 +7,7 @@ import (
 	"go.opentelemetry.io/otel/semconv/v1.43.0/httpconv"
 )
 
-// instruments groups the server's HTTP instruments, built once per server
-// instance at Add under the instance's name as the instrumentation scope -
-// the same way a service scopes its own instruments. The provider's
-// identity is stable for the life of the process, so the rebuilt echo a
-// restart performs reuses them - nothing here is ever rebuilt.
+// built once at Add and reused across restarts: the provider is stable for the process
 type instruments struct {
 	duration     httpconv.ServerRequestDuration  // http.server.request.duration, s
 	active       httpconv.ServerActiveRequests   // http.server.active_requests
@@ -19,13 +15,7 @@ type instruments struct {
 	responseSize httpconv.ServerResponseBodySize // http.server.response.body.size, By
 }
 
-// newInstruments mints the four instruments, scoped by the server's name so
-// two listeners sharing a meter keep separate instrument sets. The meter is
-// optional - a listener not given one gets noop instruments, so the Metrics
-// built-in runs the same way and nothing lands, the way a service without
-// a meter records into noops rather than nil-checking. An error is a
-// deterministic wiring fault - an invalid instrument definition - and fails
-// Add, the way an invalid instrument fails a service's Init.
+// scoped by server name so listeners sharing a meter stay separate; no meter means noop instruments
 func (s *server) newInstruments() (*instruments, error) {
 	provider := metric.MeterProvider(noop.NewMeterProvider())
 	if s.meter != nil {

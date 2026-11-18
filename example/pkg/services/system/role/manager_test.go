@@ -29,17 +29,11 @@ var (
 	notExistRoleID = int32(10)
 )
 
-// The following tests using actual test database. setup hands back the
-// database's debug side, which the tests clean up through; the service only
-// ever sees model.Database.
 func setup() (*manager, model.DatabaseDebugger, error) {
 	m, db, _, err := setupWithUsers()
 	return m, db, err
 }
 
-// setupWithUsers is setup that also hands back the same repository as
-// repo.User, for a test that needs users the role service cannot write - it
-// only ever sees repo.Role.
 func setupWithUsers() (*manager, model.DatabaseDebugger, repo.User, error) {
 	db, err := testutil.SetupDB()
 	if err != nil {
@@ -70,7 +64,6 @@ func TestCreateList(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		// Clean up database
 		if err := db.Cleanup(true); err != nil {
 			t.Fatalf("Error cleaning up dbManager: %v", err)
 		}
@@ -90,7 +83,6 @@ func TestCreateList(t *testing.T) {
 	} else if len(roles) != 4 {
 		t.Errorf("Expected number of roles: got = %v; expected %v", len(roles), 4)
 	} else {
-		// Check new user information
 		createdRole := roles[3]
 		if role, err := m.repository.GetRole(context.Background(), createdRole.ID); err != nil {
 			t.Fatalf("Failed to get the role: %v", err.Error())
@@ -106,7 +98,6 @@ func TestCreateGet(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		// Clean up database
 		if err := db.Cleanup(true); err != nil {
 			t.Fatalf("Error cleaning up dbManager: %v", err)
 		}
@@ -128,13 +119,11 @@ func TestDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		// Clean up database
 		if err := db.Cleanup(true); err != nil {
 			t.Fatalf("Error cleaning up dbManager: %v", err)
 		}
 	}()
 
-	// The role record to be deleted does not exist.
 	if err := m.Delete(context.Background(), notExistRoleID); err != nil {
 		if be, ok := err.(errors.Error); ok {
 			if !errors.Is(be, errors.NotFound) {
@@ -152,7 +141,6 @@ func TestAddPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		// Clean up database
 		if err := db.Cleanup(true); err != nil {
 			t.Fatalf("Error cleaning up dbManager: %v", err)
 		}
@@ -181,7 +169,6 @@ func TestGetPermissionByName(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		// Clean up database
 		if err := db.Cleanup(true); err != nil {
 			t.Fatalf("Error cleaning up dbManager: %v", err)
 		}
@@ -210,7 +197,6 @@ func TestSetPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		// Clean up database
 		if err := db.Cleanup(true); err != nil {
 			t.Fatalf("Error cleaning up dbManager: %v", err)
 		}
@@ -235,8 +221,6 @@ func TestSetPermission(t *testing.T) {
 
 }
 
-// A role a user still holds is not deleted. That is the role service's rule;
-// the repository only counts the holders.
 func TestDeleteRefusesARoleInUse(t *testing.T) {
 	m, db, users, err := setupWithUsers()
 	require.NoError(t, err)
@@ -266,9 +250,6 @@ func TestDeleteRefusesARoleInUse(t *testing.T) {
 	assert.True(t, errors.Is(err, errors.NotFound), "got %v", err)
 }
 
-// The admin role is fixed whoever calls: the service refuses to edit it,
-// delete it or give it a permission list, and refuses permission names rbac
-// does not define - the router no longer checks either.
 func TestAdminRoleAndPermissionNamesAreGuarded(t *testing.T) {
 	m, db, err := setup()
 	require.NoError(t, err)

@@ -64,9 +64,6 @@ func TestRunReportsTheExitStatus(t *testing.T) {
 	}
 }
 
-// A Command runs once and is waited for once, as with exec.Cmd. A second Wait
-// is misuse and says so; it used to return nil, so a Run that had failed read
-// as a success to whoever waited again.
 func TestASecondWaitIsAnErrorNotASuccess(t *testing.T) {
 	c := New("sh", []string{"-c", "exit 3"})
 	if err := c.Run(); err == nil {

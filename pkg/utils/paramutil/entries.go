@@ -7,7 +7,6 @@ type entries[V any] struct {
 	index  map[string]int
 }
 
-// NewEntries returns an empty Entries.
 func NewEntries[V any]() Entries[V] {
 	return &entries[V]{index: make(map[string]int)}
 }

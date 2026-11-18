@@ -106,7 +106,6 @@ func TestMergeDoesNotMutateInput(t *testing.T) {
 		t.Errorf("Merge() mutated second input = %v, want [A=3]", b)
 	}
 
-	// Mutating the result must not write back into any input.
 	result[0] = "MUTATED"
 	if a[0] != "A=1" {
 		t.Errorf("Merge() result aliases first input, a[0] = %v, want A=1", a[0])

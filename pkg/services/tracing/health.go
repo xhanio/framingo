@@ -6,14 +6,9 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// Alive implements common.Liveness for the manager's own wiring only: enabled
-// with no provider means Init never built one, and Init rebuilds it, so a
-// restart is exactly the remedy. A deliberately stopped manager stays alive -
-// the monitor probes stopped services through their dependents' chains, and a
-// failing Alive there would cascade restarts into every dependent. Collector
-// reachability is deliberately probed nowhere: tracing is auxiliary, so a
-// collector outage must never degrade the app (which is also why there is no
-// Ready at all).
+// Alive fails only when enabled without a provider (a restart rebuilds it);
+// a stopped manager stays alive so dependents don't cascade-restart, and the
+// collector is never probed: tracing must not degrade the app.
 func (m *manager) Alive(_ context.Context) error {
 	m.mu.RLock()
 	enabled := m.enabled

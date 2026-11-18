@@ -33,7 +33,6 @@ func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
 
-// newManager returns the concrete manager, the form package tests construct.
 func newManager(platform platform.Platform, repo Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
@@ -51,7 +50,6 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	// mb is nil on a platform without a messagebus; the supervisor skips a
-	// nil dependency
+	// mb may be nil; the supervisor skips a nil dependency
 	return []common.Service{m.repository, m.mb}
 }

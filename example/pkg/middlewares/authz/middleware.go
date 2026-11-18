@@ -37,8 +37,7 @@ func (m *middleware) Dependencies() []common.Service {
 	return []common.Service{m.role}
 }
 
-// Func implements api.Middleware. The middleware takes no router.yaml config,
-// so a block under its name is a mistake worth failing startup for.
+// Func takes no router.yaml config: a block under its name fails startup.
 func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
 	if !enabled {
 		return nil, nil
@@ -62,15 +61,12 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 		if !sliceutil.In(cred.Source, preset.AuthSourceLdapUser, preset.AuthSourceLocalUser) {
 			return next(c)
 		}
-		// The Info middleware runs upstream and resolves the matched route's
-		// metadata - its declared permission among it - onto the request context.
+		// set upstream by the server's Info middleware
 		req, ok := c.Get(fapi.ContextKeyRequestInfo).(*fapi.RequestInfo)
 		if !ok || req == nil {
 			return errors.Forbidden.Newf("no handler info for request %s %s", c.Request().Method, c.Request().URL.EscapedPath())
 		}
-		// Fail closed: authz on a route that names no permission is a
-		// forgotten declaration, not an open door. A route every signed-in
-		// user may call says so with `- authz: false`.
+		// fail closed: a route naming no permission is a forgotten declaration; open routes set `- authz: false`
 		required := req.Permission
 		if required == "" {
 			return errors.Forbidden.Newf("%s %s declares no permission", c.Request().Method, c.Request().URL.EscapedPath())

@@ -19,8 +19,6 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 )
 
-// metricsRouter serves one route per status the built-in has to resolve:
-// a plain 200, a wrapped 400 the Error built-in minted, and a bare 500.
 func metricsRouter() *mockRouter {
 	return &mockRouter{
 		name: "metrics",
@@ -44,9 +42,7 @@ handlers:
 	}
 }
 
-// waitReady polls the listener until it answers - the same probe startServer
-// uses, split out so a restarted server can be waited on too. The probe hits
-// an unmatched path, so every test's export also carries 404 points for "/".
+// the probe hits an unmatched path, so every export also carries 404 points for "/"
 func waitReady(t *testing.T, baseURL string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
@@ -59,8 +55,6 @@ func waitReady(t *testing.T, baseURL string) {
 	}, 2*time.Second, 10*time.Millisecond)
 }
 
-// startMeasuredServer is startServer with a meter on the listener; the
-// returned reader is what the test collects from.
 func startMeasuredServer(t *testing.T) (baseURL string, m *manager, reader *sdkmetric.ManualReader) {
 	t.Helper()
 	reader, provider := testutil.NewMeterRecorder()
@@ -81,17 +75,11 @@ func startMeasuredServer(t *testing.T) (baseURL string, m *manager, reader *sdkm
 	return
 }
 
-// dropIdleConns closes the default client's pooled connections before a
-// Stop. Shutdown treats a connection that was accepted but never sent a
-// request as busy for five seconds, and the client can leave exactly such
-// a never-used connection in its pool when a redial races a returned one -
-// a five-second stall in a test that otherwise takes milliseconds.
+// Shutdown treats an accepted-but-unused pooled connection as busy for 5s; drop them before Stop
 func dropIdleConns() {
 	http.DefaultClient.CloseIdleConnections()
 }
 
-// histogramPoints collects one export and returns the named histogram's
-// data points, one per attribute set; N is the instrument's value type.
 func histogramPoints[N int64 | float64](t *testing.T, reader *sdkmetric.ManualReader, name string) []metricdata.HistogramDataPoint[N] {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -101,7 +89,6 @@ func histogramPoints[N int64 | float64](t *testing.T, reader *sdkmetric.ManualRe
 	return pts
 }
 
-// pointsWith returns the data points carrying every wanted attribute.
 func pointsWith[N int64 | float64](pts []metricdata.HistogramDataPoint[N], want ...attribute.KeyValue) []metricdata.HistogramDataPoint[N] {
 	var out []metricdata.HistogramDataPoint[N]
 	for _, p := range pts {
@@ -123,8 +110,6 @@ func pointsWith[N int64 | float64](pts []metricdata.HistogramDataPoint[N], want 
 func status(code int) attribute.KeyValue   { return attribute.Int("http.response.status_code", code) }
 func route(path string) attribute.KeyValue { return attribute.String("http.route", path) }
 
-// A matched request records one duration point carrying the convention's
-// attributes plus the server's own name, and the response size beside it.
 func TestMetrics_RecordsMatchedRequest(t *testing.T) {
 	base, _, reader := startMeasuredServer(t)
 	code, _ := httpDo(t, "GET", base+"/ok")
@@ -147,8 +132,6 @@ func TestMetrics_RecordsMatchedRequest(t *testing.T) {
 	assert.Equal(t, int64(len("ok")), sizes[0].Sum)
 }
 
-// Status comes from the ResponseInfo the Info built-in wrote - the wrapped
-// ErrorBody's, not the response's default - and a 5xx carries error.type.
 func TestMetrics_StatusFromErrorBody(t *testing.T) {
 	base, _, reader := startMeasuredServer(t)
 	httpDo(t, "GET", base+"/ok") // one sized response, so the size histogram exists to assert on
@@ -162,16 +145,12 @@ func TestMetrics_StatusFromErrorBody(t *testing.T) {
 	require.Len(t, bad, 1)
 	_, hasErrType := bad[0].Attributes.Value("error.type")
 	assert.False(t, hasErrType, "a 4xx is the caller's mistake, not an error.type")
-	// the error body is written after the chain returns, so it has no size
-	// point - rather than a zero that would skew the histogram
 	assert.Empty(t, pointsWith(histogramPoints[int64](t, reader, "http.server.response.body.size"), status(400)))
 
 	fail := pointsWith(pts, status(500), route("/fail"), attribute.String("error.type", "500"))
 	require.Len(t, fail, 1)
 }
 
-// No route matched: Info short-circuited before minting a record, so the
-// status is the returned error's and there is no http.route to carry.
 func TestMetrics_UnmatchedRouteHasNoRoute(t *testing.T) {
 	base, _, reader := startMeasuredServer(t)
 	code, _ := httpDo(t, "GET", base+"/nope")
@@ -185,7 +164,6 @@ func TestMetrics_UnmatchedRouteHasNoRoute(t *testing.T) {
 	}
 }
 
-// Every request that entered has left: the up-down counter sums to zero.
 func TestMetrics_ActiveRequestsReturnToZero(t *testing.T) {
 	base, _, reader := startMeasuredServer(t)
 	httpDo(t, "GET", base+"/ok")
@@ -198,17 +176,12 @@ func TestMetrics_ActiveRequestsReturnToZero(t *testing.T) {
 	assert.Equal(t, int64(0), active)
 }
 
-// A listener without a meter still gets instruments - noops - so the
-// Metrics built-in has something to record into; that it runs on such a
-// listener is what every meterless server in manager_test.go exercises.
 func TestMetrics_WithoutMeterUsesNoopInstruments(t *testing.T) {
 	m := testManager()
 	require.NoError(t, m.Add("http", WithEndpoint("127.0.0.1", 8080, "/")))
 	assert.NotNil(t, m.servers["http"].inst)
 }
 
-// A restart rebuilds the echo instance but not the instruments: the same
-// series keeps counting, with no duplicate point for the attribute set.
 func TestMetrics_SurvivesRestart(t *testing.T) {
 	base, m, reader := startMeasuredServer(t)
 	httpDo(t, "GET", base+"/ok")
@@ -225,10 +198,7 @@ func TestMetrics_SurvivesRestart(t *testing.T) {
 	assert.Equal(t, uint64(2), pts[0].Count)
 }
 
-// Records go through the request as the chain left it, so with the trace
-// middleware on the same listener each point carries the span as an
-// exemplar: the SDK's trace-based exemplar filter needs a sampled span in
-// the recording context, which the middleware put there and never removes.
+// the SDK's trace-based exemplar filter needs a sampled span in the recording context
 func TestMetrics_RecordsCarryTheSpan(t *testing.T) {
 	reader, provider := testutil.NewMeterRecorder()
 	_, tp := testutil.NewRecorder()

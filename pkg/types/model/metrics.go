@@ -6,16 +6,11 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
-// Meter is the explicit metrics handle. Same doctrine as Tracer: framingo
-// never touches the otel globals; everything that emits metrics receives
-// this handle instead. Only the otel API types appear here — the SDK stays
-// behind the metrics service.
+// Meter is the explicit metrics handle; framingo never uses the otel globals.
 type Meter interface {
 	common.Service
 
-	// Provider returns the MeterProvider. Always non-nil, and its identity
-	// never changes for the life of the process — instruments created from
-	// it stay valid across service restarts, so callers create them once
-	// (typically at construction) and cache them.
+	// Provider is non-nil and fixed for the process lifetime, so instruments
+	// may be created once and cached.
 	Provider() metric.MeterProvider
 }

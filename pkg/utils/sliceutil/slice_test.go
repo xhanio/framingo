@@ -334,18 +334,15 @@ func TestCopy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := Copy(tt.source)
 
-			// Check values are identical
 			if !reflect.DeepEqual(result, tt.source) {
 				t.Errorf("Copy() = %v, want %v", result, tt.source)
 			}
 
-			// Check it's a different slice (not same reference)
 			if len(tt.source) > 0 {
 				if &result[0] == &tt.source[0] {
 					t.Error("Copy() should return a new slice, not the same reference")
 				}
 
-				// Modify original and ensure copy is unchanged
 				original := make([]int, len(tt.source))
 				copy(original, tt.source)
 
@@ -437,7 +434,6 @@ func TestChanges(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			add, remove := Changes(tt.from, tt.to)
 
-			// Sort both expected and actual results for comparison since order may vary
 			if !slicesEqualIgnoreOrder(add, tt.expectedAdd) {
 				t.Errorf("Changes() add = %v, want %v", add, tt.expectedAdd)
 			}

@@ -23,16 +23,14 @@ type Source struct {
 	Params   map[string]string
 }
 
-// CloneParams returns a copy of s.Params, never nil, so drivers can mutate it
-// while building a DSN without affecting the caller's Source.
+// CloneParams returns a mutable copy, never nil.
 func (s *Source) CloneParams() map[string]string {
 	params := make(map[string]string)
 	maps.Copy(params, s.Params)
 	return params
 }
 
-// DSN resolves the driver registered for dbtype and asks it to format the DSN.
-// The driver subpackage must be blank-imported for this to succeed.
+// DSN fails unless the dbtype's driver package is blank-imported.
 func (s *Source) DSN(dbtype string) (string, error) {
 	d, err := lookupDriver(dbtype)
 	if err != nil {
