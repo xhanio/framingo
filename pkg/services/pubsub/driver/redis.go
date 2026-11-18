@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/xhanio/errors"
 
@@ -25,6 +26,8 @@ type redisDriver struct {
 	topics   map[string][]*subscriber // topic -> local subscribers
 	patterns map[string]bool          // track subscribed Redis patterns
 
+	origin string // this instance, on every event it publishes
+
 	wg sync.WaitGroup
 }
 
@@ -38,6 +41,7 @@ func NewRedis(client *redis.Client, log log.Logger, opts ...Option) (Driver, err
 		client:     client,
 		topics:     make(map[string][]*subscriber),
 		patterns:   make(map[string]bool),
+		origin:     uuid.New().String(),
 	}, nil
 }
 
@@ -237,6 +241,7 @@ func (b *redisDriver) Publish(ctx context.Context, from string, topic string, ki
 	}
 
 	em := eventMessage{
+		Origin:    b.origin,
 		Publisher: from,
 		Topic:     topic,
 		Kind:      kind,
@@ -278,6 +283,9 @@ func (b *redisDriver) handleRedisMessage(msg *redis.Message) {
 	if err := json.Unmarshal([]byte(msg.Payload), &eventMsg); err != nil {
 		b.log.Errorf("failed to unmarshal redis event: %v", err)
 		return
+	}
+	if eventMsg.Origin == b.origin {
+		return // Publish delivered it locally already
 	}
 
 	m := entity.PubsubMessage{

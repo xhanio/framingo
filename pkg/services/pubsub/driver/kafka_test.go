@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"testing"
 	"time"
@@ -189,4 +190,32 @@ func TestKafkaStopWithoutStart(t *testing.T) {
 
 	err = b.Stop(context.Background())
 	assert.NoError(t, err)
+}
+
+// an event carrying this instance's origin was delivered by Publish already;
+// one from another instance is delivered
+func TestKafkaSkipsItsOwnEcho(t *testing.T) {
+	b := &kafkaDriver{dispatcher: newDispatcher(log.Default), topics: make(map[string][]*subscriber), origin: "me"}
+	ch, err := b.Subscribe("local", "echo/topic")
+	require.NoError(t, err)
+	event := func(origin string) []byte {
+		data, err := json.Marshal(eventMessage{Origin: origin, Publisher: "publisher", Topic: "echo/topic", Kind: "k", Payload: json.RawMessage(`"x"`)})
+		require.NoError(t, err)
+		return data
+	}
+
+	b.handleKafkaMessage(event("me"))
+	select {
+	case msg := <-ch:
+		t.Fatalf("its own echo was delivered: %+v", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	b.handleKafkaMessage(event("another"))
+	select {
+	case msg := <-ch:
+		assert.Equal(t, "k", msg.Kind)
+	case <-time.After(time.Second):
+		t.Fatal("another instance's event was not delivered")
+	}
 }

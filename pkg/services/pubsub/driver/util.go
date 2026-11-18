@@ -200,6 +200,9 @@ func (d *dispatcher) claim(l laggard) bool {
 }
 
 type eventMessage struct {
+	// Origin is the driver instance that published: it delivers locally in
+	// Publish and must skip the copy the broker hands back to it
+	Origin    string          `json:"origin,omitempty"`
 	Publisher string          `json:"publisher"`
 	Topic     string          `json:"topic"`
 	Kind      string          `json:"kind"`

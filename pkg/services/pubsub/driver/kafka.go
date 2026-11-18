@@ -27,6 +27,8 @@ type kafkaDriver struct {
 	mu     sync.RWMutex
 	topics map[string][]*subscriber
 
+	origin string // this instance, on every event it publishes
+
 	wg sync.WaitGroup
 }
 
@@ -39,7 +41,8 @@ func NewKafka(brokers []string, groupID string, log log.Logger, opts ...Option) 
 	}
 
 	// a unique group per instance: a shared group would partition messages instead of broadcasting
-	instanceGroupID := groupID + "-" + uuid.New().String()
+	origin := uuid.New().String()
+	instanceGroupID := groupID + "-" + origin
 
 	kafkaTopic := "pubsub"
 
@@ -63,6 +66,7 @@ func NewKafka(brokers []string, groupID string, log log.Logger, opts ...Option) 
 		writer:     writer,
 		reader:     reader,
 		topics:     make(map[string][]*subscriber),
+		origin:     origin,
 	}, nil
 }
 
@@ -186,6 +190,7 @@ func (b *kafkaDriver) Publish(ctx context.Context, from string, topic string, ki
 	}
 
 	em := eventMessage{
+		Origin:    b.origin,
 		Publisher: from,
 		Topic:     topic,
 		Kind:      kind,
@@ -261,6 +266,9 @@ func (b *kafkaDriver) handleKafkaMessage(data []byte) {
 	if err := json.Unmarshal(data, &em); err != nil {
 		b.log.Errorf("failed to unmarshal kafka event: %v", err)
 		return
+	}
+	if em.Origin == b.origin {
+		return // Publish delivered it locally already
 	}
 
 	m := entity.PubsubMessage{

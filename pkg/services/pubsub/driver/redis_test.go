@@ -185,3 +185,30 @@ func TestRedisStopWithoutStart(t *testing.T) {
 	err = b.Stop(context.Background())
 	assert.NoError(t, err)
 }
+
+// Publish delivers to its own instance's subscribers, and the copy Redis
+// hands back to that instance is not delivered again
+func TestRedisSameInstanceDeliversOnce(t *testing.T) {
+	client := getTestRedisClient(t)
+	b, err := NewRedis(client, log.Default)
+	require.NoError(t, err)
+	ch, err := b.Subscribe("local", "once/topic")
+	require.NoError(t, err)
+	require.NoError(t, b.Start(context.Background()))
+	//nolint:errcheck // test teardown; a failed stop has nothing to act on
+	defer b.Stop(context.Background())
+	time.Sleep(200 * time.Millisecond)
+
+	require.NoError(t, b.Publish(context.Background(), "publisher", "once/topic", "once", "x"))
+	select {
+	case msg := <-ch:
+		assert.Equal(t, "once", msg.Kind)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the local subscriber got nothing")
+	}
+	select {
+	case msg := <-ch:
+		t.Fatalf("delivered twice: %+v", msg)
+	case <-time.After(500 * time.Millisecond):
+	}
+}
