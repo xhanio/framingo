@@ -47,9 +47,9 @@ import (
 	"github.com/xhanio/framingo/example/pkg/utils/infra"
 )
 
-func (m *manager) initServices() error {
-	// init logger
-	m.log = log.New(
+// newLogger builds the process logger from log.*.
+func (m *manager) newLogger() log.Logger {
+	return log.New(
 		log.WithLevel(m.config.GetInt("log.level")),
 		log.WithFileWriter(
 			m.config.GetString("log.file"),
@@ -58,6 +58,45 @@ func (m *manager) initServices() error {
 			m.config.GetInt("log.rotation.max_age"),
 		),
 	)
+}
+
+// newDatabase builds the database manager from db.*, for the daemon and the
+// migrate command alike, plus whatever extra options the caller adds.
+func (m *manager) newDatabase(opts ...db.Option) db.Manager {
+	base := []db.Option{
+		db.WithType(m.config.GetString("db.type")),
+		// Each key is overridable from the environment (FRAMINGO_EXAMPLE_DB_SOURCE_HOST
+		// and so on, see newConfig), and viper ranks the environment above
+		// the file - so a secret injected into the pod wins over config.yaml.
+		// The fallbacks apply only when neither sets a value.
+		db.WithDataSource(db.Source{
+			Host:     sliceutil.First(m.config.GetString("db.source.host"), "127.0.0.1"),
+			Port:     sliceutil.First(m.config.GetUint("db.source.port"), 5432),
+			User:     m.config.GetString("db.source.user"),
+			Password: m.config.GetString("db.source.password"),
+			DBName:   m.config.GetString("db.source.dbname"),
+		}),
+		// An empty dir leaves migrating to someone else - in prod, the
+		// migrate Job; the daemon then never touches the schema.
+		db.WithMigration(
+			m.config.GetString("db.migration.dir"),
+			m.config.GetUint("db.migration.version"),
+		),
+		db.WithConnection(
+			m.config.GetInt("db.connection.max_open"),
+			m.config.GetInt("db.connection.max_idle"),
+			m.config.GetDuration("db.connection.max_lifetime"),
+			m.config.GetDuration("db.connection.max_idle_time"),
+			m.config.GetDuration("db.connection.exec_timeout"),
+		),
+		db.WithLogger(m.log),
+	}
+	return db.New(append(base, opts...)...)
+}
+
+func (m *manager) initServices() error {
+	// init logger
+	m.log = m.newLogger()
 	infra.Debug = (m.log.Level() == zapcore.DebugLevel)
 
 	// init service manager - the wiring layer owns the viper (file, env
@@ -105,46 +144,7 @@ func (m *manager) initServices() error {
 		return errors.Wrap(err)
 	}
 
-	m.db = db.New(
-		db.WithType(m.config.GetString("db.type")),
-		db.WithDataSource(db.Source{
-			Host: sliceutil.First(
-				m.config.GetString("db.source.host"),
-				m.config.GetString("DB_HOST"),
-				"127.0.0.1",
-			),
-			Port: sliceutil.First(
-				m.config.GetUint("db.source.port"),
-				m.config.GetUint("DB_PORT"),
-				5432,
-			),
-			User: sliceutil.First(
-				m.config.GetString("db.source.user"),
-				m.config.GetString("DB_USER"),
-			),
-			Password: sliceutil.First(
-				m.config.GetString("db.source.password"),
-				m.config.GetString("DB_PASSWORD"),
-			),
-			DBName: sliceutil.First(
-				m.config.GetString("db.source.dbname"),
-				m.config.GetString("DB_DBNAME"),
-			),
-		}),
-		db.WithMigration(
-			m.config.GetString("db.migration.dir"),
-			m.config.GetUint("db.migration.version"),
-		),
-		db.WithConnection(
-			m.config.GetInt("db.connection.max_open"),
-			m.config.GetInt("db.connection.max_idle"),
-			m.config.GetDuration("db.connection.max_lifetime"),
-			m.config.GetDuration("db.connection.max_idle_time"),
-			m.config.GetDuration("db.connection.exec_timeout"),
-		),
-		db.WithPlugins(dbTracing),
-		db.WithLogger(m.log),
-	)
+	m.db = m.newDatabase(db.WithPlugins(dbTracing))
 
 	m.pubsub = pubsub.New(
 		driver.NewMemory(m.log),

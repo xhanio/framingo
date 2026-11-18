@@ -25,6 +25,7 @@ func NewRootCmd() *cobra.Command {
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "")
 
 	root.AddCommand(NewDaemonCmd())
+	root.AddCommand(NewMigrateCmd())
 	root.AddCommand(NewVersionCmd())
 	return root
 }

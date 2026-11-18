@@ -97,6 +97,9 @@ func newConfig(configPath string) *viper.Viper {
 	conf.SetConfigFile(configPath)
 	infra.EnvPrefix = envutil.EnvPrefix(info.ProductName)
 	conf.SetEnvPrefix(infra.EnvPrefix)
+	// db.source.host is <PREFIX>_DB_SOURCE_HOST; without the replacer viper
+	// looks for <PREFIX>_DB.SOURCE.HOST, which nothing can set
+	conf.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	conf.AutomaticEnv()
 	return conf
 }
@@ -146,15 +149,15 @@ func (m *manager) initServices() error {
 	// its keys read under clickhouse.* - the name is the config root
 	m.db = db.New(
 		db.WithType(m.config.GetString("db.type")),
+		// each key is overridable as <PREFIX>_DB_SOURCE_HOST and so on (the
+		// key replacer in config.go), and viper ranks the environment above
+		// the file; the fallbacks apply only when neither sets a value
 		db.WithDataSource(db.Source{
-			// every field falls back: config key → env-style key → default
-			Host: sliceutil.First(
-				m.config.GetString("db.source.host"),
-				m.config.GetString("DB_HOST"),
-				"127.0.0.1",
-			),
-			Port: sliceutil.First(m.config.GetUint("db.source.port"), m.config.GetUint("DB_PORT"), 5432),
-			/* User, Password, DBName likewise */
+			Host:     sliceutil.First(m.config.GetString("db.source.host"), "127.0.0.1"),
+			Port:     sliceutil.First(m.config.GetUint("db.source.port"), 5432),
+			User:     m.config.GetString("db.source.user"),
+			Password: m.config.GetString("db.source.password"),
+			DBName:   m.config.GetString("db.source.dbname"),
 		}),
 		db.WithMigration(m.config.GetString("db.migration.dir"), m.config.GetUint("db.migration.version")),
 		db.WithConnection( /* the five db.connection.* keys */ ),
