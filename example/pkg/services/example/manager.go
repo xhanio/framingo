@@ -50,6 +50,5 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	// mb may be nil; the supervisor skips a nil dependency
 	return []common.Service{m.repository, m.mb}
 }

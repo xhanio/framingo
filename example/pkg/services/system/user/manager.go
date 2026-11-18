@@ -15,8 +15,8 @@ type manager struct {
 	sender     common.MessageSender
 }
 
-// New publishes account changes on the platform's messagebus for auth to end
-// sessions; without one, sessions outlive the change until their lease expires.
+// New publishes account changes on the platform's messagebus, which auth ends
+// sessions on.
 func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
@@ -37,6 +37,5 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	// sender may be nil; the supervisor skips a nil dependency
 	return []common.Service{m.repository, m.sender}
 }

@@ -78,18 +78,9 @@ func TestInitReadsGreetingUnderRoot(t *testing.T) {
 	assert.Equal(t, "hi there", m.greeting)
 }
 
-func TestHelloWorldWithoutMeter(t *testing.T) {
-	m := newManager(platform.New(nil, nil, nil, fakeMB{}), fakeRepo{})
-	require.NoError(t, m.Init(context.Background()))
-
-	//nolint:staticcheck // SA1029: intentional, the api context keys are shared with echo's string-keyed store
-	ctx := context.WithValue(context.Background(), api.ContextKeyCredential, &entity.Credential{UserName: "tester"})
-	_, err := m.HelloWorld(ctx, "hi")
-	require.NoError(t, err)
-}
-
 func TestHelloWorldWithoutActor(t *testing.T) {
-	m := newManager(platform.New(nil, nil, nil, fakeMB{}), fakeRepo{})
+	_, provider := testutil.NewMeterRecorder()
+	m := newManager(platform.New(nil, testutil.NewMeter(provider), nil, fakeMB{}), fakeRepo{})
 	require.NoError(t, m.Init(context.Background()))
 
 	_, err := m.HelloWorld(context.Background(), "hi")

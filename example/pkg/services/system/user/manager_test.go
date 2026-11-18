@@ -49,9 +49,12 @@ func isA(category errors.Category) func(error) bool {
 	return func(err error) bool { return err != nil && errors.Is(err, category) }
 }
 
-// setup returns an initialized service publishing on mb, which may be nil.
+// setup returns an initialized service publishing on mb, a recorder when nil.
 func setup(t *testing.T, mb model.MessageBus) *manager {
 	t.Helper()
+	if mb == nil {
+		mb = &recorder{}
+	}
 	db, err := testutil.SetupDB()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Cleanup(true)) })

@@ -13,6 +13,7 @@ type manager struct {
 
 var _ Platform = (*manager)(nil)
 
+// New takes every handle; none may be nil.
 func New(db model.Database, meter model.Meter, pubsub model.Pubsub, messagebus model.MessageBus) Platform {
 	return &manager{
 		db:         db,

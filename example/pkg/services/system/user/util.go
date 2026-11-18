@@ -15,9 +15,7 @@ func (m *manager) organizationID(ctx context.Context, organization string) (int3
 	return m.repository.GetOrganizationID(ctx, organization)
 }
 
-// call only after commit; dropped with no sender
+// call only after commit
 func (m *manager) publish(ctx context.Context, msg common.Message) {
-	if m.sender != nil {
-		m.sender.SendMessage(ctx, m, msg)
-	}
+	m.sender.SendMessage(ctx, m, msg)
 }
