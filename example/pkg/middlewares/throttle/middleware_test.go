@@ -94,3 +94,12 @@ func TestPartialConfigMeansNoThrottle(t *testing.T) {
 		assert.NoError(t, serve(t, mw, info("1.2.3.4")))
 	}
 }
+
+func TestNameDefaultsToPackage(t *testing.T) {
+	assert.Equal(t, "throttle", New().Name())
+}
+
+func TestWithNameOverrides(t *testing.T) {
+	assert.Equal(t, "throttle2", New(WithName("throttle2")).Name())
+	assert.Equal(t, "throttle", New(WithName("")).Name())
+}

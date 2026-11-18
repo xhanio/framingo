@@ -1,4 +1,4 @@
-package trace_test
+package trace
 
 import (
 	"context"
@@ -19,7 +19,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	tracemw "github.com/xhanio/framingo/pkg/middlewares/trace"
 	"github.com/xhanio/framingo/pkg/services/api/server"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
@@ -73,7 +72,7 @@ func startServer(t *testing.T, st *stubTracer, configs []byte, routers ...*mockR
 	m = server.New(server.WithLogger(log.New(log.WithLevel(1))))
 	opts := []server.ServerOption{
 		server.WithEndpoint("127.0.0.1", port, "/"),
-		server.WithMiddlewares(tracemw.New(st)),
+		server.WithMiddlewares(New(st)),
 	}
 	if configs != nil {
 		opts = append(opts, server.WithMiddlewareConfigs(configs))
@@ -130,41 +129,41 @@ handlers:
 
 func TestNameAndDependencies(t *testing.T) {
 	st, _ := newStubTracer()
-	mw := tracemw.New(st)
+	mw := New(st)
 	assert.Equal(t, "trace", mw.Name())
 
-	assert.Equal(t, "trace2", tracemw.New(st, tracemw.WithName("trace2")).Name())
-	assert.Equal(t, "trace", tracemw.New(st, tracemw.WithName("")).Name())
+	assert.Equal(t, "trace2", New(st, WithName("trace2")).Name())
+	assert.Equal(t, "trace", New(st, WithName("")).Name())
 	deps := mw.Dependencies()
 	require.Len(t, deps, 1)
 	assert.Same(t, st, deps[0])
 
 	// the supervisor panics on nil elements in a non-nil Dependencies slice
-	assert.Nil(t, tracemw.New(nil).Dependencies())
+	assert.Nil(t, New(nil).Dependencies())
 }
 
 func TestFuncContract(t *testing.T) {
 	st, _ := newStubTracer()
 
 	t.Run("disabled declines", func(t *testing.T) {
-		fn, err := tracemw.New(st).Func(false, nil)
+		fn, err := New(st).Func(false, nil)
 		require.NoError(t, err)
 		assert.Nil(t, fn)
 	})
 
 	t.Run("enabled without config attaches", func(t *testing.T) {
-		fn, err := tracemw.New(st).Func(true, nil)
+		fn, err := New(st).Func(true, nil)
 		require.NoError(t, err)
 		assert.NotNil(t, fn)
 	})
 
 	t.Run("a config block fails registration", func(t *testing.T) {
-		_, err := tracemw.New(st).Func(true, []byte("skip: something\n"))
+		_, err := New(st).Func(true, []byte("skip: something\n"))
 		require.Error(t, err)
 	})
 
 	t.Run("a nil tracer fails registration", func(t *testing.T) {
-		_, err := tracemw.New(nil).Func(true, nil)
+		_, err := New(nil).Func(true, nil)
 		require.Error(t, err)
 	})
 }

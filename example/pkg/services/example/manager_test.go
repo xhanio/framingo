@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -85,4 +86,12 @@ func TestHelloWorldWithoutMeter(t *testing.T) {
 	ctx := context.WithValue(context.Background(), api.ContextKeyCredential, &entity.Credential{UserName: "tester"})
 	_, err := m.HelloWorld(ctx, "hi")
 	require.NoError(t, err)
+}
+
+func TestHelloWorldWithoutActor(t *testing.T) {
+	m := newManager(platform.New(nil, nil, nil, fakeMB{}), fakeRepo{})
+	require.NoError(t, m.Init(context.Background()))
+
+	_, err := m.HelloWorld(context.Background(), "hi")
+	assert.True(t, errors.Is(err, errors.Unauthorized), "a ctx with no credential: got %v", err)
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/xhanio/errors"
-	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
@@ -19,217 +18,65 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/repo"
 )
 
-var (
-	createOpts = entity.RoleCreateOptions{
-		Name:        "test",
-		Description: "Test Role",
-	}
+var createOpts = entity.RoleCreateOptions{Name: "test", Description: "Test Role"}
 
-	testRoleID     = int32(4)
-	notExistRoleID = int32(10)
-)
+// the three seeded roles take IDs 1-3
+const testRoleID = int32(4)
 
-func setup() (*manager, model.DatabaseDebugger, error) {
-	m, db, _, err := setupWithUsers()
-	return m, db, err
-}
-
-func setupWithUsers() (*manager, model.DatabaseDebugger, repo.User, error) {
+// setup returns an initialized service and the same repository as repo.User,
+// for writes the role service cannot make - a user holding a role.
+func setup(t *testing.T) (*manager, repo.User) {
+	t.Helper()
 	db, err := testutil.SetupDB()
-	if err != nil {
-		return nil, nil, nil, errors.Wrap(err)
-	}
-	if err := db.ORM().AutoMigrate(
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Cleanup(true)) })
+	require.NoError(t, db.ORM().AutoMigrate(
 		&orm.Organization{},
 		&orm.Role{},
 		&orm.RolePermission{},
 		&orm.Contact{},
 		&orm.User{},
 		&orm.Certificate{},
-	); err != nil {
-		return nil, nil, nil, errors.Wrap(err)
-	}
+	))
 	p := platform.New(db, nil, nil, nil)
 	r := repository.New(p)
 	m := newManager(p, r)
-	if err := m.Init(context.Background()); err != nil {
-		return nil, nil, nil, errors.Wrap(err)
-	}
-	return m, db, r, nil
+	require.NoError(t, m.Init(context.Background()))
+	return m, r
 }
 
-func TestCreateList(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if roles, err := m.List(context.Background()); err != nil {
-		t.Fatalf("Error from List Role: %s", err.Error())
-	} else if len(roles) != 3 {
-		t.Errorf("Expected number of roles: got = %v; expected %v", len(roles), 3)
-	}
-
-	if err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create role: %v", err.Error())
-	}
-	if roles, err := m.List(context.Background()); err != nil {
-		t.Fatalf("Error from List roles: %v", err.Error())
-	} else if len(roles) != 4 {
-		t.Errorf("Expected number of roles: got = %v; expected %v", len(roles), 4)
-	} else {
-		createdRole := roles[3]
-		if role, err := m.repository.GetRole(context.Background(), createdRole.ID); err != nil {
-			t.Fatalf("Failed to get the role: %v", err.Error())
-		} else if role.Name != createOpts.Name {
-			t.Fatalf("Expected role name: got = %v; expected %v", role.Name, createOpts.Name)
-		}
-	}
+func isA(category errors.Category) func(error) bool {
+	return func(err error) bool { return err != nil && errors.Is(err, category) }
 }
 
-func TestCreateGet(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create role: %v", err.Error())
-	}
-	if role, err := m.repository.GetRoleByName(context.Background(), createOpts.Name); err != nil {
-		t.Fatalf("Error from List roles: %v", err.Error())
-	} else if role.Name != createOpts.Name {
-		t.Errorf("Expected role name: got = %v; expected %v", role.Name, createOpts.Name)
-	}
-}
-
-func TestDelete(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if err := m.Delete(context.Background(), notExistRoleID); err != nil {
-		if be, ok := err.(errors.Error); ok {
-			if !errors.Is(be, errors.NotFound) {
-				t.Fatalf("Expected error from Delete User: %v, but got: %v", errors.NotFound, err.Error())
-			}
-		}
-	} else {
-		t.Fatalf("Expecting error from deleting not existing user")
-	}
-}
-
-func TestAddPermission(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create role: %v", err.Error())
-	}
-
-	if err := m.repository.AddRolePermission(context.Background(), testRoleID, rbac.PermissionUserRead); err != nil {
-		t.Fatalf("Error from Create role: %v", err.Error())
-	}
-
-	if perms, err := m.GetPermissions(context.Background(), testRoleID); err != nil {
-		t.Fatalf("Error from List roles: %v", err.Error())
-	} else if len(perms) != 1 {
-		t.Errorf("Expected number of roles: got = %v; expected %v", len(perms), 1)
-	} else if perms[0] != rbac.PermissionUserRead {
-		t.Errorf("Expected permission: got = %v; expected %v", perms[0], rbac.PermissionUserRead)
-	}
-}
-
-func TestGetPermissionByName(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create role: %v", err.Error())
-	}
-
-	if err := m.repository.AddRolePermission(context.Background(), testRoleID, rbac.PermissionUserRead); err != nil {
-		t.Fatalf("Error from Create role: %v", err.Error())
-	}
-
-	if perms, err := m.GetPermissionsByName(context.Background(), createOpts.Name); err != nil {
-		t.Fatalf("Error from List roles: %v", err.Error())
-	} else if len(perms) != 1 {
-		t.Errorf("Expected number of roles: got = %v; expected %v", len(perms), 1)
-	} else if perms[0] != rbac.PermissionUserRead {
-		t.Errorf("Expected permission: got = %v; expected %v", perms[0], rbac.PermissionUserRead)
-	}
-}
-
-func TestSetPermission(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create role: %v", err.Error())
-	}
-
-	opts := entity.PermissionSetOptions{
-		Permissions: rbac.PermissionsAll,
-	}
-
-	if err := m.SetPermissions(context.Background(), int32(testRoleID), opts); err != nil {
-		t.Fatalf("Error from setting permissions for role: %v", err.Error())
-	}
-	if perms, err := m.GetPermissions(context.Background(), testRoleID); err != nil {
-		t.Fatalf("Error from List roles: %v", err.Error())
-	} else if len(perms) != len(rbac.PermissionsAll) {
-		t.Errorf("Expected number of roles: got = %v; expected %v", len(perms), 1)
-	}
-
-}
-
-func TestDeleteRefusesARoleInUse(t *testing.T) {
-	m, db, users, err := setupWithUsers()
-	require.NoError(t, err)
-	defer func() { require.NoError(t, db.Cleanup(true)) }()
+func TestCreate(t *testing.T) {
+	m, _ := setup(t)
 	ctx := context.Background()
 
+	roles, err := m.List(ctx)
+	require.NoError(t, err)
+	assert.Len(t, roles, 3, "the seeded roles")
+
 	require.NoError(t, m.Create(ctx, createOpts))
+	roles, err = m.List(ctx)
+	require.NoError(t, err)
+	assert.Len(t, roles, 4)
 	role, err := m.GetByName(ctx, createOpts.Name)
 	require.NoError(t, err)
+	assert.Equal(t, testRoleID, role.ID)
+	assert.Equal(t, createOpts.Description, role.Description)
+}
+
+// A role users still hold is not deleted - nor are its permissions - and one
+// nobody holds is.
+func TestDelete(t *testing.T) {
+	m, users := setup(t)
+	ctx := context.Background()
+
+	assert.True(t, isA(errors.NotFound)(m.Delete(ctx, 10)), "an unknown role")
+
+	require.NoError(t, m.Create(ctx, createOpts))
+	require.NoError(t, m.SetPermissions(ctx, testRoleID, entity.PermissionSetOptions{Permissions: []string{rbac.PermissionUserRead}}))
 	holder, err := users.CreateUser(ctx, repo.UserCreateOptions{
 		OrganizationID: preset.DefaultOrganizationID,
 		Username:       "holder",
@@ -238,34 +85,57 @@ func TestDeleteRefusesARoleInUse(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = m.Delete(ctx, role.ID)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, errors.BadRequest), "got %v", err)
-	_, err = m.GetByName(ctx, createOpts.Name)
-	assert.NoError(t, err, "a refused delete leaves the role")
+	err = m.Delete(ctx, testRoleID)
+	assert.True(t, isA(errors.BadRequest)(err), "a role in use: got %v", err)
+	perms, err := m.GetPermissions(ctx, testRoleID)
+	require.NoError(t, err)
+	assert.Len(t, perms, 1, "a refused delete leaves the role's permissions")
 
 	require.NoError(t, users.DeleteUsers(ctx, []int32{holder.ID}))
-	require.NoError(t, m.Delete(ctx, role.ID))
+	require.NoError(t, m.Delete(ctx, testRoleID))
 	_, err = m.GetByName(ctx, createOpts.Name)
-	assert.True(t, errors.Is(err, errors.NotFound), "got %v", err)
+	assert.True(t, isA(errors.NotFound)(err), "the deleted role: got %v", err)
 }
 
-func TestAdminRoleAndPermissionNamesAreGuarded(t *testing.T) {
-	m, db, err := setup()
-	require.NoError(t, err)
-	defer func() { require.NoError(t, db.Cleanup(true)) }()
+func TestPermissions(t *testing.T) {
+	m, _ := setup(t)
 	ctx := context.Background()
-	isBadRequest := func(err error) bool { return err != nil && errors.Is(err, errors.BadRequest) }
+	require.NoError(t, m.Create(ctx, createOpts))
+
+	require.NoError(t, m.repository.AddRolePermission(ctx, testRoleID, rbac.PermissionUserRead))
+	perms, err := m.GetPermissions(ctx, testRoleID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{rbac.PermissionUserRead}, perms)
+	perms, err = m.GetPermissionsByName(ctx, createOpts.Name)
+	require.NoError(t, err)
+	assert.Equal(t, []string{rbac.PermissionUserRead}, perms)
+
+	require.NoError(t, m.SetPermissions(ctx, testRoleID, entity.PermissionSetOptions{Permissions: rbac.PermissionsAll}))
+	perms, err = m.GetPermissions(ctx, testRoleID)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, rbac.PermissionsAll, perms, "SetPermissions replaces the list")
+
+	perms, err = m.GetPermissions(ctx, rbac.RoleAdminID)
+	require.NoError(t, err)
+	assert.Equal(t, rbac.PermissionsAll, perms, "the admin role holds every permission implicitly")
+}
+
+// The admin role is fixed whoever calls, and a permission name must be one
+// rbac defines.
+func TestAdminRoleAndPermissionNamesAreGuarded(t *testing.T) {
+	m, _ := setup(t)
+	ctx := context.Background()
+	badRequest := isA(errors.BadRequest)
 
 	name := "renamed"
-	err = m.Update(ctx, rbac.RoleAdminID, entity.RoleUpdateOptions{Name: &name})
-	assert.True(t, isBadRequest(err), "updating the admin role: got %v", err)
+	err := m.Update(ctx, rbac.RoleAdminID, entity.RoleUpdateOptions{Name: &name})
+	assert.True(t, badRequest(err), "updating the admin role: got %v", err)
 	err = m.Delete(ctx, rbac.RoleAdminID)
-	assert.True(t, isBadRequest(err), "deleting the admin role: got %v", err)
+	assert.True(t, badRequest(err), "deleting the admin role: got %v", err)
 	err = m.SetPermissions(ctx, rbac.RoleAdminID, entity.PermissionSetOptions{})
-	assert.True(t, isBadRequest(err), "setting the admin role's permissions: got %v", err)
+	assert.True(t, badRequest(err), "setting the admin role's permissions: got %v", err)
 	err = m.SetPermissionsForRoleName(ctx, rbac.RoleAdmin, entity.PermissionSetOptions{})
-	assert.True(t, isBadRequest(err), "setting the admin role's permissions by name: got %v", err)
+	assert.True(t, badRequest(err), "setting the admin role's permissions by name: got %v", err)
 	admin, err := m.GetByName(ctx, rbac.RoleAdmin)
 	require.NoError(t, err)
 	assert.Equal(t, rbac.RoleAdmin, admin.Name, "a refused update leaves the admin role as it was")
@@ -273,9 +143,9 @@ func TestAdminRoleAndPermissionNamesAreGuarded(t *testing.T) {
 	require.NoError(t, m.Create(ctx, createOpts))
 	bogus := entity.PermissionSetOptions{Permissions: []string{rbac.PermissionUserRead, "no_such_permission"}}
 	err = m.SetPermissions(ctx, testRoleID, bogus)
-	assert.True(t, isBadRequest(err), "setting an undefined permission: got %v", err)
+	assert.True(t, badRequest(err), "setting an undefined permission: got %v", err)
 	err = m.SetPermissionsForRoleName(ctx, createOpts.Name, bogus)
-	assert.True(t, isBadRequest(err), "setting an undefined permission by name: got %v", err)
+	assert.True(t, badRequest(err), "setting an undefined permission by name: got %v", err)
 	perms, err := m.GetPermissions(ctx, testRoleID)
 	require.NoError(t, err)
 	assert.Empty(t, perms, "a refused permission list is not partly stored")

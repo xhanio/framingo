@@ -100,3 +100,12 @@ func TestPreflightThroughServer(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 	assert.Equal(t, "*", resp.Header.Get(echo.HeaderAccessControlAllowOrigin))
 }
+
+func TestNameDefaultsToPackage(t *testing.T) {
+	assert.Equal(t, "cors", New().Name())
+}
+
+func TestWithNameOverrides(t *testing.T) {
+	assert.Equal(t, "cors2", New(WithName("cors2")).Name())
+	assert.Equal(t, "cors", New(WithName("")).Name())
+}

@@ -79,3 +79,12 @@ func TestAuthzSwitchedOff(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, mw)
 }
+
+func TestNameDefaultsToPackage(t *testing.T) {
+	assert.Equal(t, "authz", New(nil).Name())
+}
+
+func TestWithNameOverrides(t *testing.T) {
+	assert.Equal(t, "authz2", New(nil, WithName("authz2")).Name())
+	assert.Equal(t, "authz", New(nil, WithName("")).Name())
+}

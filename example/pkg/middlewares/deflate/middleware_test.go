@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
 )
 
 func deflateOf(t *testing.T, n int) []byte {
@@ -102,4 +103,13 @@ func TestUncompressedRequestUntouched(t *testing.T) {
 	if string(got) != "plain" {
 		t.Fatalf("got %q, want %q", got, "plain")
 	}
+}
+
+func TestNameDefaultsToPackage(t *testing.T) {
+	assert.Equal(t, "deflate", New().Name())
+}
+
+func TestWithNameOverrides(t *testing.T) {
+	assert.Equal(t, "deflate2", New(WithName("deflate2")).Name())
+	assert.Equal(t, "deflate", New(WithName("")).Name())
 }

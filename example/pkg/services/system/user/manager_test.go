@@ -20,42 +20,24 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/rbac"
 )
 
+// the seeded admin is user 1, so these get IDs 2 and 3 when created in order
 var (
-	testUser    = "johndoe"
-	testUserIDs = []int32{2, 3}
-
 	createOpts = entity.UserCreateOptions{
 		OrganizationID: preset.DefaultOrganizationID,
-		Username:       testUser,
+		Username:       "johndoe",
 		FirstName:      "John",
 		LastName:       "Doe",
 		Email:          "johndoe@example.com",
 		Password:       "password123",
-		Role:           "admin",
+		Role:           rbac.RoleAdmin,
 	}
-
 	createOpts2 = entity.UserCreateOptions{
 		Username:  "AAAA",
 		FirstName: "A",
 		LastName:  "AAA",
 		Email:     "AAAA@example.com",
 		Password:  "password123",
-		Role:      "admin",
-	}
-
-	listOpts          = entity.UserListOptions{SortBy: "username"}
-	listFalseSortOpts = entity.UserListOptions{SortBy: "notexist"}
-
-	updateOpts = entity.UserUpdateOptions{
-		Username:  stringPointer("Bobdoe"),
-		Role:      stringPointer("user"),
-		FirstName: stringPointer("Bob"),
-		Email:     stringPointer(""),
-		LastName:  stringPointer("Doe"),
-	}
-
-	resetPasswordOpts = entity.UserResetPasswordOptions{
-		Password: "password_new",
+		Role:      rbac.RoleAdmin,
 	}
 )
 
@@ -63,333 +45,227 @@ func stringPointer(s string) *string {
 	return &s
 }
 
-func setup() (*manager, model.DatabaseDebugger, error) {
-	return setupWithBus(nil)
+func isA(category errors.Category) func(error) bool {
+	return func(err error) bool { return err != nil && errors.Is(err, category) }
 }
 
-func setupWithBus(mb model.MessageBus) (*manager, model.DatabaseDebugger, error) {
+// setup returns an initialized service publishing on mb, which may be nil.
+func setup(t *testing.T, mb model.MessageBus) *manager {
+	t.Helper()
 	db, err := testutil.SetupDB()
-	if err != nil {
-		return nil, nil, errors.Wrap(err)
-	}
-	if err := db.ORM().AutoMigrate(
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Cleanup(true)) })
+	require.NoError(t, db.ORM().AutoMigrate(
 		&orm.Organization{},
 		&orm.Role{},
 		&orm.RolePermission{},
 		&orm.Contact{},
 		&orm.User{},
 		&orm.Certificate{},
-	); err != nil {
-		return nil, nil, errors.Wrap(err)
-	}
+	))
 	r := repository.New(platform.New(db, nil, nil, nil))
 	m := newManager(platform.New(db, nil, nil, mb), r)
-	if err := m.Init(context.Background()); err != nil {
-		return nil, nil, errors.Wrap(err)
-	}
-	return m, db, nil
+	require.NoError(t, m.Init(context.Background()))
+	return m
 }
 
-func TestCreateList(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
+func TestCreateAndList(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
+	byName := entity.UserListOptions{SortBy: "username"}
 
-	if users, err := m.List(context.Background(), listOpts); err != nil {
-		t.Fatalf("Error from List User: %v", err.Error())
-	} else if len(users) != 1 {
-		t.Errorf("Expected number of users: got = %v; expected %v", len(users), 1)
-	}
+	users, err := m.List(ctx, byName)
+	require.NoError(t, err)
+	assert.Len(t, users, 1, "the seeded admin")
 
-	res, err := m.Create(context.Background(), createOpts)
-	if err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
-	if res.ID != 2 {
-		t.Fatalf("ID is not correct: got = %v; expected %v", res.ID, 2)
-	}
+	user, err := m.Create(ctx, createOpts)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), user.ID)
+	_, err = m.Create(ctx, createOpts2)
+	require.NoError(t, err)
 
-	if users, err := m.List(context.Background(), listOpts); err != nil {
-		t.Fatalf("Error from List User: %v", err.Error())
-	} else if len(users) != 2 {
-		t.Errorf("Expected number of users: got = %v; expected %v", len(users), 2)
-	}
-
-	if _, err := m.Create(context.Background(), createOpts2); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
-
-	if users, err := m.List(context.Background(), listOpts); err != nil {
-		t.Fatalf("Error from List User: %v", err.Error())
-	} else if len(users) != 3 {
-		t.Errorf("Expected number of users: got = %v; expected %v", len(users), 3)
-	} else {
-		firstUser := users[0]
-		if firstUser.Username != createOpts2.Username {
-			t.Errorf("Failed to sort users by username: got = %v; expected %v", firstUser.Username, createOpts2.Username)
-		}
-	}
+	users, err = m.List(ctx, byName)
+	require.NoError(t, err)
+	require.Len(t, users, 3)
+	assert.Equal(t, createOpts2.Username, users[0].Username, "sorted by username")
 }
 
-func TestListWithSort(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestListSortColumns(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
 
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if _, err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
+	for _, col := range []string{"notexist", "password"} {
+		_, err := m.List(ctx, entity.UserListOptions{SortBy: col})
+		assert.True(t, isA(errors.InvalidArgument)(err), "sort_by=%q: got %v", col, err)
 	}
-	if _, err := m.Create(context.Background(), createOpts2); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
-
-	if _, err := m.List(context.Background(), listFalseSortOpts); err != nil {
-		if be, ok := err.(errors.Error); ok {
-			if !errors.Is(be, errors.InvalidArgument) {
-				t.Fatalf("Expected %v for a non-sortable column, but got: %v", errors.InvalidArgument, err.Error())
-			}
-		}
-	} else {
-		t.Fatalf("Expecting error from ordering by a non-sortable column")
-	}
-
-	if _, err := m.List(context.Background(), entity.UserListOptions{SortBy: "password"}); err == nil {
-		t.Fatal("ordering by password should be rejected")
-	}
-
 	for _, col := range []string{"", "id", "username", "role"} {
-		if _, err := m.List(context.Background(), entity.UserListOptions{SortBy: col}); err != nil {
-			t.Fatalf("sort_by=%q should be accepted, got %v", col, err)
-		}
-	}
-}
-
-func TestDelete(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if err := m.Delete(context.Background(), testUserIDs); err != nil {
-		if be, ok := err.(errors.Error); ok {
-			if !errors.Is(be, errors.NotFound) {
-				t.Fatalf("Expected error from Delete User: %v, but got: %v", errors.NotFound, err.Error())
-			}
-		}
-	} else {
-		t.Fatalf("Expecting error from deleting not existing user")
-	}
-
-	if _, err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
-	if _, err := m.Create(context.Background(), createOpts2); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
-
-	if err := m.Delete(context.Background(), testUserIDs); err != nil {
-		t.Fatalf("Error from Delete User: %v", err.Error())
-	}
-
-	if users, err := m.List(context.Background(), listOpts); err != nil {
-		t.Fatalf("Error from List User: %v", err.Error())
-	} else if len(users) != 1 {
-		t.Errorf("Expected number of users: got = %v; expected = %v", len(users), 1)
+		_, err := m.List(ctx, entity.UserListOptions{SortBy: col})
+		assert.NoError(t, err, "sort_by=%q", col)
 	}
 }
 
 func TestGet(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := setup(t, nil)
+	ctx := context.Background()
+	_, err := m.Create(ctx, createOpts)
+	require.NoError(t, err)
 
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
+	user, err := m.Get(ctx, 2)
+	require.NoError(t, err)
+	assert.Equal(t, createOpts.Username, user.Username)
 
-	if _, err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
-
-	if user, err := m.Get(context.Background(), 2); err != nil {
-		t.Fatalf("Error from List User: %v", err.Error())
-	} else if user.Username != createOpts.Username {
-		t.Errorf("Expected get target user with username = %v; got %v", user.Username, createOpts.Username)
-	}
-
-	if _, err := m.Get(context.Background(), 5); err != nil {
-		if be, ok := err.(errors.Error); ok {
-			if !errors.Is(be, errors.NotFound) {
-				t.Fatalf("Expected error from listing user by ID: %v, but got: %v", errors.DBFailed, err.Error())
-			}
-		}
-	} else {
-		t.Fatalf("Expecting error from listing not existing user")
-	}
+	_, err = m.Get(ctx, 5)
+	assert.True(t, isA(errors.NotFound)(err), "an unknown user: got %v", err)
 }
 
 func TestUpdate(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := setup(t, nil)
+	ctx := context.Background()
+	_, err := m.Create(ctx, createOpts)
+	require.NoError(t, err)
 
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
-
-	if _, err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
+	opts := entity.UserUpdateOptions{
+		Username:  stringPointer("Bobdoe"),
+		Role:      stringPointer(rbac.RoleUser),
+		FirstName: stringPointer("Bob"),
+		LastName:  stringPointer("Doe"),
+		Email:     stringPointer(""),
 	}
+	_, err = m.Update(ctx, 2, opts)
+	require.NoError(t, err)
+	user, err := m.Get(ctx, 2)
+	require.NoError(t, err)
+	assert.Equal(t, "Bobdoe", user.Username)
+	assert.Equal(t, rbac.RoleUser, user.Role)
+	assert.Equal(t, "Bob", user.FirstName)
+	assert.Equal(t, "Doe", user.LastName)
+	assert.Empty(t, user.Email, "a field set to empty is written")
 
-	if _, err := m.Update(context.Background(), 2, updateOpts); err != nil {
-		t.Fatalf("Error from Update User: %v", err.Error())
-	}
-
-	if users, err := m.List(context.Background(), listOpts); err != nil {
-		t.Fatalf("Error from List User: %v", err.Error())
-	} else if len(users) != 2 {
-		t.Errorf("Expected number of users: got = %v; expected %v", len(users), 2)
-	} else {
-		var updated *entity.User
-		for _, u := range users {
-			if u.ID == 2 {
-				updated = u
-				break
-			}
-		}
-		if updated == nil {
-			t.Errorf("Updated user with ID 2 not found in list")
-		} else if updated.Username != *updateOpts.Username {
-			t.Errorf("Updated username does not match expected values.")
-		}
-	}
-
-	if user, err := m.Get(context.Background(), 2); err != nil {
-		t.Fatalf("Error from List user contact info: %v", err.Error())
-	} else {
-		if user.FirstName != *updateOpts.FirstName {
-			t.Errorf("Updated Firstname does not match expected values.")
-		}
-		if user.LastName != *updateOpts.LastName {
-			t.Errorf("Updated LastName does not match expected values.")
-		}
-		if user.Email != *updateOpts.Email {
-			t.Errorf("Updated Email does not match expected values.")
-		}
-	}
-
-	if _, err := m.Update(context.Background(), 5, updateOpts); err != nil {
-		if be, ok := err.(errors.Error); ok {
-			if !errors.Is(be, errors.NotFound) {
-				t.Fatalf("Expected error from updating user by ID: %v, but got: %v", errors.DBFailed, err.Error())
-			}
-		}
-	} else {
-		t.Fatalf("Expecting error from updating not existing user")
-	}
+	_, err = m.Update(ctx, 5, opts)
+	assert.True(t, isA(errors.NotFound)(err), "an unknown user: got %v", err)
 }
 
-func TestResetPassword(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestUpdateKeepsPasswordChangeFlag(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
+	opts := createOpts
+	opts.ChangePassword = true
+	_, err := m.Create(ctx, opts) // ID 2
+	require.NoError(t, err)
 
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
+	user, err := m.Update(ctx, 2, entity.UserUpdateOptions{FirstName: stringPointer("Johnny")})
+	require.NoError(t, err)
+	assert.True(t, user.ChangePassword, "an edit that does not name the flag keeps it")
 
-	if _, err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
-
-	if err := m.ResetPassword(context.Background(), 2, resetPasswordOpts); err != nil {
-		t.Fatalf("Error from ResetPassword User: %v", err.Error())
-	}
-
-	if err := m.ResetPassword(context.Background(), 5, resetPasswordOpts); err != nil {
-		if be, ok := err.(errors.Error); ok {
-			if !errors.Is(be, errors.NotFound) {
-				t.Fatalf("Expected error from updating user by ID: %v, but got: %v", errors.DBFailed, err.Error())
-			}
-		}
-	} else {
-		t.Fatalf("Expecting error from resetting password for not existing user")
-	}
+	off := false
+	user, err = m.Update(ctx, 2, entity.UserUpdateOptions{Expired: &off})
+	require.NoError(t, err)
+	assert.False(t, user.ChangePassword, "an edit that names the flag sets it")
 }
 
-func TestValidate(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestDelete(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
 
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
+	err := m.Delete(ctx, []int32{2, 3})
+	assert.True(t, isA(errors.NotFound)(err), "unknown users: got %v", err)
 
-	if _, err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
+	_, err = m.Create(ctx, createOpts)
+	require.NoError(t, err)
+	_, err = m.Create(ctx, createOpts2)
+	require.NoError(t, err)
+	require.NoError(t, m.Delete(ctx, []int32{2, 3}))
+	users, err := m.List(ctx, entity.UserListOptions{})
+	require.NoError(t, err)
+	assert.Len(t, users, 1, "only the seeded admin is left")
+}
 
-	if res, err := m.Validate(context.Background(), "default", testUser); err != nil {
-		t.Fatalf("Error from validating User: %v", err.Error())
-	} else if !res {
-		t.Errorf("Failed to validate existing user")
-	}
+// The built-in admin is neither deleted nor demoted, whoever calls; its
+// contact details stay editable.
+func TestInvariants(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
+	forbidden := isA(errors.Forbidden)
 
+	err := m.Delete(ctx, []int32{preset.AdminUserID})
+	assert.True(t, forbidden(err), "delete the built-in admin: %v", err)
+	_, err = m.Update(ctx, preset.AdminUserID, entity.UserUpdateOptions{Role: stringPointer(rbac.RoleUser)})
+	assert.True(t, forbidden(err), "demote the built-in admin: %v", err)
+	_, err = m.Update(ctx, preset.AdminUserID, entity.UserUpdateOptions{FirstName: stringPointer("Ada")})
+	assert.NoError(t, err, "the built-in admin's contact details are editable")
+}
+
+func TestCreateDefaultsToDefaultOrganization(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
+	opts := createOpts2
+	require.Zero(t, opts.OrganizationID)
+
+	user, err := m.Create(ctx, opts)
+	require.NoError(t, err)
+	assert.Equal(t, preset.DefaultOrganizationID, user.OrganizationID)
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, opts.Username, opts.Password)
+	assert.NoError(t, err, "the new user can log in")
 }
 
 func TestAuthenticate(t *testing.T) {
-	m, db, err := setup()
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := setup(t, nil)
+	ctx := context.Background()
+	_, err := m.Create(ctx, createOpts)
+	require.NoError(t, err)
 
-	defer func() {
-		if err := db.Cleanup(true); err != nil {
-			t.Fatalf("Error cleaning up dbManager: %v", err)
-		}
-	}()
+	credential, err := m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, createOpts.Password)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), credential.UserID)
+	assert.Equal(t, createOpts.Username, credential.UserName)
 
-	if _, err := m.Create(context.Background(), createOpts); err != nil {
-		t.Fatalf("Error from Create User: %v", err.Error())
-	}
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, "wrong")
+	assert.True(t, isA(errors.Unauthorized)(err), "a wrong password: got %v", err)
+	_, err = m.Authenticate(ctx, "no-such-org", createOpts.Username, createOpts.Password)
+	assert.True(t, isA(errors.Unauthorized)(err), "an unknown organization: got %v", err)
+}
 
-	if credential, err := m.Authenticate(context.Background(), "default", testUser, "password123"); err != nil {
-		t.Fatalf("Error from authenticating User: %v", err.Error())
-	} else if credential.UserID != 2 || credential.UserName != testUser {
-		t.Errorf("Failed to authenticate existing user")
-	}
+func TestValidate(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
+	_, err := m.Create(ctx, createOpts)
+	require.NoError(t, err)
+
+	ok, err := m.Validate(ctx, preset.DefaultOrganizationName, createOpts.Username)
+	require.NoError(t, err)
+	assert.True(t, ok)
+}
+
+func TestResetPassword(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
+	_, err := m.Create(ctx, createOpts)
+	require.NoError(t, err)
+
+	require.NoError(t, m.ResetPassword(ctx, 2, entity.UserResetPasswordOptions{Password: "password_new"}))
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, "password_new")
+	assert.NoError(t, err, "the reset password logs in, no old one needed")
+
+	err = m.ResetPassword(ctx, 5, entity.UserResetPasswordOptions{Password: "password_new"})
+	assert.True(t, isA(errors.NotFound)(err), "an unknown user: got %v", err)
+}
+
+func TestChangePassword(t *testing.T) {
+	m := setup(t, nil)
+	ctx := context.Background()
+	_, err := m.Create(ctx, createOpts) // ID 2
+	require.NoError(t, err)
+
+	err = m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{OldPassword: "wrong", Password: "password_new"})
+	assert.True(t, isA(errors.Forbidden)(err), "a wrong old password: got %v", err)
+	err = m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{Password: "password_new"})
+	assert.True(t, isA(errors.InvalidArgument)(err), "no old password: got %v", err)
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, createOpts.Password)
+	require.NoError(t, err, "a refused change leaves the password")
+
+	require.NoError(t, m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{OldPassword: createOpts.Password, Password: "password_new"}))
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, "password_new")
+	require.NoError(t, err, "the changed password logs in")
 }
 
 // unimplemented methods hit the embedded nil interface and panic
@@ -406,12 +282,9 @@ func (r *recorder) SendMessage(_ context.Context, _ common.Named, msg common.Mes
 
 func TestAccountChangesArePublished(t *testing.T) {
 	sent := &recorder{}
-	m, db, err := setupWithBus(sent)
-	require.NoError(t, err)
-	defer func() { require.NoError(t, db.Cleanup(true)) }()
+	m := setup(t, sent)
 	ctx := context.Background()
-
-	_, err = m.Create(ctx, createOpts) // ID 2
+	_, err := m.Create(ctx, createOpts) // ID 2
 	require.NoError(t, err)
 
 	_, err = m.Update(ctx, 2, entity.UserUpdateOptions{FirstName: stringPointer("Jon")})
@@ -428,69 +301,7 @@ func TestAccountChangesArePublished(t *testing.T) {
 		message.LocalUsersDeleted{UserIDs: []int32{2}},
 	}, sent.msgs)
 
-	// A refused change publishes nothing.
 	sent.msgs = nil
 	require.Error(t, m.Delete(ctx, []int32{preset.AdminUserID}))
-	assert.Empty(t, sent.msgs)
-}
-
-func TestCreateDefaultsToDefaultOrganization(t *testing.T) {
-	m, db, err := setup()
-	require.NoError(t, err)
-	defer func() { require.NoError(t, db.Cleanup(true)) }()
-	ctx := context.Background()
-
-	opts := createOpts2 // no OrganizationID
-	require.Zero(t, opts.OrganizationID)
-	user, err := m.Create(ctx, opts)
-	require.NoError(t, err)
-	assert.Equal(t, preset.DefaultOrganizationID, user.OrganizationID)
-
-	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, opts.Username, opts.Password)
-	assert.NoError(t, err, "the new user can log in")
-}
-
-func TestUpdateKeepsPasswordChangeFlag(t *testing.T) {
-	m, db, err := setup()
-	require.NoError(t, err)
-	defer func() { require.NoError(t, db.Cleanup(true)) }()
-	ctx := context.Background()
-
-	opts := createOpts
-	opts.ChangePassword = true
-	_, err = m.Create(ctx, opts) // ID 2
-	require.NoError(t, err)
-
-	user, err := m.Update(ctx, 2, entity.UserUpdateOptions{FirstName: stringPointer("Johnny")})
-	require.NoError(t, err)
-	assert.True(t, user.ChangePassword, "an edit that does not name the flag must keep it")
-
-	off := false
-	user, err = m.Update(ctx, 2, entity.UserUpdateOptions{Expired: &off})
-	require.NoError(t, err)
-	assert.False(t, user.ChangePassword, "an edit that names the flag sets it")
-}
-
-func TestChangePassword(t *testing.T) {
-	m, db, err := setup()
-	require.NoError(t, err)
-	defer func() { require.NoError(t, db.Cleanup(true)) }()
-	ctx := context.Background()
-	_, err = m.Create(ctx, createOpts) // ID 2
-	require.NoError(t, err)
-
-	err = m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{OldPassword: "wrong", Password: "password_new"})
-	assert.True(t, errors.Is(err, errors.Forbidden), "a wrong old password: got %v", err)
-	err = m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{Password: "password_new"})
-	assert.True(t, errors.Is(err, errors.InvalidArgument), "no old password: got %v", err)
-	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, createOpts.Password)
-	require.NoError(t, err, "a refused change leaves the password")
-
-	require.NoError(t, m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{OldPassword: createOpts.Password, Password: "password_new"}))
-	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, "password_new")
-	require.NoError(t, err, "the changed password logs in")
-
-	require.NoError(t, m.ResetPassword(ctx, 2, entity.UserResetPasswordOptions{Password: "password_reset"}))
-	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, "password_reset")
-	require.NoError(t, err, "a reset needs no old password")
+	assert.Empty(t, sent.msgs, "a refused change publishes nothing")
 }
