@@ -43,3 +43,14 @@ func TestInitReadsUnderNameRoot(t *testing.T) {
 	assert.Equal(t, "analytics", mgr.Name())
 	assert.Equal(t, 3, mgr.DB().Stats().MaxOpenConnections)
 }
+
+// every Init reconnects - a supervisor restart re-inits - and the pool it
+// replaces is closed rather than leaked
+func TestReInitClosesThePreviousPool(t *testing.T) {
+	mgr := newSQLiteMgr(t, nil)
+	first := mgr.DB()
+	require.NoError(t, mgr.Init(context.Background()))
+	assert.NotSame(t, first, mgr.DB(), "Init reconnects")
+	assert.ErrorContains(t, first.Ping(), "database is closed")
+	assert.NoError(t, mgr.DB().Ping())
+}

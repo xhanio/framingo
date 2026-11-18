@@ -45,18 +45,28 @@ func (m *manager) connect(dbtype string, s Source) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	for _, p := range m.plugins {
-		if err := ormDB.Use(p); err != nil {
-			return errors.Wrapf(err, "failed to install gorm plugin %s", p.Name())
-		}
-	}
 	sqlDB, err := ormDB.DB()
 	if err != nil {
 		return errors.Wrap(err)
 	}
+	for _, p := range m.plugins {
+		if err := ormDB.Use(p); err != nil {
+			//nolint:errcheck // the install error is the one to report
+			sqlDB.Close()
+			return errors.Wrapf(err, "failed to install gorm plugin %s", p.Name())
+		}
+	}
+	// every Init reconnects: the previous pool is closed once replaced, after
+	// the queries already running on it finish
+	previous := m.sqlDB
 	m.dialector = dialector
 	m.ormDB = ormDB
 	m.sqlDB = sqlDB
+	if previous != nil {
+		if err := previous.Close(); err != nil {
+			m.log.Warnf("failed to close the previous connection pool: %v", err)
+		}
+	}
 	return nil
 }
 
