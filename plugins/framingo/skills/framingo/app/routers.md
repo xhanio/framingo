@@ -93,6 +93,13 @@ logger ([layout.md](layout.md)); the health router's is framingo's own
 `model.Supervisor`. And the DTO and the `model.*` method are
 designed before the handler is written — [types.md](types.md).
 
+**A handler may orchestrate services, never decide for one.** When a
+request needs two services' answers — the user router checks with the role
+service that a role exists before the user service assigns it — the handler
+holds both `model.*` interfaces and puts them in order; the rules about a
+service's own data stay in that service. Why, and where the line falls:
+[design/who-decides.md#a-check-that-spans-two-services-is-the-handlers](../design/who-decides.md#a-check-that-spans-two-services-is-the-handlers).
+
 Same for WebSocket handlers: `func(c api.Context, conn *websocket.Conn) error`.
 
 If a project has no `pkg/types/api/api.go` yet (i.e. it wasn't forked from `example/`), copy [`_templates/api-context.go`](../_templates/api-context.go) into it before writing handlers, and adjust the `entity` import to the project's own.

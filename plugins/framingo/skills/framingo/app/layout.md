@@ -37,6 +37,11 @@ repo level       services/repository/                 owns: types/orm  types/rep
   grep the example: only `services/repository/` does. Peer services compose
   through `model.*` interfaces (auth is built on `model.UserAuthN`), never
   by reaching past each other into the repo.
+- **A check that spans two services is the router's.** A service keeps the
+  rules about its own data; when a use case needs another service's answer
+  — that the role a user is given exists — the handler asks it before
+  calling the first. See
+  [design/who-decides.md#a-check-that-spans-two-services-is-the-handlers](../design/who-decides.md#a-check-that-spans-two-services-is-the-handlers).
 - **The repo level owns persistence.** `services/repository/` implements
   every `types/repo/` interface over `types/orm/` models; SQL, GORM, and
   transactions live there and nowhere else, and rows become `entity`

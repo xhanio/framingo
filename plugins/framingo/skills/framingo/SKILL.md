@@ -64,6 +64,12 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [app/components-cmd.md](app/components-cmd.md) | Cobra CLI wiring: thin `main`s, the daemon subcommand, the operator CLI over the SDK |
 | [app/components-client.md](app/components-client.md) | The app SDK component: typed operations, credential/session handling over the HTTP client |
 
+**Why it is shaped this way — `design/`**
+
+| File | Covers |
+|---|---|
+| [design/README.md](design/README.md) | Why things are shaped as they are — the design decisions the project met, by area, each with its reason and its cost |
+
 ## Starting a New Backend
 
 Two routes. **Check first whether the framingo repo is on this machine** (`example/` present, or the module in the Go module cache) — that decides which one you can actually run.
