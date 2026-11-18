@@ -1,4 +1,4 @@
-package stdout_test
+package stdout
 
 import (
 	"context"

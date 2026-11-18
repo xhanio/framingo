@@ -1,4 +1,4 @@
-package otlpgrpc_test
+package otlpgrpc
 
 import (
 	"context"

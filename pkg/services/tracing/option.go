@@ -47,8 +47,8 @@ func WithEnabled(enabled bool) Option {
 	}
 }
 
-// WithExporter does not enable tracing; tracing.exporter and tracing.config
-// override it when set.
+// WithExporter does not enable tracing. Init replaces it with tracing.exporter
+// and tracing.config, so a key the config leaves out clears it.
 func WithExporter(name string, config map[string]any) Option {
 	return func(m *manager) {
 		m.exporterName = name

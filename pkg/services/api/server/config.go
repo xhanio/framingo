@@ -35,7 +35,7 @@ func newHandlerKey(g *handlerGroupConfig, h *handlerConfig) handlerKey {
 
 // handlerGroupConfig is one router.yaml document; it never leaves this package.
 type handlerGroupConfig struct {
-	Server      string              `json:"server"` // default: http
+	Server      string              `json:"server"` // required: a name given to Add
 	Prefix      string              `json:"prefix"` // default: /
 	Handlers    []*handlerConfig    `json:"handlers"`
 	Middlewares []*middlewareConfig `json:"middlewares"`

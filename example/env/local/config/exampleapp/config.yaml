@@ -3,7 +3,7 @@
 # Logging configuration
 log:
   level: -1  # -1=Debug, 0=Info, 1=Warn, 2=Error
-  file: /home/xhan/log/framingo-example/app.log
+  file: ./log/framingo-example/app.log
   rotation:
     max_size: 100      # MB
     max_backups: 3

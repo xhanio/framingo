@@ -1,4 +1,4 @@
-package otlphttp_test
+package otlphttp
 
 import (
 	"context"

@@ -50,8 +50,8 @@ func WithEnabled(enabled bool) Option {
 	}
 }
 
-// WithExporter does not enable the service; metrics.exporter and
-// metrics.config override it when set.
+// WithExporter does not enable the service. Init replaces it with
+// metrics.exporter and metrics.config, so a key the config leaves out clears it.
 func WithExporter(name string, config map[string]any) Option {
 	return func(m *manager) {
 		m.exporterName = name

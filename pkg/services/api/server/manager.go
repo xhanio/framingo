@@ -250,7 +250,7 @@ func (m *manager) RegisterRouters(routers ...api.Router) error {
 
 			s, ok := m.servers[serverName]
 			if !ok {
-				return errors.Newf("server %s not found, please call AddServer first", serverName)
+				return errors.Newf("server %s not found, please call Add first", serverName)
 			}
 
 			for _, h := range g.Handlers {

@@ -109,7 +109,7 @@ func (m *manager) initServices() error {
 		tracing.WithLogger(m.log),
 	)
 
-	// the meter's provider is stable, so services create instruments once at construction
+	// the meter's provider is stable, so a service creates its instruments once, at its first Init
 	m.metrics = metrics.New(
 		metrics.WithEnabled(m.config.GetBool("metrics.enabled")),
 		metrics.WithExporter(
