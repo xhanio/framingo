@@ -48,8 +48,20 @@ type echoValidator struct {
 	v *validator.Validate
 }
 
+// Validate checks i against its validate tags. A failed tag is the caller's
+// input, so it is an InvalidArgument - a 400 - not the 500 an uncategorized
+// error becomes; handing it something that is not a struct is the handler's
+// bug, and stays one.
 func (ev *echoValidator) Validate(i any) error {
-	return ev.v.Struct(i)
+	err := ev.v.Struct(i)
+	if err == nil {
+		return nil
+	}
+	var invalid *validator.InvalidValidationError
+	if errors.As(err, &invalid) {
+		return errors.Wrap(err)
+	}
+	return errors.InvalidArgument.Wrap(err)
 }
 
 func (m *manager) newEcho() *echo.Echo {
