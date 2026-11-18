@@ -46,8 +46,10 @@ find . -type f \( -name '*.yaml' -o -name '*.go' -o -name 'Dockerfile' \) \
 mv build/binary/exampleapp build/binary/myappd
 mv build/binary/examplecli build/binary/myapp
 mv build/image/exampleapp build/image/myappd
+mv env/default/config/exampleapp env/default/config/myappd
 mv env/local/config/exampleapp env/local/config/myappd
-mv env/local/kubernetes/exampleapp env/local/kubernetes/myappd
+mv env/prod/config/exampleapp env/prod/config/myappd
+mv env/prod/kubernetes/exampleapp env/prod/kubernetes/myappd
 
 # 5. Verify it still builds
 go mod tidy
@@ -105,11 +107,12 @@ Two things GoPro does for you that you then have to handle yourself:
 1. **`dist/` is generated and gitignored**, so a fresh clone does not have it —
    yet `config.yaml` sets `db.migration.dir` to `./dist/local/config/exampleapp/migrations`.
    Either run `gopro generate config -e local` once, or repoint that key at
-   `./env/local/config/exampleapp/migrations`.
+   `./env/default/config/exampleapp/migrations`, where the migrations every
+   environment shares live.
 2. **Build metadata is injected at link time** into `pkg/types/info` (product
    name, version, git commit). Without it `info.ProductName` is empty, which
-   leaves the env-var prefix blank — so overrides are `DB_HOST` rather than
-   `FRAMINGO_EXAMPLE_DB_HOST` — and gives generated CA certificates an empty
+   leaves the env-var prefix blank — so overrides are `DB_SOURCE_HOST` rather than
+   `FRAMINGO_EXAMPLE_DB_SOURCE_HOST` — and gives generated CA certificates an empty
    common name. Harmless for local poking; supply your own `-ldflags` if you
    care.
 
@@ -127,9 +130,11 @@ cd example/                          # or your forked project root
 gopro build binary -e local          # CGO-enabled local dev build
 ```
 
-`local` is the only environment `project.yaml` defines. To build for another,
-add it under `env:` there — pointing `config_src`/`config_tgt` at a matching
-`env/<name>/` tree — before passing `-e <name>`.
+`project.yaml` defines two environments: `local`, which runs under docker
+compose, and `prod`, which deploys to Kubernetes. `env/default/` holds what
+both share — the migrations — and each environment's tree renders on top of
+it. To add another, give it an entry under `env:` pointing
+`config_src`/`config_tgt` at a matching `env/<name>/` tree.
 
 Produces:
 - `bin/exampleapp` — daemon (HTTP API server)
@@ -140,10 +145,14 @@ Produces:
 ```bash
 ./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 
-# Or with env vars layered on top
-export $(cat env/local/config/exampleapp/secret.env | xargs)
+# Or with env vars layered on top - each overrides the config key it names
+set -a; . env/local/config/exampleapp/secret.env; set +a
 ./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
+
+Any config key can be overridden this way: the product prefix, then the key
+with its dots as underscores — `db.source.host` is
+`FRAMINGO_EXAMPLE_DB_SOURCE_HOST` — and the environment wins over the file.
 
 ### Exercise the HelloWorld Endpoint
 
@@ -152,7 +161,7 @@ The endpoint is protected by `authnuser`, so log in first:
 ```bash
 ./bin/examplecli -e http://localhost:8080 login           # default: admin / admin
 ./bin/examplecli -e http://localhost:8080 helloworld "Hello"
-# {"id":1,"message":"hello world!!! Hello","created_at":"...","updated_at":"..."}
+# {"id":1,"message":"Hello","created_at":"...","updated_at":"..."}   (the greeting only goes to the server log)
 ./bin/examplecli -e http://localhost:8080 logout
 ```
 
@@ -185,30 +194,52 @@ Global flags: `-e/--endpoint`, `-v/--verbose`.
 3. Re-run `./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml`
 4. Exercise via `./bin/examplecli` or `curl`
 
-## Docker
+## Local: Docker Compose
+
+The whole stack — postgres and the daemon — in containers:
 
 ```bash
 gopro build binary -e local
-gopro build image
+gopro generate config -e local          # the image copies the rendered config and migrations
+gopro build image -e local -f '^exampleapp$'
+gopro generate docker-compose -e local  # → dist/local/docker-compose.yaml
 
-docker run -p 8080:8080 -p 6060:6060 \
-  -v $(pwd)/env/local/config/exampleapp/config.yaml:/etc/framingo-example/config.yaml \
-  localhost:5000/exampleapp:latest
+cd dist/local && docker compose up -d
+curl http://localhost:8081/readyz       # {"ready":true}
 ```
 
-## Kubernetes
+The compose file takes the database credentials from
+`env/local/config/exampleapp/secret.env` at generate time, for postgres and
+the daemon alike. Locally the single daemon migrates on start, from the
+migrations the image carries (`FRAMINGO_EXAMPLE_DB_MIGRATION_DIR=/app/migrations`).
+
+## Prod: Kubernetes
 
 ```bash
-gopro generate kubernetes -e local      # → dist/local/kubernetes/exampleapp/
-kubectl apply -f dist/local/kubernetes/exampleapp/
+cp env/prod/config/exampleapp/secret.env.example env/prod/config/exampleapp/secret.env
+# fill in the database credentials - secret.env is gitignored; in CI, provision it from
+# your secrets manager and discard it after generating
 
-kubectl get pods -l app=framingo-example
-kubectl logs  -l app=framingo-example -f
-kubectl port-forward svc/framingo-example 8080:8080
+gopro build binary -e prod
+gopro generate config -e prod
+gopro build image -e prod -f '^exampleapp$' --push   # set image_prefix for prod in project.yaml first
+gopro generate kubernetes -e prod       # → dist/prod/kubernetes/exampleapp/
 
-./bin/examplecli -e http://localhost:8080 login
-./bin/examplecli -e http://localhost:8080 helloworld "Hello"
+cd dist/prod/kubernetes/exampleapp
+kubectl apply -f configmap.yaml         # ConfigMap and Secret, which the Job reads too
+kubectl apply -f migrate-job.yaml
+kubectl wait --for=condition=complete --timeout=5m job -l component=migrate
+kubectl apply -f service.yaml -f deployment.yaml
 ```
+
+In prod the daemon never touches the schema: its config sets no
+`db.migration`, and the migrate Job — `exampleapp migrate`, run with the
+release's own image and the migrations it carries — applies it once per
+release, so replicas never race each other over it. The Job's name carries the
+version (`framingo-example-migrate-v0-8-1`), since a Job cannot be changed
+once created. The probes hit `/healthz` and `/readyz` on the health listener
+(`api.health`, port 8081); `db_host` in the ConfigMap points at a Service
+named `postgres` — point it at your database.
 
 ## Configuration Generation
 
@@ -248,20 +279,25 @@ example/
 │   │   ├── exampleapp/main.go                # daemon entry point
 │   │   └── examplecli/main.go                # CLI entry point
 │   └── image/exampleapp/Dockerfile           # docker image definition
-├── env/local/
-│   ├── config/exampleapp/
-│   │   ├── config.yaml                       # log, db, api, pprof
-│   │   ├── secret.env                        # env-var overrides for DB creds, etc.
-│   │   └── migrations/                       # 000_create_system_tables, 001_create_helloworld_table
-│   ├── docker-compose/docker-compose.yaml
-│   └── kubernetes/exampleapp/                # deployment, service, configmap
+├── env/
+│   ├── default/config/exampleapp/migrations/ # shared by every env: 000_create_system_tables, 001_create_helloworld_table
+│   ├── local/                                # docker compose
+│   │   ├── config/exampleapp/
+│   │   │   ├── config.yaml                   # log, db, api, pprof
+│   │   │   └── secret.env                    # development credentials, env-var overrides
+│   │   └── docker-compose/template.docker-compose.yaml   # postgres + the daemon
+│   └── prod/                                 # Kubernetes
+│       ├── config/exampleapp/
+│       │   ├── config.yaml                   # the production config the ConfigMap carries
+│       │   └── secret.env.example            # copy to secret.env (gitignored) and fill in
+│       └── kubernetes/exampleapp/            # deployment, service, configmap + secret, migrate job
 ├── dist/                                     # generated by `gopro generate`
 ├── bin/                                      # built binaries
 └── pkg/
     ├── components/
     │   ├── client/example/                   # HTTP client SDK used by examplecli
     │   ├── cmd/
-    │   │   ├── app/                          # daemon Cobra commands (root, daemon, version)
+    │   │   ├── app/                          # daemon Cobra commands (root, daemon, migrate, version)
     │   │   └── cli/                          # CLI commands (auth, cert, example, messagebus)
     │   └── server/example/                   # supervisor wiring (model, manager, lifecycle, config, service, api, signal)
     ├── services/
@@ -306,7 +342,7 @@ psql -h localhost -U framingo -d framingo_example          # verify DB reachable
 1. Fork the folder per the [template steps above](#forking-the-example-into-your-own-repo)
 2. Strip out system services you don't need (see [What to Keep, What to Rip Out](#what-to-keep-what-to-rip-out))
 3. Replace `pkg/services/example/` and `pkg/routers/example/` with your own domain
-4. Add migrations under `env/local/config/<your-app>/migrations/`
-5. Adjust `env/local/kubernetes/<your-app>/` for your cluster
+4. Add migrations under `env/default/config/<your-app>/migrations/`
+5. Adjust `env/prod/kubernetes/<your-app>/` for your cluster, and set prod's `image_prefix` in `project.yaml`
 
 For framework concepts and core packages, see the [main README](../README.md).

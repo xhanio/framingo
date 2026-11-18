@@ -1,0 +1,58 @@
+# Framingo Example Application Configuration (Production, on Kubernetes)
+#
+# Rendered by `gopro generate config -e prod` and carried into the pod by the
+# ConfigMap (FromConfigFile). Anything here can be overridden from the
+# environment - FRAMINGO_EXAMPLE_ plus the key with dots as underscores - and
+# the deployment does exactly that for db.source.*.
+
+log:
+  level: 0  # -1=Debug, 0=Info, 1=Warn, 2=Error
+  file: /var/log/framingo-example/app.log
+  rotation:
+    max_size: 100
+    max_backups: 3
+    max_age: 7
+
+db:
+  type: postgres
+  # source: host, port and dbname from the ConfigMap, user and password from
+  # the Secret, all through the environment the deployment sets
+  # migration: left out on purpose - the migrate Job applies the schema, and
+  # gives it the directory through FRAMINGO_EXAMPLE_DB_MIGRATION_DIR; a
+  # daemon that migrated on start would race its own replicas
+  connection:
+    max_open: 10
+    max_idle: 5
+    max_lifetime: 1h
+    exec_timeout: 30s
+
+tracing:
+  enabled: false  # flip on with a collector in reach
+  exporter: otlpgrpc
+  sample_ratio: 0.1
+  # config:
+  #   endpoint: otel-collector:4317
+  #   insecure: true
+
+metrics:
+  enabled: false  # flip on with a collector in reach
+  exporter: otlpgrpc
+  interval: 60s
+  # config:
+  #   endpoint: otel-collector:4317
+  #   insecure: true
+
+api:
+  health: # the probe listener the deployment's probes hit
+    host: 0.0.0.0
+    port: 8081
+    prefix: /
+  http:
+    host: 0.0.0.0
+    port: 8080
+    prefix: /api/v1
+    middlewares:
+      trace: true  # emits spans only while tracing.enabled is on
+      throttle:
+        rps: 100.0
+        burst_size: 200

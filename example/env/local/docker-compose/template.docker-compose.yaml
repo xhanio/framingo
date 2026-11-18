@@ -1,0 +1,65 @@
+# Local stack: postgres and the daemon. Rendered by
+#   gopro generate docker-compose -e local     # into dist/local
+# after `gopro build binary -e local`, `gopro generate config -e local` and
+# `gopro build image -e local`, then run from dist/local: docker compose up
+#
+# Credentials come from env/local/config/exampleapp/secret.env at generate
+# time, so postgres and the daemon cannot disagree about them.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: framingo-postgres
+    environment:
+      POSTGRES_DB: "[[ FromSecretEnv "exampleapp" (GetEnvKey "DB_SOURCE_DBNAME") ]]"
+      POSTGRES_USER: "[[ FromSecretEnv "exampleapp" (GetEnvKey "DB_SOURCE_USER") ]]"
+      POSTGRES_PASSWORD: "[[ FromSecretEnv "exampleapp" (GetEnvKey "DB_SOURCE_PASSWORD") ]]"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - framingo-network
+
+  exampleapp:
+    image: [[ GetImageName "exampleapp" ]]
+    container_name: framingo-exampleapp
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # The image carries the local config.yaml; these override what in it
+    # only makes sense on the host. Locally the single daemon migrates on
+    # start - there are no replicas to race.
+    environment:
+      [[ GetEnvKey "DB_SOURCE_HOST" ]]: postgres
+      [[ GetEnvKey "DB_SOURCE_PORT" ]]: "5432"
+      [[ GetEnvKey "DB_SOURCE_DBNAME" ]]: "[[ FromSecretEnv "exampleapp" (GetEnvKey "DB_SOURCE_DBNAME") ]]"
+      [[ GetEnvKey "DB_SOURCE_USER" ]]: "[[ FromSecretEnv "exampleapp" (GetEnvKey "DB_SOURCE_USER") ]]"
+      [[ GetEnvKey "DB_SOURCE_PASSWORD" ]]: "[[ FromSecretEnv "exampleapp" (GetEnvKey "DB_SOURCE_PASSWORD") ]]"
+      [[ GetEnvKey "DB_MIGRATION_DIR" ]]: /app/migrations
+      [[ GetEnvKey "LOG_FILE" ]]: /var/log/framingo-example/app.log
+    ports:
+      - "8080:8080" # api
+      - "8081:8081" # health: /healthz, /readyz
+    healthcheck:
+      # the image has no curl; bash's /dev/tcp checks the health listener is up
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081'"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - framingo-network
+
+networks:
+  framingo-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

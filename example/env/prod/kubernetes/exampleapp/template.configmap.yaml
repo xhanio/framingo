@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: framingo-example-config
+  labels:
+    app: framingo-example
+data:
+  # where the database is - a Service named postgres here; point it at yours
+  db_host: "postgres"
+  db_port: "5432"
+  db_name: "framingo_example"
+  # The rendered env/prod/config/exampleapp/config.yaml, verbatim - the one
+  # place the production config lives. Generate the config first:
+  #   gopro generate config -e prod && gopro generate kubernetes -e prod
+  config.yaml: |
+[[ FromConfigFile "exampleapp" "config.yaml" | indent 4 ]]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: framingo-example-secret
+  labels:
+    app: framingo-example
+type: Opaque
+# Read from env/prod/config/exampleapp/secret.env at generate time - that file
+# is gitignored and provisioned from a secrets manager (see secret.env.example).
+stringData:
+  db_user: "[[ FromSecretEnv "exampleapp" (GetEnvKey "DB_SOURCE_USER") ]]"
+  db_password: "[[ FromSecretEnv "exampleapp" (GetEnvKey "DB_SOURCE_PASSWORD") ]]"

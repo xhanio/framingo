@@ -25,7 +25,10 @@ Thumbs.db
 
 # Environment variables
 *.env
+# local's secret.env holds development values only and is committed;
+# prod's real one is not - secret.env.example documents it
 !secret.env
+env/prod/**/secret.env
 
 # Test coverage
 *.out

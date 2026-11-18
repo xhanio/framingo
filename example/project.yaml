@@ -1,5 +1,8 @@
 # GoPro Configuration for Framingo Example
 # Format: github.com/xhanio/gopro/pkg/types/config.go
+#
+# Two environments: local runs the stack under docker compose, prod deploys
+# to Kubernetes. env/default holds what both share - the migrations.
 
 product: framingo-example
 version: v0.8.1
@@ -15,10 +18,9 @@ default:
     - '-N -l'
   image_build_src: build/image
   image_prefix: localhost:5000
+  # the shared layer every env's config renders on top of: the migrations
   config_src: env/default/config
   config_tgt: dist/default/config
-  kubernetes_src: env/default/kubernetes
-  kubernetes_tgt: dist/default/kubernetes
 
   binaries:
     - exampleapp
@@ -28,9 +30,6 @@ default:
     - exampleapp
   configs:
     - exampleapp
-  kubernetes_templates:
-    - exampleapp
-    - postgres
 
 env:
   local:
@@ -42,6 +41,20 @@ env:
 
     docker_compose_src: env/local/docker-compose
     docker_compose_tgt: dist/local
+
+  prod:
+    # replaces default's debug build args (-N -l disables optimization)
+    binary_build_args:
+      - -v
+    # image_prefix: registry.example.com/framingo-example   # your registry
+
+    config_src: env/prod/config
+    config_tgt: dist/prod/config
+
+    kubernetes_src: env/prod/kubernetes
+    kubernetes_tgt: dist/prod/kubernetes
+    kubernetes_templates:
+      - exampleapp
 
 build:
   binaries:
@@ -61,6 +74,9 @@ generate:
       files:
         - config.yaml
         - migrations/*.sql
+
+  kubernetes:
+    - name: exampleapp # every file in its template dir; template.* are rendered
 
   docker_compose:
     files:

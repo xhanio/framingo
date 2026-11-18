@@ -1,0 +1,76 @@
+# Applies the database migrations once per release, with the release's own
+# image - the migrations are baked into it at /app/migrations. The daemon's
+# config sets no db.migration, so the replicas never touch the schema; this
+# Job is the only thing that does.
+#
+# Run it to completion before rolling out the release:
+#   kubectl apply -f migrate-job.yaml
+#   kubectl wait --for=condition=complete --timeout=5m job/framingo-example-migrate-[[ .Project.Version | replace "." "-" ]]
+#   kubectl apply -f configmap.yaml -f service.yaml -f deployment.yaml
+# (the ConfigMap and Secret must exist first: apply configmap.yaml before the
+# Job on a first install)
+#
+# A Job's spec cannot change once created, so its name carries the version:
+# each release gets a Job of its own, and a finished one is cleaned up a day on.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: framingo-example-migrate-[[ .Project.Version | replace "." "-" ]]
+  labels:
+    app: framingo-example
+    component: migrate
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: framingo-example
+        component: migrate
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: migrate
+        image: [[ GetImageName "exampleapp" ]]
+        args: ["migrate", "-c", "/etc/framingo-example/config.yaml"]
+        env:
+        # where the image carries the migrations; set here and only here
+        - name: [[ GetEnvKey "DB_MIGRATION_DIR" ]]
+          value: /app/migrations
+        - name: [[ GetEnvKey "DB_SOURCE_HOST" ]]
+          valueFrom:
+            configMapKeyRef:
+              name: framingo-example-config
+              key: db_host
+        - name: [[ GetEnvKey "DB_SOURCE_PORT" ]]
+          valueFrom:
+            configMapKeyRef:
+              name: framingo-example-config
+              key: db_port
+        - name: [[ GetEnvKey "DB_SOURCE_DBNAME" ]]
+          valueFrom:
+            configMapKeyRef:
+              name: framingo-example-config
+              key: db_name
+        - name: [[ GetEnvKey "DB_SOURCE_USER" ]]
+          valueFrom:
+            secretKeyRef:
+              name: framingo-example-secret
+              key: db_user
+        - name: [[ GetEnvKey "DB_SOURCE_PASSWORD" ]]
+          valueFrom:
+            secretKeyRef:
+              name: framingo-example-secret
+              key: db_password
+        volumeMounts:
+        - name: config
+          mountPath: /etc/framingo-example
+          readOnly: true
+        - name: logs
+          mountPath: /var/log/framingo-example
+      volumes:
+      - name: config
+        configMap:
+          name: framingo-example-config
+      - name: logs
+        emptyDir: {}

@@ -16,36 +16,43 @@ spec:
     spec:
       containers:
       - name: framingo-example
-        image: localhost:5000/exampleapp:latest
+        image: [[ GetImageName "exampleapp" ]]
         ports:
         - containerPort: 8080
           name: http
           protocol: TCP
+        - containerPort: 8081 # api.health: the probe listener
+          name: health
+          protocol: TCP
         - containerPort: 6060
           name: pprof
           protocol: TCP
+        # Each variable overrides the config.yaml key it names - the product
+        # prefix plus the key with dots as underscores - and beats the file.
+        # GetEnvKey adds the prefix the binary was built with, so the two
+        # cannot drift apart.
         env:
-        - name: FRAMINGO_DB_SOURCE_HOST
+        - name: [[ GetEnvKey "DB_SOURCE_HOST" ]]
           valueFrom:
             configMapKeyRef:
               name: framingo-example-config
               key: db_host
-        - name: FRAMINGO_DB_SOURCE_PORT
+        - name: [[ GetEnvKey "DB_SOURCE_PORT" ]]
           valueFrom:
             configMapKeyRef:
               name: framingo-example-config
               key: db_port
-        - name: FRAMINGO_DB_SOURCE_DBNAME
+        - name: [[ GetEnvKey "DB_SOURCE_DBNAME" ]]
           valueFrom:
             configMapKeyRef:
               name: framingo-example-config
               key: db_name
-        - name: FRAMINGO_DB_SOURCE_USER
+        - name: [[ GetEnvKey "DB_SOURCE_USER" ]]
           valueFrom:
             secretKeyRef:
               name: framingo-example-secret
               key: db_user
-        - name: FRAMINGO_DB_SOURCE_PASSWORD
+        - name: [[ GetEnvKey "DB_SOURCE_PASSWORD" ]]
           valueFrom:
             secretKeyRef:
               name: framingo-example-secret
@@ -56,16 +63,19 @@ spec:
           readOnly: true
         - name: logs
           mountPath: /var/log/framingo-example
+        # The supervisor's roll-ups, served on the health listener with no
+        # auth or throttling: /healthz fails only once in-process recovery is
+        # spent, /readyz while any service is not ready.
         livenessProbe:
           httpGet:
-            path: /api/v1/demo/example
-            port: 8080
+            path: /healthz
+            port: health
           initialDelaySeconds: 10
           periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /api/v1/demo/example
-            port: 8080
+            path: /readyz
+            port: health
           initialDelaySeconds: 5
           periodSeconds: 10
         resources:

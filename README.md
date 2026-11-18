@@ -62,16 +62,19 @@ Prerequisites:
 
 - **Go 1.25.8+** — the `example/` module's own `go` directive; the framework module itself needs 1.25 (the OpenTelemetry SDK's floor). On an older toolchain the default `GOTOOLCHAIN=auto` fetches it for you, but `GOTOOLCHAIN=local` will hard-fail
 - **A C toolchain**, since the example blank-imports the SQLite driver and therefore builds with `CGO_ENABLED=1`
-- **PostgreSQL on `localhost:5432`** with database `framingo_example` (user `framingo`, password `framingo_dev`) — that's what the local config points at. A compose file for it ships at [example/env/local/docker-compose/](example/env/local/docker-compose/)
+- **PostgreSQL on `localhost:5432`** with database `framingo_example` (user `framingo`, password `framingo_dev`) — that's what the local config points at. A compose template ships at [example/env/local/docker-compose/](example/env/local/docker-compose/); `gopro generate docker-compose -e local` renders it into `dist/local`, where `docker compose up postgres` starts just the database, or the whole stack, daemon included (see [example/QUICKSTART.md](example/QUICKSTART.md#local-docker-compose))
 
 ```bash
 go install github.com/xhanio/gopro@latest
 
 cd example
 gopro build binary -e local
+gopro generate config -e local     # renders dist/, which holds the migrations the config points at
 
 ./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
+
+`dist/` is generated and gitignored, so a fresh clone needs the `generate` step before the first run — without it the database migrations are not found.
 
 In another terminal:
 
@@ -537,6 +540,7 @@ package main
 import (
     "fmt"
     "os"
+    "strings"
 
     "github.com/spf13/cobra"
     "github.com/spf13/viper"
@@ -555,6 +559,8 @@ func main() {
             config := viper.New()
             config.SetConfigFile(configFile)
             config.SetEnvPrefix("MYAPP")
+            // api.http.port is looked up as MYAPP_API_HTTP_PORT
+            config.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
             config.AutomaticEnv()
             if err := config.ReadInConfig(); err != nil {
                 return fmt.Errorf("read config: %w", err)
@@ -644,7 +650,9 @@ example/
 │   ├── types/                       # api, entity, model, orm, message, rbac, preset, repo
 │   └── utils/infra/                 # process-wide facts set at startup
 ├── build/                           # GoPro build templates (binary, image)
-├── env/local/                       # local-env config, docker-compose, kubernetes
+├── env/default/                     # what every env shares: the migrations
+├── env/local/                       # local: config, docker compose (postgres + daemon)
+├── env/prod/                        # prod: config, Kubernetes manifests + migrate Job
 ├── dist/                            # generated outputs (configs, migrations, manifests)
 └── QUICKSTART.md
 ```
@@ -812,10 +820,10 @@ if err := s.db.FromContext(ctx).Create(u).Error; err != nil {
 
 Framingo uses an **instance-based** Viper (not the global singleton). The wiring layer owns it; services see it as `confutil.Config` through `context.Context` and read live config in `Init(ctx)` via `confutil.FromContext(ctx)`. Getters take format-string keys, so a service reads under its own root (`GetInt("%s.connection.max_open", nameutil.ConfigRoot(m.name))`) — the name given to `WithName`, or the package name by default.
 
-Priority (high → low):
+Priority (high → low), as viper resolves it:
 
-1. Command-line flags
-2. Environment variables
+1. Command-line flags — only if your wiring binds them (`BindPFlags`); neither the tutorial nor the example does
+2. Environment variables — with `AutomaticEnv`, an env prefix, and a `.` → `_` key replacer (see Step 4)
 3. YAML configuration file
 4. Default values
 
@@ -893,7 +901,7 @@ That assumes a pure-Go binary. If you blank-import the SQLite driver you need `C
 
 ### Kubernetes
 
-The example ships generated manifests at [example/env/local/kubernetes/exampleapp/](example/env/local/kubernetes/exampleapp/) (`deployment.yaml`, `service.yaml`, `configmap.yaml`). Use `gopro generate kubernetes` to regenerate for your environment.
+The example deploys its `prod` environment to Kubernetes from GoPro templates at [example/env/prod/kubernetes/exampleapp/](example/env/prod/kubernetes/exampleapp/) — `env/` is source, `dist/` is output; `gopro generate kubernetes -e prod` renders them, after `gopro generate config -e prod`, since the ConfigMap carries the rendered `env/prod/config/exampleapp/config.yaml` verbatim. The probes hit `/healthz` and `/readyz` on the health listener (`api.health`, port 8081); the pod's environment variables carry the binary's product prefix (`GetEnvKey`), and the database credentials come from a gitignored `secret.env` at generate time. Migrations run once per release in a Job (`exampleapp migrate`, the release's own image), never in the replicas — see [example/QUICKSTART.md](example/QUICKSTART.md#prod-kubernetes). Locally the example runs under docker compose instead.
 
 ### Systemd
 
