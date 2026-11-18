@@ -9,16 +9,14 @@ import (
 	"github.com/xhanio/framingo/example/pkg/types/entity"
 )
 
+// The handlers translate HTTP to the user service and back. authz has checked
+// the route's permission before any of them runs; a role given to a user is
+// checked against the role service here, which keeps the two services apart;
+// and the user service keeps the rules about an account itself.
+
 // --- /users: accounts by ID -----------------------------------------------
-//
-// authz has checked the route's local_user_manage_* permission before any of
-// these runs.
 
 func (r *router) Create(c api.Context) error {
-	credential, ok := c.Credential()
-	if !ok || credential == nil {
-		return errors.Unauthorized.New()
-	}
 	var body api.UserCreateRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
@@ -66,18 +64,9 @@ func (r *router) List(c api.Context) error {
 }
 
 func (r *router) Delete(c api.Context) error {
-	credential, ok := c.Credential()
-	if !ok || credential == nil {
-		return errors.Unauthorized.New()
-	}
 	userIDs := []int32{}
 	if err := c.BindQuery().MustInt32s("ids", &userIDs).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
-	}
-	for _, id := range userIDs {
-		if id == credential.UserID {
-			return errors.BadRequest.Newf("cannot delete your own user account")
-		}
 	}
 	if err := r.um.Delete(c, userIDs); err != nil {
 		return errors.Wrap(err)
@@ -98,10 +87,6 @@ func (r *router) Get(c api.Context) error {
 }
 
 func (r *router) Update(c api.Context) error {
-	credential, ok := c.Credential()
-	if !ok || credential == nil {
-		return errors.Unauthorized.New()
-	}
 	var userID int32
 	if err := c.BindPath().MustInt32("id", &userID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
@@ -119,14 +104,6 @@ func (r *router) Update(c api.Context) error {
 		Role:      body.Role,
 		Expired:   body.ChangePassword,
 	}
-	if credential.UserID == userID {
-		if opts.Username != nil && *opts.Username != credential.UserName {
-			return errors.Forbidden.Newf("cannot update your own username")
-		}
-		if opts.Role != nil && *opts.Role != credential.Role {
-			return errors.Forbidden.Newf("cannot update your own role")
-		}
-	}
 	if opts.Role != nil {
 		if *opts.Role == "" {
 			return errors.InvalidArgument.Newf("role cannot be empty")
@@ -135,8 +112,6 @@ func (r *router) Update(c api.Context) error {
 			return errors.Wrap(err)
 		}
 	}
-	// A rename or a role change ends the user's sessions: the user service
-	// publishes the change and the auth service acts on it.
 	user, err := r.um.Update(c, userID, opts)
 	if err != nil {
 		return errors.Wrap(err)
@@ -145,16 +120,10 @@ func (r *router) Update(c api.Context) error {
 }
 
 func (r *router) ResetPassword(c api.Context) error {
-	credential, ok := c.Credential()
-	if !ok || credential == nil {
-		return errors.Unauthorized.New()
-	}
 	var userID int32
 	if err := c.BindPath().MustInt32("id", &userID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
-	// one's own password takes the old one, even through /users/:id
-	isOwn := credential.UserID == userID
 	var body api.UserResetPasswordRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
@@ -163,10 +132,9 @@ func (r *router) ResetPassword(c api.Context) error {
 		return errors.Wrap(err)
 	}
 	opts := entity.UserResetPasswordOptions{
-		Password:    body.Password,
-		OldPassword: body.OldPassword,
+		Password: body.Password,
 	}
-	if err := r.um.ResetPassword(c, isOwn, userID, opts); err != nil {
+	if err := r.um.ResetPassword(c, userID, opts); err != nil {
 		return errors.Wrap(err)
 	}
 	return c.NoContent(http.StatusOK)
@@ -231,18 +199,18 @@ func (r *router) ChangePassword(c api.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	var body api.UserResetPasswordRequest
+	var body api.UserChangePasswordRequest
 	if err := c.Bind(&body); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
 	if err := c.Validate(&body); err != nil {
 		return errors.Wrap(err)
 	}
-	opts := entity.UserResetPasswordOptions{
-		Password:    body.Password,
+	opts := entity.UserChangePasswordOptions{
 		OldPassword: body.OldPassword,
+		Password:    body.Password,
 	}
-	if err := r.um.ResetPassword(c, true, userID, opts); err != nil {
+	if err := r.um.ChangePassword(c, userID, opts); err != nil {
 		return errors.Wrap(err)
 	}
 	return c.NoContent(http.StatusOK)

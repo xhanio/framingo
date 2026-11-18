@@ -19,6 +19,11 @@ import (
 // built once per package rather than per call.
 var validate = validator.New()
 
+// The service acts on accounts by ID and does not ask who is calling (see
+// model.User): which caller may use an operation is its route's permission,
+// and /user resolves the caller's own account in the router. What is
+// decided here are the rules about an account itself, which no caller lifts.
+
 // POST /users/local-users
 // Create new user for all given organizations.
 func (m *manager) Create(ctx context.Context, opts entity.UserCreateOptions) (*entity.User, error) {
@@ -130,32 +135,51 @@ func (m *manager) Update(ctx context.Context, userID int32, opts entity.UserUpda
 	return after, nil
 }
 
-// PUT /users/local-users/{userID}/reset-password
-// Admins can reset password for any other users without validating the password.
-func (m *manager) ResetPassword(ctx context.Context, isResetOwnPwd bool, userID int32, opts entity.UserResetPasswordOptions) error {
-	if isResetOwnPwd && opts.OldPassword == "" {
-		return errors.InvalidArgument.Newf("Invalid Arguments: Old password length should not be empty")
+// PUT /users/:id/passwords
+// Sets the password without the old one.
+func (m *manager) ResetPassword(ctx context.Context, userID int32, opts entity.UserResetPasswordOptions) error {
+	if opts.Password == "" {
+		return errors.InvalidArgument.Newf("Invalid Arguments: Password cannot be empty")
+	}
+	hash, err := hashPassword(opts.Password)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	if err := m.repository.SetUserPasswordHash(ctx, userID, hash); err != nil {
+		return errors.Wrapf(err, "failed to reset user password")
+	}
+	// the auth service ends the user's sessions on this
+	m.publish(ctx, message.LocalUserPasswordReset{UserID: userID})
+	return nil
+}
+
+// PUT /user/passwords
+// Changes the password given the old one, and refuses a wrong one.
+func (m *manager) ChangePassword(ctx context.Context, userID int32, opts entity.UserChangePasswordOptions) error {
+	if opts.Password == "" {
+		return errors.InvalidArgument.Newf("Invalid Arguments: Password cannot be empty")
+	}
+	if opts.OldPassword == "" {
+		return errors.InvalidArgument.Newf("Invalid Arguments: Old password cannot be empty")
 	}
 	// Hashed before the transaction opens, so bcrypt's time is not spent
 	// holding it.
-	newHash, err := hashPassword(opts.Password)
+	hash, err := hashPassword(opts.Password)
 	if err != nil {
 		return errors.Wrap(err)
 	}
 	err = m.repository.Transaction(ctx, func(tctx context.Context) error {
-		if isResetOwnPwd {
-			hash, err := m.repository.GetUserPasswordHash(tctx, userID)
-			if err != nil {
-				return errors.Wrap(err)
-			}
-			if !checkPassword(hash, opts.OldPassword) {
-				return errors.Forbidden.Newf("Access Denied: Old password validation failed.")
-			}
+		current, err := m.repository.GetUserPasswordHash(tctx, userID)
+		if err != nil {
+			return errors.Wrap(err)
 		}
-		return m.repository.SetUserPasswordHash(tctx, userID, newHash)
+		if !checkPassword(current, opts.OldPassword) {
+			return errors.Forbidden.Newf("Access Denied: Old password validation failed.")
+		}
+		return m.repository.SetUserPasswordHash(tctx, userID, hash)
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to reset user password")
+		return errors.Wrapf(err, "failed to change user password")
 	}
 	// the auth service ends the user's sessions on this
 	m.publish(ctx, message.LocalUserPasswordReset{UserID: userID})

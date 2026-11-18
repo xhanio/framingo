@@ -55,8 +55,7 @@ var (
 	}
 
 	resetPasswordOpts = entity.UserResetPasswordOptions{
-		Password:    "password_new",
-		OldPassword: "password123",
+		Password: "password_new",
 	}
 )
 
@@ -355,12 +354,12 @@ func TestResetPassword(t *testing.T) {
 		t.Fatalf("Error from Create User: %v", err.Error())
 	}
 
-	if err := m.ResetPassword(context.Background(), false, 2, resetPasswordOpts); err != nil {
+	if err := m.ResetPassword(context.Background(), 2, resetPasswordOpts); err != nil {
 		t.Fatalf("Error from ResetPassword User: %v", err.Error())
 	}
 
 	// Reset password for not existing user
-	if err := m.ResetPassword(context.Background(), false, 5, resetPasswordOpts); err != nil {
+	if err := m.ResetPassword(context.Background(), 5, resetPasswordOpts); err != nil {
 		if be, ok := err.(errors.Error); ok {
 			if !errors.Is(be, errors.NotFound) {
 				t.Fatalf("Expected error from updating user by ID: %v, but got: %v", errors.DBFailed, err.Error())
@@ -452,7 +451,7 @@ func TestAccountChangesArePublished(t *testing.T) {
 
 	_, err = m.Update(ctx, 2, entity.UserUpdateOptions{Role: stringPointer(rbac.RoleUser)})
 	require.NoError(t, err)
-	require.NoError(t, m.ResetPassword(ctx, false, 2, entity.UserResetPasswordOptions{Password: "password_new"}))
+	require.NoError(t, m.ResetPassword(ctx, 2, entity.UserResetPasswordOptions{Password: "password_new"}))
 	require.NoError(t, m.Delete(ctx, []int32{2}))
 	assert.Equal(t, []common.Message{
 		message.LocalUserIdentityChanged{UserID: 2},
@@ -506,4 +505,30 @@ func TestUpdateKeepsPasswordChangeFlag(t *testing.T) {
 	user, err = m.Update(ctx, 2, entity.UserUpdateOptions{Expired: &off})
 	require.NoError(t, err)
 	assert.False(t, user.ChangePassword, "an edit that names the flag sets it")
+}
+
+// ChangePassword takes the old password and refuses a wrong or missing one;
+// ResetPassword needs none.
+func TestChangePassword(t *testing.T) {
+	m, db, err := setup()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, db.Cleanup(true)) }()
+	ctx := context.Background()
+	_, err = m.Create(ctx, createOpts) // ID 2
+	require.NoError(t, err)
+
+	err = m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{OldPassword: "wrong", Password: "password_new"})
+	assert.True(t, errors.Is(err, errors.Forbidden), "a wrong old password: got %v", err)
+	err = m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{Password: "password_new"})
+	assert.True(t, errors.Is(err, errors.InvalidArgument), "no old password: got %v", err)
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, createOpts.Password)
+	require.NoError(t, err, "a refused change leaves the password")
+
+	require.NoError(t, m.ChangePassword(ctx, 2, entity.UserChangePasswordOptions{OldPassword: createOpts.Password, Password: "password_new"}))
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, "password_new")
+	require.NoError(t, err, "the changed password logs in")
+
+	require.NoError(t, m.ResetPassword(ctx, 2, entity.UserResetPasswordOptions{Password: "password_reset"}))
+	_, err = m.Authenticate(ctx, preset.DefaultOrganizationName, createOpts.Username, "password_reset")
+	require.NoError(t, err, "a reset needs no old password")
 }

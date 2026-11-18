@@ -37,7 +37,13 @@ type UserUpdateRequest struct {
 	ChangePassword *bool   `json:"change_password,omitempty"`
 }
 
-type UserResetPasswordRequest struct {
+// UserChangePasswordRequest is PUT /user/passwords.
+type UserChangePasswordRequest struct {
 	Password    string `json:"password" validate:"required"`
-	OldPassword string `json:"old_password"`
+	OldPassword string `json:"old_password" validate:"required"`
+}
+
+// UserResetPasswordRequest is PUT /users/:id/passwords.
+type UserResetPasswordRequest struct {
+	Password string `json:"password" validate:"required"`
 }

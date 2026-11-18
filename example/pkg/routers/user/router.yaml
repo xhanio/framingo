@@ -1,6 +1,8 @@
-# Two handler groups, one per document. /users manages accounts by ID; /user
-# is the caller's own account. Each route declares the permission authz
-# checks the caller's role against.
+# Two handler groups, one per document. /users manages accounts by ID;
+# /user is the caller's own account. In both, authz checks the caller's role
+# against the handler's permission - failing closed, so every handler
+# declares one or switches authz off - and the user service keeps the rules
+# no permission lifts.
 # authz sits at group level, after authnuser: a handler-level entry wraps
 # outermost, so attached per handler it would run before authnuser had set
 # the credential and refuse every request.

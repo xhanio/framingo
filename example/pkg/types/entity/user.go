@@ -53,7 +53,13 @@ type UserUpdateOptions struct {
 	Expired *bool `json:"expired,omitempty"`
 }
 
-type UserResetPasswordOptions struct {
-	Password    string
+// UserChangePasswordOptions changes a password given the old one.
+type UserChangePasswordOptions struct {
 	OldPassword string
+	Password    string
+}
+
+// UserResetPasswordOptions sets a password without the old one.
+type UserResetPasswordOptions struct {
+	Password string
 }
