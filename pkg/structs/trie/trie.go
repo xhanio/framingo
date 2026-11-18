@@ -122,7 +122,7 @@ func (t *Trie[T]) Keys() []string {
 		return []string{}
 	}
 
-	return t.PrefixSearch("")
+	return t.prefixSearch("")
 }
 
 // FuzzySearch returns, sorted, keys containing pre's runes in order (a subsequence match).
@@ -140,6 +140,11 @@ func (t *Trie[T]) PrefixSearch(pre string) []string {
 	t.RLock()
 	defer t.RUnlock()
 
+	return t.prefixSearch(pre)
+}
+
+// caller holds the read lock: RLock is not reentrant once a writer is waiting
+func (t *Trie[T]) prefixSearch(pre string) []string {
 	nd := findNode(t.root, []rune(pre))
 	if nd == nil {
 		return nil

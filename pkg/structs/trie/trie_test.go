@@ -3,10 +3,12 @@ package trie
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"sort"
 	"testing"
+	"time"
 )
 
 func createTrieAndAddFromFile[T any](path string, val T) *Trie[T] {
@@ -465,4 +467,38 @@ func BenchmarkAdd(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		trie.Add(words[i%len(words)], nil)
 	}
+}
+
+// Keys must take the read lock once: re-acquiring it inside deadlocks as soon
+// as a writer queues between the two acquisitions.
+func TestKeysDoesNotDeadlockWithAWriter(t *testing.T) {
+	tr := New[int]()
+	tr.Add("a", 1)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+				tr.Add(fmt.Sprintf("k%d", i%64), i)
+			}
+		}
+	}()
+	readers := make(chan struct{})
+	go func() {
+		defer close(readers)
+		for i := 0; i < 20000; i++ {
+			tr.Keys()
+		}
+	}()
+	select {
+	case <-readers:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Keys deadlocked against a concurrent Add")
+	}
+	close(stop)
+	<-done
 }
