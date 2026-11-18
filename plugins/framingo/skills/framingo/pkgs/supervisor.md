@@ -111,7 +111,7 @@ mgr.Init(ctx)
 mgr.Start(ctx)
 ```
 
-**A name stands for one instance.** The dependency graph, the stats and the by-name operations all key on `Name()`, so `Register` refuses another instance under a name already taken — registered before, or earlier in the same call, or brought in as a dependency — with a `Conflict`; it is a wiring mistake, so fail startup on it. Meeting the same instance again (registered directly and as someone's dependency) is fine. Two instances of one service type need distinct names: `WithName` on the framework services. Before this check the second instance was silently dropped from the graph and never initialized or started.
+**A name stands for one instance.** The dependency graph, the stats and the by-name operations all key on `Name()`, so `Register` refuses another instance under a name already taken — registered before, or earlier in the same call, or brought in as a dependency — with a `Conflict`; it is a wiring mistake, so fail startup on it. Meeting the same instance again (registered directly and as someone's dependency) is fine. Two instances of one service type need distinct names: `WithName` on the framework services. A nil service is skipped, and so is a nil entry in any `Dependencies()` list — registration, the init wait and the health sweep all pass over it — so a service can list an optional dependency the app did not wire. `Register` is wiring-time (it is not locked against the monitor): call it, then `TopoSort`, before `Init`.
 
 Full signature set:
 
@@ -122,7 +122,8 @@ type Manager interface {          // = model.Supervisor + health + Initializable
     Register(services ...common.Service) error    // Conflict on a name another instance holds
     TopoSort() error
     Services() []common.Service
-    Stats() ([]*entity.SupervisorStats, error)    // point-in-time copies, topological order: dependencies above dependents
+    Stats() ([]*entity.SupervisorStats, error)    // point-in-time copies, topological order: dependencies above dependents;
+                                                  // the error combines each stat's Healthcheck() (stopped, init or start error)
 
     Init(ctx context.Context) error
     Start(ctx context.Context) error
@@ -143,9 +144,10 @@ type Manager interface {          // = model.Supervisor + health + Initializable
 The manager:
 - Resolves dependencies via topological sort
 - Calls `Init(ctx)` on `Initializable` services in dependency order — optionally waiting for dependencies, see [Waiting at Init](#waiting-at-init) below
-- Calls `Start(ctx)` on `Daemon` services
+- Calls `Start` on `Daemon` services in the same order, each with `context.Background()`: the `ctx` given to the supervisor's own `Start` bounds only its monitor, never a service's run
+- Stops them in reverse topological order, dependents before their dependencies
 - Monitors `Liveness` and `Readiness` probes — see [Health Probes & Escalation](#health-probes--escalation) below
-- Monitoring and restarts tune via `WithMonitorPolicy(interval, maxRetries, restartDelay)` — sweep cadence (0, the default, disables monitoring), in-process restarts per service, pause before each restart; `WithStopPolicy(timeout)` bounds the whole shutdown and the stop of each restart, forcing what is left once it passes (0, the default, leaves the bound to the context `Stop` gets)
+- Monitoring and restarts tune via `WithMonitorPolicy(interval, maxRetries, restartDelay)` — sweep cadence (0, the default, disables monitoring), in-process restarts per service, pause before each restart; `WithStopPolicy(timeout)` bounds the whole shutdown and the stop of each restart, forcing what is left once it passes (0, the default, leaves the bound to the context `Stop` gets); `WithName` and `WithLogger` as on every service
 
 ## Waiting at Init
 
@@ -192,7 +194,7 @@ the tree keeps that split:
 
 | Implementer | `Alive(ctx)` fails when (restart is the remedy) | `Ready(ctx)` fails when (stop routing traffic) |
 |---|---|---|
-| `db.Manager` | no connection handle (`Init` reconnects) | database ping fails |
+| `db.Manager` | no connection handle (`Init` reconnects) | database ping fails (capped at 3s) |
 | api server manager | a listener stopped serving (`Init` rebuilds echo and re-binds) | same — not accepting = not ready |
 | the supervisor itself | recovery spent: a service failing liveness with restarts exhausted | any registered service not ready (the roll-up) |
 
@@ -246,6 +248,6 @@ Every getter takes a **format string**: with no args it is the key itself (`GetS
 
 `FromContext` **never returns nil**: with no config in the context it returns an empty `Config`, so every getter yields the zero value. No nil check is needed, but it also means a missing config looks like "all defaults" rather than an error — if a setting is mandatory, validate it in `Init`.
 
-Priority: CLI flags > env vars > YAML file > defaults.
+Precedence is viper's: an env var the wiring layer's `AutomaticEnv` finds beats the YAML file, which beats a default; framingo binds no CLI flags of its own ([config.md](config.md#environment-overrides)).
 
 For the full annotated YAML template (log, db, api, pprof, custom service keys) and dynamic-key notes, see [config.md](config.md).

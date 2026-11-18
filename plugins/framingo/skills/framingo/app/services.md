@@ -10,26 +10,33 @@ reference implementation — every snippet below is lifted from it.
 
 ```
 services/example/
-├── model.go     # Manager — the exported interface: model.Example + lifecycle
+├── model.go     # Manager (model.Example + lifecycle) and Repository (its repo.* contracts)
 ├── manager.go   # unexported struct, New()/newManager(), Name(), Dependencies()
 ├── option.go    # Option, applyOptions(), setDefaults(), WithLogger, With<Dynamic>…
 ├── business.go  # the business methods — model.Example's contract
-└── lifecycle.go # Init/Start/Stop/Info
+├── lifecycle.go # Init/Start/Stop/Info
+└── metric.go    # the instruments struct, built in Init (when the service records metrics)
 ```
+
+Further files name a concern of their own — the user service keeps its
+password policy in `password.go`, the certificate service its `describe.go`.
 
 The example groups its services in tiers, mirroring the server component's
 registration layers ([components-server.md](components-server.md)):
-`services/repository/` (data access — one service implementing every
-`types/repo/` interface plus `Transaction`, and the health probes:
-`Ready()` pings the database, `Alive()` guards only its own wiring —
-[supervisor.md](../pkgs/supervisor.md)), `services/system/` (auth, user,
-role, organization, certificate), and business services such as
+`services/repository/` (data access — one service, `repository.Repository`
+in its `model.go`, implementing every `types/repo/` interface plus
+`Transaction`, one file per domain and the `orm` → `entity` mapping in
+`convert.go`; it holds `platform.DB()` and has no lifecycle or probes of
+its own — see Health Probes below), `services/system/` (auth, user, role,
+organization, certificate — and `platform`, the bundle below, a plain
+struct the supervisor never sees), and business services such as
 `services/example/` on top. System and business services take their own
 `Repository` interface — declared in the service's `model.go`, composing
-the `repo.*` contracts it reads and writes through — never `db.Manager`:
-only the repository touches the database. One repository instance
-implements every contract, so the wiring hands it to each service once, as
-is; what a service may touch is named in its `model.go`.
+the `repo.*` contracts it reads and writes through — never the database
+(`model.Database`, `db.Manager`): only the repository touches it. One
+repository instance implements every contract, so the wiring hands it to
+each service once, as is; what a service may touch is named in its
+`model.go`.
 
 **Stay in your layer.** A service reaches down only to the repo level —
 the `repo.*` contracts its `Repository` names — and its currency is the
@@ -38,7 +45,21 @@ repository maps its `orm` rows before they leave it — so a service never
 meets a GORM model, and `api` DTOs never come down either — routers unpack
 those first. Peer services compose through `model.*` interfaces
 (auth is built on `model.UserAuthN`), never by reaching into each other's
-persistence. And before writing the five files, write the contracts —
+persistence.
+
+**The service decides; the repository stores.** The rules about a
+service's own data are the service's — hashing a password before
+`CreateUser` (it hands the repository a `repo.UserCreateOptions` carrying
+the hash), refusing to delete or demote the built-in admin, which
+organization a new user joins. The repository counts, filters by the
+options it is given, and stores what it is handed
+([design/data-access.md](../design/data-access.md)). A service does not
+ask who is calling either: authorization is the route's, and a check that
+spans two services is the router's
+([design/who-decides.md](../design/who-decides.md)) — so a test or a CLI
+drives it with nothing but IDs.
+
+And before writing these files, write the contracts —
 `model.X`, the entities, the `repo`/`orm` pair if it persists: the order is
 in [types.md](types.md).
 
@@ -72,7 +93,16 @@ type Manager interface {
 	common.Debuggable
 	common.Daemon
 }
+
+// Repository is the slice of the shared repository this service may touch.
+type Repository interface {
+	repo.HelloWorld
+}
 ```
+
+A service that reads more names more: the user service's is `repo.User`
+plus `repo.Organization`. Why the interface, not the instance, says what a
+service may touch: [design/narrow-contracts.md](../design/narrow-contracts.md).
 
 A router takes `model.Example`, never `example.Manager` — that keeps the
 implementation package-private and stops services importing each other. If a
@@ -137,8 +167,9 @@ full import path.
 
 The same name decides the config root: `nameutil.ConfigRoot(m.name)` is
 its package segment (`example`, and still `example` from the unshortened
-import path), or the whole name once `WithName` gives one — see
-`lifecycle.go` below.
+import path), or the whole name once a `WithName` option gives one — the
+framework services carry it; add it to an app service that may run as a
+second instance — see `lifecycle.go` below.
 
 The name is fixed at construction, in exactly this position: inside
 `setDefaults()`, which runs after `applyOptions(opts...)` and before
@@ -159,47 +190,48 @@ deliberate zero — `wsutil` seeds its ping interval that way, since
 
 ```go
 func (m *manager) Dependencies() []common.Service {
-	// mb is nil on a platform without a messagebus; the supervisor skips a
-	// nil dependency
 	return []common.Service{m.repository, m.mb}
 }
 ```
 
 Note the dependency shapes: the service asks for the **narrowest interface
 that serves it** — `common.RawMessageSender`, not `messagebus.Manager` —
-and lists it as is. An optional dependency the app did not wire is nil, and
-the supervisor skips a nil entry, so `Dependencies()` filters nothing out.
+and lists it as is. A platform handle is never nil; a genuinely optional
+dependency - auth's LDAP and API-token sources - is nil when the app wires
+none, and the supervisor skips a nil entry, so `Dependencies()` filters
+nothing out ([design/service-wiring.md](../design/service-wiring.md)).
+Skipping covers ordering only: the service checks an optional dependency
+where it calls it.
 
 **The platform bundle.** The app bundles its framework plumbing in
 `services/system/platform`; a service imports it and takes
 `platform.Platform` as is — no per-consumer slice of it. The bundle rides
-first in every app service's constructor (`New(platform, repo, ...)`),
+first in every app service's constructor — `New(platform, repo, ...)` for
+the system and business services, `New(platform, um, lm, tm, ...)` for
+auth, `New(platform, ...)` for the repository, which reads `DB()` from it —
 whether the service uses it yet or not: one constructor shape across the
 app, so a service that comes to need a handle changes neither its signature
-nor the wiring. One with no use for it names the parameter `_` in
-`newManager`. Framework services don't take it — they cannot know an app's
-bundle. Business dependencies like the repository stay explicit arguments —
-the bundle carries plumbing, not peers. The constructor plucks the handles it uses
+nor the wiring ([design/service-wiring.md](../design/service-wiring.md)).
+One with no use for it names the parameter `_` in `newManager`. Framework
+services don't take it — they cannot know an app's bundle. Business
+dependencies like the repository stay explicit arguments — the bundle
+carries plumbing, not peers. The constructor plucks the handles it uses
 into ordinary fields, so `Dependencies()` stays as precise as ever, and a
 test builds a bundle with `platform.New(nil, meter, nil, mb)`, leaving nil
-whatever the service never calls. Getters return `model.*` handles
-(`fmodel.Meter`, `fmodel.MessageBus`), never concrete managers — and only
-ever *live* ones: the bundle is combined per app from services the wiring
-layer actually constructed, so a handle the app lacks is removed from the
-bundle, never carried as nil — the meter excepted, see Service metrics
-below ([components-server.md](components-server.md)).
+only what the code under test never reaches. Getters return `model.*` handles
+(`fmodel.Meter`, `fmodel.MessageBus`), never concrete managers. The wiring
+combines the bundle from services it actually constructed: every handle is
+always there, so an app without pubsub drops the getter rather than passing
+nil ([components-server.md](components-server.md)).
 
 **Service metrics** (`metric.go`): instruments live in an `instruments` struct;
 the constructor stores the `model.Meter` handle and `Init` builds them,
 guarded by `if m.inst == nil` — the provider behind
 `model.Meter` keeps one identity for the life of the process, so cached
 instruments survive service restarts and never need a rebuild. The service
-name is the instrumentation scope. The meter is **optional**: an app that
-wires no metrics service hands the bundle a nil one, and `newInstruments`
-then mints noop instruments, so the business path records the same way
-and nothing lands — the presence check happens once, where instruments
-are built, never where the work is. Metrics are auxiliary; their absence
-is a configuration, not a wiring fault. Creation goes in `Init`, not the
+name is the instrumentation scope. The meter is always there, like every
+platform handle: an app that wants no metrics wires the metrics service
+disabled, and the instruments record into nothing. Creation goes in `Init`, not the
 constructor, because it can fail — and its failures (an invalid instrument
 name, a conflicting registration) are deterministic programmer errors, so
 failing `Init` surfaces them at first boot in dev/CI. That is different

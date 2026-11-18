@@ -68,7 +68,13 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 
 | File | Covers |
 |---|---|
-| [design/README.md](design/README.md) | Why things are shaped as they are — the design decisions the project met, by area, each with its reason and its cost |
+| [design/README.md](design/README.md) | Why things are shaped as they are — the index of design decisions, by area, each with its reason and its cost |
+| [design/who-decides.md](design/who-decides.md) | Route vs service vs handler: authz fails closed, the service does not ask who calls, cross-service checks in the handler, bad input is a 400 |
+| [design/narrow-contracts.md](design/narrow-contracts.md) | The smallest interface per dependency: a service's own `Repository`, `common.*` collaborators, message handlers as `Named` |
+| [design/data-access.md](design/data-access.md) | orm stays in the repository; `types/repo` contracts and repo-only inputs; the repository decides nothing |
+| [design/service-wiring.md](design/service-wiring.md) | Platform first, nil-tolerant `Dependencies`, one instance per name, the api server last by ordering |
+| [design/websockets.md](design/websockets.md) | `wsutil.Bridge`, `wsutil.Close`, the server closing its connections on stop |
+| [design/migrations.md](design/migrations.md) | Migrate on start locally, once per release in prod (`exampleapp migrate`), env-overridable config |
 
 ## Starting a New Backend
 
@@ -84,7 +90,7 @@ Get it, then follow its QUICKSTART:
 
 ```bash
 git clone https://github.com/xhanio/framingo
-# fork-and-rename recipe, "Keep vs. rip out" pruning table:
+# fork-and-rename recipe, "What to Keep, What to Rip Out" pruning table:
 #   framingo/example/QUICKSTART.md → "Use This Folder as Your Starting Template"
 ```
 
@@ -128,20 +134,21 @@ Either route, the reference map above is the per-concept guide for the work insi
 | Concern | Package | Interface / Key Type | Docs |
 |---|---|---|---|
 | Service orchestration | `pkg/services/supervisor` | `supervisor.Manager` | [pkgs/supervisor.md](pkgs/supervisor.md) |
-| Database | `pkg/services/db` (+ `db/drivers/`, `db/plugins/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1`; per-statement spans via `otelgorm.New(tracer, tracing.WithoutQueryVariables())` (returns an error) → `db.WithPlugins(p)`; pass that option or bound values land in `db.query.text` | [pkgs/db.md](pkgs/db.md) |
+| Database | `pkg/services/db` (+ `db/drivers/`, `db/plugins/`) | `db.Manager`; blank-import a driver subpackage (sqlite/mysql/postgres/clickhouse); sqlite needs `CGO_ENABLED=1`; per-statement spans via `otelgorm.New(tracer, gormtracing.WithoutQueryVariables())` (gorm's `tracing` plugin package, aliased; returns an error) → `db.WithPlugins(p)`; pass that option or bound values land in `db.query.text` | [pkgs/db.md](pkgs/db.md) |
 | HTTP API server | `pkg/services/api/server` + `pkg/types/api` (alias `fapi`) | `server.Manager`, `fapi.Router`, `fapi.Middleware`; `server.WithMeter` turns on per-listener HTTP request metrics | [pkgs/api.md](pkgs/api.md) |
 | Handler request context | **project's own** `<project>/pkg/types/api` (unaliased `api`) | `api.Context` — use as the handler ctx instead of `echo.Context`; not a framingo type, you own it | [app/routers.md](app/routers.md) |
 | Middlewares | project `pkg/middlewares/<name>/` | `fapi.Middleware` — `Func(enabled bool, config []byte)` | [app/middlewares.md](app/middlewares.md) |
 | App wiring | project `pkg/components/{cmd,server,client}/` | the server daemon + CLI + SDK components | [app/components.md](app/components.md) and its `components-*.md` files |
 | HTTP client | `pkg/services/api/client` | `client.Client` | [pkgs/client.md](pkgs/client.md) |
 | Pub/Sub primitive | `pkg/services/pubsub` (+ `pubsub/driver/`) | `pubsub.Manager`; Memory/Redis/Kafka drivers | [pkgs/pubsub.md](pkgs/pubsub.md) |
-| Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger` | [pkgs/pubsub.md](pkgs/pubsub.md) |
+| Message bus (on top of pubsub) | `pkg/services/messagebus` | `messagebus.Manager`, `model.MessageBus`, `model.Messenger`; `Register(module common.Named)` delivers to whichever handler interface the module implements | [pkgs/pubsub.md](pkgs/pubsub.md) |
+| WebSocket ↔ bus | `pkg/utils/wsutil` | `wsutil.Bridge(conn, messenger, opts...)` (blocks; closes the messenger, not the conn); the api server closes the conn with `wsutil.Close` | [pkgs/pubsub.md](pkgs/pubsub.md), [pkgs/utils.md](pkgs/utils.md) |
 | Plan manager | `pkg/services/plan` (+ `pkg/utils/plans`) | `plan.Manager`, `model.Plan` | [pkgs/plan.md](pkgs/plan.md) |
 | Task manager | `pkg/services/task` (+ `pkg/utils/jobs`) | `task.Manager`, `model.Task`, `entity.Task`, `jobs.Command` | [pkgs/plan.md](pkgs/plan.md) |
 | Tracing (OpenTelemetry) | `pkg/services/tracing` (+ `tracing/exporters/`) and the `trace` middleware in `pkg/middlewares/trace` | `tracing.Manager`, `model.Tracer`; blank-import an exporter subpackage (otlpgrpc/otlphttp/stdout); attach the middleware via `WithMiddlewares`, activate with `trace: true` per server; db spans via `pkg/services/db/plugins/otelgorm` | [pkgs/tracing.md](pkgs/tracing.md) |
 | Metrics (OpenTelemetry) | `pkg/services/metrics` (+ `metrics/exporters/`) | `metrics.Manager`, `model.Meter`; blank-import an exporter subpackage (otlpgrpc/otlphttp/stdout); the provider's identity never changes — build instruments once at `Init` and cache them | [pkgs/metrics.md](pkgs/metrics.md) |
 | Message interfaces | `pkg/types/common` | `Message`, `MessageSender`, `MessageHandler`, `RawMessageHandler` | [pkgs/pubsub.md](pkgs/pubsub.md) |
-| Service interfaces | `pkg/types/model` | `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Planner`, `Tracer`, `Meter` | [pkgs/types.md](pkgs/types.md) |
+| Service interfaces | `pkg/types/model` | `Supervisor`, `Database` (+ `DatabaseDebugger`), `Pubsub`, `MessageBus`, `Messenger`, `Plan`, `Task`, `Tracer`, `Meter` | [pkgs/types.md](pkgs/types.md) |
 | Logging | `pkg/utils/log` | `log.Logger` | [pkgs/utils.md](pkgs/utils.md) |
 | Errors | `github.com/xhanio/errors` | `errors.Newf`, `errors.Wrap`, category sentinels | [pkgs/errors.md](pkgs/errors.md) |
 | Config | `pkg/utils/confutil` | `confutil.Config` via `confutil.FromContext(ctx)`; getters take format-string keys (`GetInt("%s.max_open", nameutil.ConfigRoot(m.name))`) | [pkgs/supervisor.md](pkgs/supervisor.md), [pkgs/config.md](pkgs/config.md) |
@@ -154,7 +161,7 @@ CLI / Config (cobra + viper)
     |
 Supervisor (lifecycle orchestration, dependency resolution, health monitoring)
     |
-Services (DB, API Server, PubSub, MessageBus, Planner, Tracing, Metrics, custom services)
+Services (DB, API Server, PubSub, MessageBus, Plan, Task, Tracing, Metrics, custom services)
     |
 Types (common interfaces, api types, model interfaces, entity data, orm base)
 ```
@@ -194,7 +201,7 @@ For the full category rules, type-separation example, server component file stru
 - Never return raw `err` — always `errors.Wrap(err)` or `errors.Wrapf(err, "context")`. Raw returns drop the stack trace.
 - Never use `fmt.Errorf` or stdlib `errors.New` — the API server's error handler routes on `xhanio/errors` categories to set HTTP status.
 - Don't place `.go` files at a `pkg/` category root — every category is a grouping folder; code lives in subdirectories (`pkg/services/user/`, not `pkg/services/foo.go`).
-- A router's `prefix` MUST match the package's domain (e.g., `routers/user/` → `/users`), not an arbitrary path. One router.yaml may hold several handler groups, one per `---`-separated document, each with its own `prefix` and group middlewares and all served by one `Handlers()` — for a resource with a second surface, such as `/users` and `/user`.
+- A router's `prefix` MUST match the package's domain (e.g., `routers/user/` → `/users`), not an arbitrary path. One router.yaml may hold several handler groups, one per `---`-separated document, each with its own `prefix` and group middlewares and all served by one `Handlers()` — for a resource with a second surface, such as `/users` and `/user`. A route declared twice — in one group, across groups or across routers — fails registration with a `Conflict`.
 - Don't declare handlers as `func(c echo.Context) error` — use the project's `api.Context` (`<project>/pkg/types/api`). Handlers that take `echo.Context` compile and run, so nothing tells you it's wrong; you just lose `context.Context` (forcing `c.Request().Context()` at every service call) and the `Credential()`/`Session()`/`TraceID()` helpers.
 - Don't hand-write the `Handlers()` map — each router's `router.go` returns `api.DiscoverHandlers(r)` (plus the debug log). Listing `map[string]any{"ListUsers": r.ListUsers}` by hand forces `echo.HandlerFunc` signatures (so you lose `api.Context`) and breaks on rename. Keep it in `router.go`; `handler.go` holds bodies only.
 - Don't look for `Context` in framingo's `pkg/types/api` — it isn't there. `Context`/`DiscoverHandlers` are **project**-side (`example/pkg/types/api/api.go`); framingo's package (aliased `fapi`) only has `Router`, `Middleware`, `ErrorBody`, `ContextKey*`. Importing both unaliased is a compile error — alias the framework one `fapi`.
@@ -209,11 +216,15 @@ For the full category rules, type-separation example, server component file stru
 - `db.WithConnection` takes **five** args (`maxOpen, maxIdle, maxLifetime, maxIdleTime, execTimeout`); the four-arg form doesn't compile.
 - Every `func:` in `router.yaml` needs a matching method, or registration fails at startup with `handler function <Name> not found in router.Handlers()`. Middleware names must be registered first, or `middleware <name> not found`.
 - Don't call `Cleanup`/`Reload` through a `model.Database` — they are not there. They live on `model.DatabaseDebugger`, which only the `db.Manager` itself carries: tests and dev tooling, never a repository.
-- Don't write a `package db` test that blank-imports a driver — `db/drivers/*` import `db` to self-register, so an internal test package hits `import cycle not allowed in test`. Registry packages (`db`, `tracing`) are the one place a `_test` package is required; everywhere else `package foo` is the default, since `newManager` exists to be used from inside.
+- Don't write a `package db` test that blank-imports a driver — `db/drivers/*` import `db` to self-register, so an internal test package hits `import cycle not allowed in test`. Registry packages whose subpackages register back into them (framingo's `db` and its drivers) are the one place a `_test` package is required; everywhere else `package foo` is the default, since `newManager` exists to be used from inside.
 - Don't use the global Viper singleton — use the `confutil.Config` passed via `context.Context` (`confutil.FromContext(ctx)`), and read under the service's root (`"%s.key", nameutil.ConfigRoot(m.name)`) rather than a hardcoded one, or a second instance of the service reads the first one's config.
 - Don't fail `Alive` on a dependency outage — restarting the service raises no database; that fails `Ready` only. And probes take the caller's ctx: derive (`context.WithTimeout(ctx, cap)`), never fabricate from `Background()`.
 - Don't expect a query made through bare `db.ORM()` to appear inside the request's trace — it carries `context.Background()`, so with tracing wired its spans export as detached roots. Anything that gets a context to the statement parents correctly: `FromContext(ctx)`, `FromContextTimeout(ctx, d)`, or `ORM().WithContext(ctx)`. Prefer `FromContext(ctx)` — `ORM().WithContext(ctx)` traces the same but bypasses a transaction carried in the context, running on the base connection instead.
 - Don't let `Stop(ctx)` return while anything the service began is still going and `ctx` has not ended, don't let it wait past `ctx` either, and don't let what a stop left reach into the `Start` after it: the supervisor restarts the same instance. Share across starts only what outlives one, such as a `syncutil.WaitGroup` of all the work; give a start its own context, and its own of whatever hands out work or capacity. See the [`Daemon` contract](pkgs/supervisor.md#the-daemon-contract).
+- Don't make a message handler a `Service` just to receive messages — `common.MessageHandler`/`RawMessageHandler` embed `common.Named`, and `MessageBus.Register` takes a `common.Named`: a name is all the bus keys the subscription on.
+- There is no `messagebus.AttachWebSocket` — a WS handler gets a `Messenger` from `NewMessenger(name)` and calls `wsutil.Bridge(conn, messenger)`. Don't close the conn in the handler: return, and the api server closes it per the returned error with `wsutil.Close` (and closes every open one when it stops).
+- In the example, `authz` fails closed: a handler under it that names no `permission:` is refused with 403. Every handler declares one, or opts out with `- authz: false` in its own `middlewares`.
+- Don't wrap a failed `c.Validate(&body)` into a new category — it is already `InvalidArgument`, a 400; `errors.Wrap` it. An uncategorized error answers 500.
 - After `echo.Shutdown` is called, the same echo instance can't be reused — the framework's api server rebuilds it on `Init`, but custom services must do the same if they wrap net/http servers.
 
 ## Key Patterns

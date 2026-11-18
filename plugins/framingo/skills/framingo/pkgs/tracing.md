@@ -172,7 +172,8 @@ server.WithMiddlewares(tracemw.New(m.tracing), corsmw.New()),
 `trace: true` (or `trace:`) under `api.<name>.middlewares` enables it; **no
 entry leaves the attachment dormant**, which is how the health/probe listener
 serves untraced next to a traced public server. The middleware takes no
-config — a block under `trace` fails registration. `WithName` renames an
+config — a block under `trace` fails registration — and enabling an
+attachment built with a nil tracer fails it too. `WithName` renames an
 attachment (config keys follow the name), the way out of a collision with an
 app middleware called trace. The roster survives the echo rebuild a restart
 performs, so tracing keeps working across server restarts.
@@ -182,14 +183,18 @@ Chain position (the server-level slot sees every request, matched or not):
 `Request → Metrics → Recover → [trace, cors, … the WithMiddlewares roster in order] → Logger → Info → Error → [Route middlewares] → Handler`
 
 Per request it: extracts the W3C remote parent from the headers, starts a
-`SpanKindServer` span, pushes it into the request context with
-`c.SetRequest(r.WithContext(ctx))` — which the project's `api.Context`
-bridges to every handler and service call — and after the chain returns,
-renames the span to the low-cardinality route template (`GET
-/api/items/:id`), sets `http.route`/`url.path`/`http.response.status_code`
-semconv attributes, and marks 5xx with `codes.Error` plus the recorded
-error. Requests matching no route still get a span under the fallback name
-`HTTP <METHOD>`.
+`SpanKindServer` span (`http.request.method` — through the same
+known-methods mapping as the server metrics, so a made-up method reads
+`_OTHER` — `network.protocol.version`, `url.path`, `client.address`),
+pushes it into the request context with `c.SetRequest(r.WithContext(ctx))`
+— which the project's `api.Context` bridges to every handler and service
+call — and after the chain returns, renames the span to the
+low-cardinality route template (`GET /api/items/:id`), sets `http.route`
+and `http.response.status_code`, and marks 5xx with `codes.Error` plus the
+recorded error. The status is the one the error handler minted
+(`fapi.ErrorBody`), since echo commits the response only after the chain
+returns. Requests matching no route still get a span under the fallback
+name `HTTP <METHOD>`.
 
 The existing framingo tid (`X-TRACE-ID`, the `tid=` log column,
 `api.Context.TraceID()`) is untouched; the span records it as the
@@ -205,8 +210,9 @@ being down degrades that middleware, never the server — a dead collector
 must not pull an otherwise-serving pod out of rotation through the
 supervisor's healthcheck roll-up. Ordering needs no edge either: routers and
 middlewares register in `initAPI()`, after `services.Init(ctx)`, and
-start/stop order comes from the registration tiers (tracing first in the
-basic tier, api after `TopoSort`). If you want the middleware's dependency
+start/stop order comes from the registration tiers (telemetry at the tail
+of the infra tier, so it inits first and stops last; api registered after
+`TopoSort`). If you want the middleware's dependency
 health visible, register the middleware itself with the supervisor — it is a
 `common.Service` — and its degradation reports under its own name.
 
@@ -216,13 +222,24 @@ The db service emits one client span per statement through a GORM plugin,
 wired with the same explicit handle:
 
 ```go
-import "github.com/xhanio/framingo/pkg/services/db/plugins/otelgorm"
+import (
+    // framingo's own tracing package already owns the name
+    gormtracing "gorm.io/plugin/opentelemetry/tracing"
 
+    "github.com/xhanio/framingo/pkg/services/db/plugins/otelgorm"
+)
+
+p, err := otelgorm.New(m.tracing, gormtracing.WithoutQueryVariables())
+if err != nil {
+    return errors.Wrap(err)
+}
 m.db = db.New(
     db.WithType(config.GetString("db.type")),
-    db.WithPlugins(p),   // p, err := otelgorm.New(m.tracing, ...)
+    db.WithPlugins(p),
 )
 ```
+
+`New` fails on a nil tracer rather than panic on the first query.
 
 It wraps `gorm.io/plugin/opentelemetry/tracing`, kept in its own subpackage
 because that package imports the ClickHouse/MySQL/PostgreSQL dialectors
@@ -233,7 +250,8 @@ restart takes effect without rebuilding the connection) and forces
 `WithoutMetrics()` (that path reaches for the global `MeterProvider`, and
 upstream offers no way to redirect it). That is the only forced default —
 upstream `tracing.Option` values are applied after it, so every other knob
-passes through. Pass `tracing.WithoutQueryVariables()` yourself: upstream puts
+passes through — except that overriding `WithTracerProvider` loses the live
+handle. Pass `WithoutQueryVariables()` yourself: upstream puts
 bound values into `db.query.text` by default, and that is where the credentials
 and the PII are.
 
@@ -332,7 +350,8 @@ providers, and a retired provider silently drops spans.
   scanner's 404s don't bloat spans with exception events.
 - A WebSocket route on a traced server produces one span covering the whole
   connection, ended (and exported) only at close — session-length spans, not
-  per-message ones.
+  per-message ones. A server stop closes its connections, so their spans end
+  before tracing flushes.
 - Registering tracing anywhere but the tail of the infra tier still works,
   but spans emitted during shutdown may be dropped instead of flushed.
 - A db query issued through `ORM()` traces as its own root span, never under

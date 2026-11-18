@@ -26,5 +26,7 @@ what only it computes.
 options type where the service's and the repository's inputs differ.
 
 Tables that fit the framework's `orm.Record` declare it beside their own
-struct (`var _ orm.Record[int32] = X{}`); a table that does not fit simply
-doesn't — there is no central list.
+struct — imported as `form`, since the project's package is `orm` too
+(`var _ form.Record[int32] = User{}`); a table that does not fit simply
+doesn't (`orm.HelloWorld`, without `BaseModel`'s getters) — there is no
+central list.

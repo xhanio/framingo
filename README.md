@@ -11,17 +11,19 @@
 
 - **Supervisor Lifecycle** — Centralized orchestration with init, start, stop, and per-service runtime restart
 
-- **Health Monitoring** — Kubernetes-style liveness/readiness probes with automatic restart on liveness failure
+- **Health Monitoring** — Kubernetes-style liveness/readiness probes with automatic restart on liveness failure, and an init that can wait for its dependencies to become ready
 
-- **HTTP API Server** — Echo-based server with declarative YAML routing, a middleware pipeline with per-route config, built-in CORS, TLS, and WebSocket support
+- **HTTP API Server** — Echo-based server with declarative YAML routing, a middleware pipeline with per-route config and switches, a server-level slot for request-wide middlewares (CORS, tracing), TLS, per-listener HTTP metrics, request validation answered as a 400, and WebSocket support
 
 - **Database Integration** — GORM-backed manager for PostgreSQL, MySQL, SQLite, and ClickHouse with connection pooling, migrations, and context-aware transactions
 
-- **Pub/Sub Messaging** — Hierarchical topic dispatch with pluggable Memory, Redis, and Kafka drivers, plus a higher-level message bus with WebSocket bridging
+- **Pub/Sub Messaging** — Hierarchical topic dispatch with pluggable Memory, Redis, and Kafka drivers, plus a higher-level message bus that `wsutil` bridges to WebSocket connections
 
-- **Task Planning** — Concurrent task scheduler with priority, retry, and result tracking
+- **Task Planning** — Concurrent task scheduler with priority, retry, and result tracking, plus a plan manager that records every run
 
 - **OpenTelemetry Tracing** — Supervised `TracerProvider` lifecycle with pluggable OTLP/stdout exporters and a built-in server middleware that traces every request, propagates W3C trace context, and never touches the otel globals
+
+- **OpenTelemetry Metrics** — Supervised `MeterProvider` with the same pluggable exporters and a periodic export loop, handed out as an explicit `model.Meter`; the API server records per-listener HTTP metrics through it
 
 - **Instance-Based Configuration** — Viper instance propagated through `context.Context` (no global singletons), with hot-reload
 
@@ -83,7 +85,7 @@ In another terminal:
 ./bin/examplecli -e http://localhost:8080 login            # default admin / admin
 
 ./bin/examplecli -e http://localhost:8080 helloworld "Hello"
-# {"id":1,"message":"hello world!!! Hello","created_at":"...","updated_at":"..."}
+# {"id":1,"message":"Hello","created_at":"...","updated_at":"..."}   (the greeting only goes to the server log)
 ```
 
 See [example/QUICKSTART.md](example/QUICKSTART.md) for the full walkthrough.
@@ -136,7 +138,7 @@ sequenceDiagram
 
     Client->>APIServer: HTTP Request
     APIServer->>Middleware: Process Request
-    Note over Middleware: Recover<br/>CORS<br/>Logger<br/>Info<br/>Error<br/>Auth/Custom
+    Note over Middleware: Metrics<br/>Recover<br/>Server-level (trace, CORS)<br/>Logger<br/>Info<br/>Error<br/>Route (auth, throttle, …)
     Middleware->>Router: Validated Request
     Router->>Service: Business Operation
     Service->>DB: Data Access
@@ -149,27 +151,29 @@ sequenceDiagram
 
 ## Core Modules
 
-Framingo is organized into four module categories under `pkg/`:
+Framingo is organized into five module categories under `pkg/`:
 
 ### Services (`pkg/services/`)
 
 Production-ready service implementations:
 
 - **[supervisor](pkg/services/supervisor/)** — Service lifecycle orchestration
-  - Topologically sorts registered services by `Dependencies()`
-  - Calls `Init(ctx)` and `Start(ctx)` in dependency order, `Stop()` in reverse
-  - Monitors `Liveness`/`Readiness` probes and auto-restarts services that fail liveness
+  - Topologically sorts registered services by `Dependencies()`, skipping a nil entry (an optional dependency left out)
+  - Calls `Init(ctx)` and `Start(ctx)` in dependency order, `Stop(ctx)` in reverse
+  - Monitors `Liveness`/`Readiness` probes and auto-restarts services that fail liveness, once `WithMonitorPolicy` gives it an interval (monitoring is off by default)
   - A name stands for one instance: `Register` returns a `Conflict` for another instance under a name already taken (give each its own `WithName`)
   - Per-service runtime control (`InitService`, `StartService`, `StopService`, `RestartService`)
   - Whole-graph `Restart(ctx)`, `Stats()` per service, and a `Debuggable.Info` dump
-  - Restart behavior is tunable: `WithMonitorInterval`, `WithRestartPolicy(maxRetries)`, `WithRestartDelay`, `WithShutdownTimeout`
+  - Tunable by policy: `WithMonitorPolicy(interval, maxRetries, restartDelay)` for liveness restarts, `WithInitPolicy(maxRetries, delay, maxDelay)` to retry init turns until dependencies are ready, `WithStopPolicy(timeout)` to bound shutdown
 
 - **[api/server](pkg/services/api/server/)** — HTTP API server
   - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithMiddlewares(...), WithMiddlewareConfigs(...))`
   - Declarative YAML routing via `api.Router`
   - Middleware pipeline with name-based resolution
-  - WebSocket handlers (use method `WS` in router YAML)
-  - Built-in chain — recover, cors, logger, info, error — in a fixed order, with `WithMiddlewares` additions between cors and logger; cors is a standard `api.Middleware` configured under its name in the server's middleware configs, the other four are plain lifecycle functions taking no config
+  - WebSocket handlers (use method `WS` in router YAML); `Stop` closes their connections and waits for the handlers, as it does for in-flight requests, until its context ends
+  - Built-in chain — metrics, recover, logger, info, error — in a fixed order, plain lifecycle functions taking no config; `WithMiddlewares` adds server-level `api.Middleware`s between recover and logger (the framework's `trace`, the example's `cors`), each dormant until the server's middleware configs name it
+  - `WithMeter(model.Meter)` feeds the metrics built-in; without it the instruments are noops
+  - `c.Validate` failing a `validate` tag returns an `InvalidArgument` error, so the client gets a 400
 
 - **[api/client](pkg/services/api/client/)** — HTTP client with TLS, headers, cookies, body encoding (deflate), and structured error parsing — `NewRequest` builds, `Do` executes an `*http.Request`, `Send` does both in one shot
 
@@ -177,7 +181,8 @@ Production-ready service implementations:
   - Pluggable drivers under [db/drivers/](pkg/services/db/drivers/): PostgreSQL, MySQL, SQLite, ClickHouse — blank-import only the ones your binary needs (a SQLite-only binary drops ~17MB)
   - The SQLite driver uses [mattn/go-sqlite3](https://github.com/mattn/go-sqlite3), a cgo wrapper around the C library, so it needs `CGO_ENABLED=1` and a C toolchain. The other drivers are pure Go.
   - Connection pooling (`WithConnection(maxOpen, maxIdle, maxLifetime, maxIdleTime, execTimeout)`)
-  - Migrations via `WithMigration(dir, version)`
+  - Migrations via `WithMigration(dir, version)` (`version` 0 = latest; an empty dir leaves the schema alone)
+  - GORM plugins via `WithPlugins(...)` — [db/plugins/otelgorm](pkg/services/db/plugins/otelgorm/) traces every statement through a `model.Tracer`
   - Context-aware queries: `FromContext(ctx)` auto-extracts an active transaction
   - `Transaction(ctx, fn, opts...)` wraps `fn` in a TX with rollback-on-error, and nests on a transaction already in `ctx` via a savepoint instead of opening a second one
   - Two contracts: `model.Database` (connections, queries, transactions) is what consumers hold; `model.DatabaseDebugger` (`Cleanup`, `Reload` — truncate, or drop and re-migrate) is only on the `db.Manager` itself, for tests and dev tooling
@@ -209,25 +214,36 @@ Production-ready service implementations:
   - Exporters behind a blank-import registry ([`exporters/`](pkg/services/tracing/exporters/)): `otlpgrpc`, `otlphttp`, `stdout` — binaries link only what they import
   - Explicit `model.Tracer` handle everywhere — the otel globals are never set; the framework-shipped `trace` middleware ([pkg/middlewares/trace/](pkg/middlewares/trace/)) rides the server-level slot and traces every request (W3C context extraction, route-template span names, the framingo `tid` as a `api.trace_id` attribute), activated per server with `trace: true` in the middleware configs
 
+- **[metrics](pkg/services/metrics/)** — OpenTelemetry metrics
+  - Owns the SDK `MeterProvider`, fixed for the process lifetime so instruments are created once; `Init` re-reads `metrics.*` (`enabled`, `exporter`, `config`, `interval`) and swaps the exporter, `Stop` flushes it
+  - Same blank-import exporter registry ([`exporters/`](pkg/services/metrics/exporters/)): `otlpgrpc`, `otlphttp`, `stdout`
+  - Explicit `model.Meter` handle — no otel globals; implements `Liveness` but deliberately not `Readiness`, so a dead collector never gates dependents
+
+### Middlewares (`pkg/middlewares/`)
+
+Framework-shipped `api.Middleware`s:
+
+- **[trace](pkg/middlewares/trace/)** — Server-level request tracing on an explicit `model.Tracer` (see tracing above); `trace.New(tracer)` into `server.WithMiddlewares`, enabled per server with `trace: true`
+
 ### Types (`pkg/types/`)
 
 Interface contracts and shared types:
 
 - **[common](pkg/types/common/)** — Service lifecycle and utility interfaces
   - Lifecycle ([`service.go`](pkg/types/common/service.go)): `Service`, `Initializable`, `Daemon`, `Liveness`, `Readiness`, `Debuggable`
-  - Utility ([`common.go`](pkg/types/common/common.go)): `Named`, `Unique`, `Weighted`
+  - Utility ([`common.go`](pkg/types/common/common.go), [`pair.go`](pkg/types/common/pair.go)): `Named`, `Unique`, `Weighted`, `Pair`/`Pairs`
   - Messaging ([`message.go`](pkg/types/common/message.go)): `Message`, `MessageSender`, `RawMessageSender`, `MessageHandler`, `RawMessageHandler`
   - Context keys ([`context.go`](pkg/types/common/context.go)): `_config`, `_logger`, `_db`, `_tx`, `_credential`, `_session`, `_namespace`, `_trace`, `_api_request_info`, `_api_response_info`, `_api_error`
 
-- **[api](pkg/types/api/)** — HTTP types: the two extension interfaces `Router` and `Middleware`, plus `Endpoint`, `ClientTLS`/`ServerTLS`, `ErrorBody`, `Encoding`, and the `RequestInfo`/`ResponseInfo`/`Stats` records the built-in middlewares stash on the request context. The router.yaml schema itself is private to the server package: routers hand it over as bytes, middlewares receive their config the same way
+- **[api](pkg/types/api/)** — HTTP types: the two extension interfaces `Router` and `Middleware`, the `MethodAny`/`MethodWS` methods, plus `Endpoint`, `ClientTLS`/`ServerTLS`, `ErrorBody`, `Encoding`, and the `RequestInfo`/`ResponseInfo`/`Stats` records the built-in middlewares stash on the request context. The router.yaml schema itself is private to the server package: routers hand it over as bytes, middlewares receive their config the same way
 
-- **[model](pkg/types/model/)** — Behavioral contracts for framework services: `Supervisor`, `Database`, `Pubsub`, `MessageBus`, `Messenger`, `Planner`, `Tracer`
+- **[model](pkg/types/model/)** — Behavioral contracts for framework services: `Supervisor`, `Database`, `DatabaseDebugger`, `Pubsub`, `MessageBus`, `Messenger`, `Task`, `Plan`, `Tracer`, `Meter`
 
-- **[entity](pkg/types/entity/)** — Data carriers (POJOs) emitted by framework services: `SupervisorStats`, `Plan`, `PlanStats`, `PubsubMessage`
+- **[entity](pkg/types/entity/)** — Data carriers (POJOs) taken or emitted by framework services: `SupervisorStats` and the supervisor policies, `Task`, `TaskStats`, `Plan`, `PlanRun`, `PlanStats`, `PubsubMessage`
 
 - **[orm](pkg/types/orm/)** — Generic ORM base types: `Record[T]`, `Referenced[T]`, `Reference[T]`
 
-- **[info](pkg/types/info/)** — Build metadata (product name/model/version, project root/name/path, git tag/branch/commit, build version/type/date/time) injected at link time
+- **[info](pkg/types/info/)** — Build metadata (application name/version, product name/model/version, project root/name/path, git tag/branch/commit, build version/type/date/time) injected at link time
 
 ### Data Structures (`pkg/structs/`)
 
@@ -244,6 +260,7 @@ Interface contracts and shared types:
 | --- | --- |
 | **[certutil](pkg/utils/certutil/)** | X.509 CA/server/client cert generation and TLS config |
 | **[cmdutil](pkg/utils/cmdutil/)** | External command execution: `Start`/`Wait`/`Run`, `Terminate`/`Kill` of the process or its process group, output to writers or collected; plus `MergeArgs` for last-wins flag merging. Keeps `exec.Cmd`'s contract — wait once, read the collected output after `Wait` |
+| **[cronutil](pkg/utils/cronutil/)** | The cron grammar the task manager schedules with, and `Validate(spec)` to reject a bad schedule up front |
 | **[confutil](pkg/utils/confutil/)** | `Config` read-side over a Viper instance, propagated via `context.Context`; getters take format-string keys |
 | **[envutil](pkg/utils/envutil/)** | Env-var prefix derivation (`EnvPrefix`) and last-wins env merging (`Merge`) |
 | **[osutil](pkg/utils/osutil/)** | Queries about the operating system, no process-wide state: `Timezone` is the system's configured zone as timedatectl reports it |
@@ -255,7 +272,9 @@ Interface contracts and shared types:
 | **[maputil](pkg/utils/maputil/)** | Map and set helpers (copy, diff, keys, membership) |
 | **[nameutil](pkg/utils/nameutil/)** | Service/router naming (`Name`, `Package`) and the config root a name implies (`ConfigRoot`) |
 | **[netutil](pkg/utils/netutil/)** | MAC/CIDR/IP helpers |
+| **[otelutil](pkg/utils/otelutil/)** | Plumbing shared by the tracing and metrics services: the exporter `Registry`, the otlp config vocabulary with a strict `Decode`, and HTTP semconv helpers |
 | **[pageutil](pkg/utils/pageutil/)** | Pagination wrapper (items, total, params) |
+| **[paramutil](pkg/utils/paramutil/)** | Ordered key/value params in several notations (`a=b&c=d`, `a=b c=d`, command lines): parse, render, merge |
 | **[pathutil](pkg/utils/pathutil/)** | Path shortening |
 | **[plans](pkg/utils/plans/)** | Predefined kinds of plan for the plan manager: `plans.Command` turns a command plan into what each of its runs does |
 | **[printutil](pkg/utils/printutil/)** | Console table formatting |
@@ -263,8 +282,9 @@ Interface contracts and shared types:
 | **[sliceutil](pkg/utils/sliceutil/)** | Membership, dedupe, diff, copy, change tracking |
 | **[strutil](pkg/utils/strutil/)** | Validation, join, clean, random, hex format |
 | **[syncutil](pkg/utils/syncutil/)** | `WaitGroup` whose `Wait(ctx)` gives up once the context ends |
-| **[testutil](pkg/utils/testutil/)** | Test database setup helpers |
+| **[testutil](pkg/utils/testutil/)** | Test helpers: `SetupDB` (in-memory SQLite, needs cgo), and `Tracer`/`Meter` doubles with in-memory recorders |
 | **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
+| **[traceutil](pkg/utils/traceutil/)** | `model.Tracer` as plain OpenTelemetry: `Start`/`Fail` for spans, `LiveProvider` for libraries that cache their tracer |
 | **[wsutil](pkg/utils/wsutil/)** | WebSocket helpers: `Bridge` joins a connection to a bus Messenger both ways, with server-side pings tunable via `WithPing`; `Close` ends a connection with the status its handler's result calls for |
 
 ## Building Your First Application
@@ -320,11 +340,10 @@ package hello
 import (
     "context"
     "fmt"
-    "path"
 
     "github.com/xhanio/framingo/pkg/types/common"
     "github.com/xhanio/framingo/pkg/utils/log"
-    "github.com/xhanio/framingo/pkg/utils/reflectutil"
+    "github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 type manager struct {
@@ -343,16 +362,12 @@ func New(opts ...Option) Manager {
     for _, opt := range opts {
         opt(m)
     }
+    m.name = nameutil.Name(m) // derived from the package path
     m.log = m.log.By(m)
     return m
 }
 
-func (m *manager) Name() string {
-    if m.name == "" {
-        m.name = path.Join(reflectutil.Locate(m))
-    }
-    return m.name
-}
+func (m *manager) Name() string { return m.name }
 
 func (m *manager) Dependencies() []common.Service { return nil }
 func (m *manager) Init(ctx context.Context) error { return nil }
@@ -518,6 +533,8 @@ func (m *manager) Init(ctx context.Context) error {
         return err
     }
 
+    // registered after the sort, the api server starts last by ordering,
+    // not by depending on the services behind its routes
     if err := m.services.Register(m.api); err != nil {
         return err
     }
@@ -538,9 +555,13 @@ func (m *manager) Stop(ctx context.Context) error  { return m.services.Stop(ctx)
 package main
 
 import (
+    "context"
     "fmt"
     "os"
+    "os/signal"
     "strings"
+    "syscall"
+    "time"
 
     "github.com/spf13/cobra"
     "github.com/spf13/viper"
@@ -571,7 +592,16 @@ func main() {
             if err := mgr.Init(cmd.Context()); err != nil {
                 return err
             }
-            return mgr.Start(cmd.Context())
+            if err := mgr.Start(cmd.Context()); err != nil {
+                return err
+            }
+            // Start returns once everything is up: serve until a signal, then stop
+            ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+            defer cancel()
+            <-ctx.Done()
+            stopCtx, done := context.WithTimeout(context.Background(), 30*time.Second)
+            defer done()
+            return mgr.Stop(stopCtx)
         },
     }
     daemonCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "config file path")
@@ -599,10 +629,10 @@ curl 'http://localhost:8080/api/v1/hello?name=Framingo'
 - **[example/QUICKSTART.md](example/QUICKSTART.md)** — Fork the template, plus build/run with GoPro
 - **[example/](example/)** — The starter template: fork it to begin a new service (supervisor, db, pubsub, messagebus, RBAC, CLI client)
 - **Framework packages**:
-  - **[pkg/services/](pkg/services/)** — supervisor, api server/client, db, pubsub, messagebus, plan, task, tracing
+  - **[pkg/services/](pkg/services/)** — supervisor, api server/client, db, pubsub, messagebus, plan, task, tracing, metrics
   - **[pkg/middlewares/](pkg/middlewares/)** — framework-shipped `api.Middleware`s: trace
   - **[pkg/types/](pkg/types/)** — common, api, model, entity, orm, info
-  - **[pkg/utils/](pkg/utils/)** — log, infra, and the utility packages listed above
+  - **[pkg/utils/](pkg/utils/)** — log and the other utility packages listed above
   - **[pkg/structs/](pkg/structs/)** — graph, queue, buffer, trie, lease, staque
 
 View package docs locally:
@@ -628,7 +658,7 @@ It activates on its own whenever a session touches framingo. See
 
 ## Starter Template
 
-**[example/](example/) is a template project — fork it rather than scaffolding from scratch.** It is a self-contained module wired end to end (supervisor, database + migrations, pub/sub and message bus, RBAC, WebSocket stream, CLI client, Docker image, Kubernetes manifests), so a new service starts from something that already builds and runs. [example/QUICKSTART.md](example/QUICKSTART.md) has the fork-and-rename recipe and a "keep vs. rip out" table for pruning what you don't need.
+**[example/](example/) is a template project — fork it rather than scaffolding from scratch.** It is a self-contained module wired end to end (supervisor, database + migrations, pub/sub and message bus, tracing and metrics, RBAC, WebSocket stream, CLI client, Docker image, docker compose, Kubernetes manifests), so a new service starts from something that already builds and runs. [example/QUICKSTART.md](example/QUICKSTART.md) has the fork-and-rename recipe and a "keep vs. rip out" table for pruning what you don't need.
 
 It is a real module, not a snippet: its own `go.mod` carries `replace github.com/xhanio/framingo => ../` (annotated to remove when you fork), so `go build ./...` and `go test ./...` inside `example/` run against the framework as it currently stands in this tree rather than a published version.
 
@@ -637,19 +667,19 @@ example/
 ├── pkg/
 │   ├── components/
 │   │   ├── cmd/
-│   │   │   ├── app/                 # daemon CLI (daemon, version)
-│   │   │   └── cli/                 # client CLI (login, helloworld, certutil)
+│   │   │   ├── app/                 # daemon CLI (daemon, migrate, version)
+│   │   │   └── cli/                 # client CLI (login, logout, helloworld, stream, certutil, version)
 │   │   ├── server/example/          # supervisor wiring for the daemon
 │   │   └── client/example/          # HTTP client SDK
 │   ├── services/
 │   │   ├── example/                 # business service (HelloWorld)
-│   │   ├── repository/              # GORM repositories per domain
-│   │   └── system/                  # auth, user, role, organization, certificate
-│   ├── routers/                     # auth, certificate, example, messagebus, role, user
-│   ├── middlewares/                 # authnagent, authnuser, authz, deflate, feature
-│   ├── types/                       # api, entity, model, orm, message, rbac, preset, repo
+│   │   ├── repository/              # one GORM repository behind every types/repo contract; the only orm user
+│   │   └── system/                  # auth, user, role, organization, certificate, platform
+│   ├── routers/                     # auth, certificate, example, health, messagebus, role, user
+│   ├── middlewares/                 # authnagent, authnuser, authz, cors, deflate, feature, throttle
+│   ├── types/                       # api, entity, model, orm, repo, message, rbac, preset
 │   └── utils/infra/                 # process-wide facts set at startup
-├── build/                           # GoPro build templates (binary, image)
+├── build/                           # binary entry points (exampleapp, examplecli) and the image Dockerfile
 ├── env/default/                     # what every env shares: the migrations
 ├── env/local/                       # local: config, docker compose (postgres + daemon)
 ├── env/prod/                        # prod: config, Kubernetes manifests + migrate Job
@@ -667,18 +697,18 @@ gopro build binary -e local             # cgo-enabled build
 ./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
 
-`local` is the only environment [`example/project.yaml`](example/project.yaml) defines. Add your own under `env:` there — pointing `config_src`/`config_tgt` at a matching `env/<name>/` tree — before building with `-e <name>`.
+[`example/project.yaml`](example/project.yaml) defines two environments on top of `env/default`: `local` (docker compose) and `prod` (Kubernetes). Add your own under `env:` there — pointing `config_src`/`config_tgt` at a matching `env/<name>/` tree — before building with `-e <name>`.
 
 ### What You Inherit by Forking
 
 - Supervisor-orchestrated lifecycle with topological dependency resolution
-- Multiple services: database, pubsub, message bus, RBAC, business logic
-- HTTP routes with YAML configuration, middlewares (auth, deflate, feature flags), and a WebSocket endpoint via the message-bus router
-- Type separation: `api/` (DTOs), `entity/` (domain), `orm/` (database), `model/` (interfaces)
+- Multiple services: database, pubsub, message bus, tracing, metrics, RBAC, business logic
+- HTTP routes with YAML configuration, middlewares (auth, authz failing closed, cors, throttle, deflate, feature flags), health probes, and a WebSocket endpoint via the message-bus router
+- Type separation: `api/` (DTOs), `entity/` (domain), `orm/` (database, repository-only), `model/` (service interfaces), `repo/` (data-access contracts)
 - Database migrations and pluggable PostgreSQL/MySQL/SQLite/ClickHouse driver subpackages (blank-imported in [example/pkg/components/server/example/service.go](example/pkg/components/server/example/service.go))
 - Pub/sub with pluggable Memory/Redis/Kafka backends
 - CLI client with credential persistence and certificate helpers
-- GoPro-driven build, image, and Kubernetes manifest generation
+- GoPro-driven build, image, docker compose and Kubernetes manifest generation, with migrations as their own step (`exampleapp migrate`)
 
 ## Key Concepts
 
@@ -692,12 +722,12 @@ type Service interface {
 
 type Initializable interface { Init(ctx context.Context) error }       // setup; called on start AND restart
 type Daemon        interface { Start(ctx context.Context) error; Stop(ctx context.Context) error } // Stop waits until ctx ends, then forces
-type Liveness      interface { Alive() error }                         // failure triggers auto-restart
-type Readiness     interface { Ready() error }                         // failure reported but not actioned
+type Liveness      interface { Alive(ctx context.Context) error }      // failure triggers auto-restart (with monitoring on)
+type Readiness     interface { Ready(ctx context.Context) error }      // failure reported, never restarted; WithInitPolicy waits on it
 type Debuggable    interface { Info(w io.Writer, debug bool) }
 ```
 
-Compose only the interfaces a service needs. The supervisor inspects each registered service at runtime to determine which lifecycle hooks to invoke.
+Compose only the interfaces a service needs. The supervisor inspects each registered service at runtime to determine which lifecycle hooks to invoke. The supervisor's [skill reference](plugins/framingo/skills/framingo/pkgs/supervisor.md) covers probes, escalation and the init/stop policies in depth.
 
 ### Type Separation
 
@@ -715,7 +745,7 @@ type User struct {
     Email    string
 }
 
-// orm — persistence model
+// orm — persistence model, used only inside the repository
 type User struct {
     ID       int64  `gorm:"primaryKey"`
     Username string `gorm:"type:varchar(100);not null"`
@@ -723,65 +753,76 @@ type User struct {
 }
 
 func (User) TableName() string { return "users" }
+
+// repo — the data-access contract a service consumes; it speaks entity, never orm
+type User interface {
+    GetUser(ctx context.Context, userID int64) (*entity.User, error)
+}
 ```
 
-The service layer converts between representations, keeping API contracts independent of storage and business logic independent of either.
+Handlers convert `api` ↔ `entity`, the repository converts `orm` → `entity`, and services see only entities and their `repo` contracts — keeping API contracts independent of storage and business logic independent of either. The skill's [design notes](plugins/framingo/skills/framingo/design/data-access.md) give the reasoning.
 
 ### Dependency Management
 
-Required dependencies become constructor arguments; optional config flows through functional options. The supervisor uses `Dependencies()` to topologically sort startup and shutdown.
+Required dependencies become constructor arguments; optional config flows through functional options. The example's services take its platform — the shared framework handles (database, meter, pubsub, message bus) — first, then their own collaborators, each as the narrowest interface they use. The supervisor uses `Dependencies()` to topologically sort startup and shutdown.
 
 ```go
 // New returns the interface; newManager returns the concrete type for
 // package tests.
-func New(database db.Manager, opts ...Option) Manager {
-    return newManager(database, opts...)
+func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
+    return newManager(platform, repo, opts...)
 }
 
-func newManager(database db.Manager, opts ...Option) *manager {
-    m := &manager{db: database}
-    for _, opt := range opts {
-        opt(m)
+func newManager(platform platform.Platform, repo Repository, opts ...Option) *manager {
+    m := &manager{
+        repository: repo,
+        mb:         platform.MessageBus(), // a common.RawMessageSender; never nil
     }
+    m.applyOptions(opts...)
+    m.setDefaults()
     return m
 }
 
-func (s *myService) Dependencies() []common.Service {
-    return []common.Service{s.database}
+func (m *manager) Dependencies() []common.Service {
+    // list every dependency held; an optional one left unwired is nil, which the supervisor skips
+    return []common.Service{m.repository, m.mb}
 }
 ```
 
 ### Router Configuration
 
 ```yaml
-server: http                    # which server from Add(name, ...) hosts this group
+server: http                    # which server from Add(name, ...) hosts this group; required
 prefix: /users
-middlewares: [authnuser]        # applied to every handler in the group
+middlewares: [authnuser, authz] # applied to every handler in the group, in this order
 handlers:
   - method: GET
     path: /:id
     func: GetUser
+    permission: user.read       # metadata; enforced by your own authz middleware
   - method: POST
     path: /
     func: CreateUser
-    middlewares: [authz]        # handler middlewares run *before* group ones
-    permission: user.manage     # metadata; enforced by your own authz middleware
+    permission: user.manage
+    middlewares:                # handler middlewares run *before* group ones
+      - throttle:               # a middleware entry may carry config: the block
+          rps: 5.0              # under the name is handed to that middleware,
+          burst_size: 10        # raw, when this route is registered
   - method: GET
     path: /status
     func: Status
     poll: true                  # suppress per-request logging for pollers
     middlewares:
-      - throttle:               # a middleware entry may carry config: the block
-          rps: 5.0              # under the name is handed to that middleware,
-          burst_size: 10        # raw, when this route is registered
+      - authz: false            # a boolean switches the group's attachment off for this route
   - method: WS
     path: /events
     func: Events
+    permission: user.read
 ```
 
-Each YAML document is one handler group: a router that needs a second prefix or group middleware chain adds a document after `---` (a user router serving `/users` and `/user` from one file, say), every group resolving its `func:` names against the same `Handlers()`. A route — server, method, path — declared twice, in two groups or two routers, fails registration with `Conflict`, and any mistake in a router's config fails `RegisterRouters` with an error naming the router and the group, so startup fails on it. `method` also accepts `ANY` to match every HTTP verb. `permission` is carried through to the handler's `RequestInfo` (flattened — the parsed schema never leaves the server package) but never enforced by the framework — the example's `authz` and `feature` middlewares read it, and `authz` fails closed: a route it guards that declares no permission is refused, not opened to everyone. A middleware entry is either a bare name or a single-key map whose value is that middleware's config for this route; handler entries are collected ahead of the group's, wrap the outside and run first, and a name the handler claims is skipped at group level — so a handler's config overrides the group's attachment instead of stacking a second run.
+Each YAML document is one handler group: a router that needs a second prefix or group middleware chain adds a document after `---` (a user router serving `/users` and `/user` from one file, say), every group resolving its `func:` names against the same `Handlers()`. A route — server, method, path — declared twice, in two groups or two routers, fails registration with `Conflict`, and any mistake in a router's config fails `RegisterRouters` with an error naming the router and the group, so startup fails on it. `method` also accepts `ANY` to match every HTTP verb. `permission` is carried through to the handler's `RequestInfo` (flattened — the parsed schema never leaves the server package) but never enforced by the framework — the example's `authz` and `feature` middlewares read it, and `authz` fails closed: a route it guards that declares no permission is refused, not opened to everyone. A middleware entry is either a bare name or a single-key map: a boolean value is the switch, anything else that middleware's config for this route. Handler entries are collected ahead of the group's, wrap the outside and run first, and a name the handler claims is skipped at group level — so a handler's entry overrides the group's attachment instead of stacking a second run. That ordering is why `authz` belongs at group level after `authnuser`: attached per handler, it would run before the credential exists.
 
-Each router embeds its `router.yaml` and exposes a `Handlers() map[string]any` that maps each `func:` key to a handler implementation. The framework accepts `echo.HandlerFunc` (or `func(echo.Context) error`) for HTTP and `func(echo.Context, *websocket.Conn) error` for WebSocket — but the **recommended** pattern is `func(c api.Context) error` (and `func(c api.Context, conn *websocket.Conn) error` for WS), where `api.Context` is a project-defined interface that embeds `echo.Context` and `context.Context`. A small `DiscoverHandlers` helper (see [`example/pkg/types/api/api.go`](example/pkg/types/api/api.go)) reflects over the router's methods and wraps the project-context signature into the echo signature the server expects. This keeps handlers free to evolve (extra binders, session/credential accessors, trace propagation) without rewriting every signature.
+Each router embeds its `router.yaml` and exposes a `Handlers() map[string]any` that maps each `func:` key to a handler implementation. The framework accepts `echo.HandlerFunc` (or `func(echo.Context) error`) for HTTP and `func(echo.Context, *websocket.Conn) error` for WebSocket ([coder/websocket](https://github.com/coder/websocket)) — but the **recommended** pattern is `func(c api.Context) error` (and `func(c api.Context, conn *websocket.Conn) error` for WS), where `api.Context` is a project-defined interface that embeds `echo.Context` and `context.Context`. A small `DiscoverHandlers` helper (see [`example/pkg/types/api/api.go`](example/pkg/types/api/api.go)) reflects over the router's methods and wraps the project-context signature into the echo signature the server expects. This keeps handlers free to evolve (extra binders, session/credential accessors, trace propagation) without rewriting every signature.
 
 The conventional file layout splits each router into `router.go` (factory + `Name`/`Dependencies`/`Config`/`Handlers`) and `handler.go` (the handler method bodies). The standard `Handlers()` implementation just delegates and emits a debug log so route registration is visible at startup:
 
@@ -796,22 +837,24 @@ func (r *router) Handlers() map[string]any {
 ### Middleware Pipeline
 
 ```
-Request → Metrics → Recover → [CORS] → [server-level] → Logger → Info → Error → custom (auth, throttle, deflate, …) → Handler → Response
+Request → Metrics → Recover → [server-level: trace, cors, …] → Logger → Info → Error → route (auth, throttle, deflate, …) → Handler → Response
 ```
 
-The server ships its built-ins in a fixed order — five plain lifecycle functions (metrics, recover, logger, info, error) that take no config, plus cors, a standard `api.Middleware` configured through the server's middleware configs under its own name. Each position is forced by a dependency: metrics outermost of all, recording into noop instruments unless the listener was given `server.WithMeter`, since it only reads the finished record and must count a recovered panic as the 500 it became; recover next, since everything inside it may panic; cors next, answering preflight requests — which match no route, so no route-attached middleware could — before any user code; server-level middlewares from `WithMiddlewares` after cors but ahead of info, so they run on every request, matched or not; logger wrapping info, whose records it reads; error innermost. CORS declines attachment until configured — `cors: true` for echo's permissive development defaults, a policy block (`allow_origins`/`allow_methods`/`allow_headers`/`allow_credentials`/`max_age`) to tighten, `false` or absent to stay off; declining by returning no function is part of the `Func` contract, not a special case. Rate limiting stays an app concern: the example ships it as a user middleware (`example/pkg/middlewares/throttle`).
+The server ships five built-ins in a fixed order — metrics, recover, logger, info, error — plain lifecycle functions that take no config. Each position is forced by a dependency: metrics outermost of all, recording into noop instruments unless the listener was given `server.WithMeter`, since it only reads the finished record and must count a recovered panic as the 500 it became; recover next, since everything inside it may panic; server-level middlewares from `WithMiddlewares` after recover but ahead of info, so they run on every request, matched or not — the only place CORS can answer a preflight, which matches no route; logger wrapping info, whose records it reads; error innermost. A server-level middleware stays dormant on a server whose middleware configs carry no entry for its name. The example's `cors` ([example/pkg/middlewares/cors](example/pkg/middlewares/cors/)) is configured that way — `cors: true` for echo's permissive development defaults, a policy block (`allow_origins`/`allow_methods`/`allow_headers`/`allow_credentials`/`max_age`) to tighten, `false` or absent to stay off. Rate limiting stays an app concern too: the example ships it as a route middleware (`example/pkg/middlewares/throttle`).
 
-A middleware implements one method — `Func(config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)` — called once per attachment point at registration time, with the raw YAML written under its name. Config resolves most-specific-first: the handler entry's own block in router.yaml, else its group entry's, else the server's middleware config for that name (`WithMiddlewareConfigs` — a plain name-to-config mapping, typically fed from the app's config.yaml), else nil. Per-route state lives in the returned closure, and a bad config fails startup, not the first request.
+A middleware implements one method — `Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error)` — called once per attachment point at registration time, and again on every restart. The switch and the config resolve independently, most-specific-first: the handler entry in router.yaml, else its group entry, else the server's middleware config for that name (`WithMiddlewareConfigs` — a plain name-to-value mapping, typically fed from the app's config.yaml, where a boolean is the switch and anything else the config). A route attachment is enabled unless a `false` says otherwise; config is nil when nothing sets it. Returning `(nil, nil)` declines the attachment. Per-route state lives in the returned closure, and a bad config fails startup, not the first request.
 
-Custom middlewares are resolved by name from the set registered with `srv.RegisterMiddlewares(...)`, and the lookup happens while routers are being installed — so always register middlewares before routers, or registration fails with `NotImplemented: middleware <name> not found`.
+Route middlewares are resolved by name from the set registered with `srv.RegisterMiddlewares(...)` (a name registered twice is a `Conflict`), and the lookup happens while routers are being installed — so always register middlewares before routers, or registration fails with `NotImplemented: middleware <name> not found`. The [api skill reference](plugins/framingo/skills/framingo/pkgs/api.md) covers the pipeline in depth.
 
 ### Error Handling
 
-Use [`github.com/xhanio/errors`](https://github.com/xhanio/errors) exclusively. The API server's error handler routes by error category to set the HTTP status.
+Use [`github.com/xhanio/errors`](https://github.com/xhanio/errors) exclusively. The API server's error handler routes by error category to set the HTTP status; a request failing its `validate` tags comes back from `c.Validate` as `InvalidArgument`, a 400.
 
 ```go
 return errors.NotFound.Newf("user %s not found", id)
-if err := s.db.FromContext(ctx).Create(u).Error; err != nil {
+
+// in the repository: FromContext joins the transaction ctx carries, if any
+if err := r.db.FromContext(ctx).Create(u).Error; err != nil {
     return errors.Wrapf(err, "create user %s", u.Name)
 }
 ```
@@ -856,12 +899,24 @@ db:
     max_idle_time: 30m
     exec_timeout: 30s
 
+tracing:                  # re-read by the tracing service's Init
+  enabled: true
+  exporter: stdout        # otlpgrpc | otlphttp | stdout (blank-import the exporter)
+  sample_ratio: 1.0
+  # config: { endpoint: localhost:4317, insecure: true }   # exporter-specific
+
+metrics:                  # re-read by the metrics service's Init
+  enabled: true
+  exporter: stdout
+  interval: 60s
+
 api:
   http:
     host: 0.0.0.0
     port: 8080
     prefix: /api/v1
-    middlewares:            # per-middleware default configs, by name
+    middlewares:            # per-middleware switches and default configs, by name
+      trace: true           # the framework's trace middleware, as the example wires it
       cors: true            # the example's server-level cors middleware
       throttle:             # the example's throttle middleware
         rps: 100.0
@@ -871,7 +926,7 @@ pprof:
   port: 6060              # optional
 ```
 
-Apart from `db.connection.*` — which `db.Manager.Init` reads straight from the context `Config` under the instance's root (`db`, or its `WithName`), so a restart picks up pool changes without a rebuild and a second database gets its own pool settings — this layout is a convention, not a schema. Your wiring code maps keys onto constructor options, so rename freely as long as `Init(ctx)` stays the place dynamic values are read.
+Apart from `db.connection.*`, `tracing.*` and `metrics.*` — which those services' `Init` reads straight from the context `Config` under the instance's root (`db`, `tracing`, `metrics`, or its `WithName`), so a restart picks up changes without a rebuild and a second instance gets its own settings — this layout is a convention, not a schema. Your wiring code maps keys onto constructor options, so rename freely as long as `Init(ctx)` stays the place dynamic values are read.
 
 Override at runtime:
 
@@ -920,7 +975,7 @@ WantedBy=multi-user.target
 ## Best Practices
 
 1. **Architecture & Types**
-   - Separate `api/`, `entity/`, `orm/`; handlers convert `api` ↔ `entity`, repositories convert `orm` → `entity`, and services stay entity-only
+   - Separate `api/`, `entity/`, `orm/`; handlers convert `api` ↔ `entity`, repositories convert `orm` → `entity`, and services stay entity-only, holding their data access as `repo` contracts
    - Pass required dependencies as constructor arguments, optional config as `Option`s
    - Keep business logic independent of HTTP and persistence
 
@@ -941,7 +996,7 @@ WantedBy=multi-user.target
 
 5. **Testing**
    - Mock collaborators through the `Manager` interface
-   - Use `testutil` to spin up an isolated DB for integration tests
+   - Use `testutil` to spin up an isolated DB for integration tests, and its `Tracer`/`Meter` doubles to assert spans and metrics
    - Test ORM ↔ entity conversions explicitly
 
 6. **Performance**

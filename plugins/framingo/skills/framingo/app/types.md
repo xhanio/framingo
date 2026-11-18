@@ -12,22 +12,23 @@ list grows with the app: the example adds three more.
 | `types/api/` | api | Wire types: request/response DTOs, middleware config blocks (`ThrottleConfig`, `CORSConfig` in `middleware.go`), plus `Context` + `DiscoverHandlers` in `api.go` | Routers, middlewares, clients |
 | `types/entity/` | service | Domain entities (business data, no ORM tags) — what services hand upward | Services; routers serialize them as responses |
 | `types/model/` | service | Service business interfaces (`model.Example` — methods + `common.Service`, no lifecycle) | Routers and other services — see [services.md](services.md) |
-| `types/orm/` | repo | DB models implementing the framework's ORM base interfaces ([types.md](../pkgs/types.md)) | `services/repository/`, [db.md](../pkgs/db.md) |
-| `types/repo/` | repo | Repository interfaces, one file per domain — all implemented by `services/repository/`, each embedding `repo.Repository` (`common.Service` + `Transaction`) | Services, at their lower boundary; a service opens a transaction through a contract it holds |
+| `types/orm/` | repo | DB models (gorm tags, a `TableName()`); a table that fits the framework's `orm.Record` embeds `BaseModel` and says so with `var _ form.Record[int32] = X{}` (`form` = the framework's `pkg/types/orm`), one that doesn't (`HelloWorld`) simply doesn't ([types.md](../pkgs/types.md)) | `services/repository/` only, [db.md](../pkgs/db.md) |
+| `types/repo/` | repo | Repository interfaces, one file per domain — all implemented by `services/repository/`, each embedding `repo.Repository` (`common.Service` + `Transaction`) — plus inputs only the repository takes (`repo.UserCreateOptions`, which carries the password hash, not the password) | Services, through the `Repository` interface each declares in its `model.go`; a service opens a transaction through a contract it holds |
 
 The layer column is a boundary rule, not a label: `api` DTOs stop at the
 router (services never see them), and `orm` models never leave the repo
 level — the repository maps each row to its `entity` before returning it,
 and the `repo` contracts speak entity only, so nothing above the repository
-ever meets a GORM tag.
+ever meets a GORM tag. Why, and what it costs:
+[design/data-access.md](../design/data-access.md).
 
 The example's grown categories:
 
 | Directory | Holds |
 |---|---|
-| `types/message/` | Typed message-bus payloads, each implementing `Kind() string` — `message.Example{From, To, Message}` is kind `"example_event"` |
-| `types/preset/` | Seeded constants and defaults: auth sources, session TTLs, preset roles and organizations |
-| `types/rbac/` | Permission and feature name constants — shared by the authz middleware, the role service, and `permission:` entries in router.yaml |
+| `types/message/` | Typed message-bus payloads, each implementing `Kind() string` — `message.Example{From, To, Message}` is kind `"example_event"`; account events (`LocalUsersDeleted`, `LocalUserPasswordReset`, `LocalUserIdentityChanged`) name users by ID |
+| `types/preset/` | Seeded constants and defaults: auth sources, session TTLs, the built-in admin user, the default organization, the CA name |
+| `types/rbac/` | Permission, feature, and preset role names — shared by the role service, the `permission:` entries in router.yaml, and the authz middleware that checks them |
 
 The framework's own `pkg/types/` — the `common` interfaces, `fapi`, ORM base
 types, context keys — is the pkgs half: [types.md](../pkgs/types.md).
@@ -81,18 +82,19 @@ func (HelloWorld) TableName() string { return "helloworld_messages" }
 
 // types/repo/example.go — the data-access contract
 type HelloWorld interface {
+	Repository // common.Service + Transaction, from repo.go
 	CreateHelloWorld(ctx context.Context, message string) (*entity.HelloWorld, error)
 }
 ```
 
 **The flow**: the router binds `api.HelloWorldCreateRequest` → calls
-`model.Example` → the service calls `repo.HelloWorld`, the contract it was
-constructed with → the repository persists `orm.HelloWorld`, maps
+`model.Example` → the service calls `repo.HelloWorld`, through the
+`Repository` it was constructed with → the repository persists `orm.HelloWorld`, maps
 it to `entity.HelloWorld` and returns that → the service returns it on.
 
 ## The two `api` packages
 
 - `fapi` — **framingo's** `pkg/types/api`: `Router`, `Middleware`, `RequestInfo`, `Endpoint`, TLS types, `ErrorBody`, `WrapError`, `ContextKey*`. No `Context`.
-- `api` — **your project's** `pkg/types/api`: `Context`, `DiscoverHandlers`, DTOs, and middleware config block shapes (the example keeps `ThrottleConfig` and `CORSConfig` there).
+- `api` — **your project's** `pkg/types/api`: `Context` (with `Credential()`, `Session()`, `TraceID()`, `BindPath()`/`BindQuery()`/`BindForm()`/`BindAny()`), `DiscoverHandlers`, DTOs, and middleware config block shapes (the example keeps `ThrottleConfig` and `CORSConfig` there).
 
 Import both, framework one aliased `fapi` — full treatment in [routers.md](routers.md).

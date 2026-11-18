@@ -78,9 +78,13 @@ rather than wire the services together.
 
 ## Bad input is a 400
 
-The server's validator reports a failed `validate` tag as `InvalidArgument`,
-which the error handler turns into a 400; an uncategorized error would be a
-500, blaming the server for the caller's request.
+**Decision.** The server's validator reports a failed `validate` tag as
+`InvalidArgument`, which the error handler turns into a 400. Validating
+something that is not a struct stays uncategorized — a 500 — because that
+is the handler's bug, not the caller's.
+
+**Why.** An uncategorized error is a 500, which blamed the server for a
+missing required field in the caller's request.
 
 See also [app/layout.md](../app/layout.md) (the layer rules) and
 [app/routers.md](../app/routers.md) (handlers).

@@ -60,10 +60,10 @@ import (
     "github.com/xhanio/framingo/pkg/services/task"
 )
 
-// tm runs the plans. It is yours: set the concurrency there (10 by default) and share it
-// with tasks of your own if you like. The plan manager takes it as a model.Task. Cron
-// schedules are read in time.Local unless task.WithLocation(loc) says otherwise - pass
-// what osutil.Timezone() returns to follow the system's named setting.
+// tm runs the plans. It is yours: set the concurrency there (task.MaxConcurrency, 10 by
+// default) and share it with tasks of your own if you like. The plan manager takes it as a
+// model.Task. Cron schedules are read in time.Local unless task.WithLocation(loc) says
+// otherwise - pass what osutil.Timezone() returns to follow the system's named setting.
 tm := task.New(task.WithLogger(logger))
 
 // the message sender: where run events are sent - typically the messagebus manager
@@ -71,7 +71,8 @@ tm := task.New(task.WithLogger(logger))
 pm := plan.New(messagebusMgr, tm,
     plan.WithLogger(logger),
     plan.WithLogDir("/var/log/myapp/plans"), // empty keeps no log files
-    plan.WithOutputTailBytes(4096),          // the default
+    plan.WithOutputTailBytes(4096),          // the default; <= 0 keeps it
+    // plan.WithName(name) as on every service
 )
 ```
 
@@ -81,6 +82,34 @@ sends what still runs `job.SignalKill` and returns. The plan manager neither sta
 and forgets its own plans, and whatever else runs on `tm` carries on. Plan IDs share a
 namespace with the other tasks on `tm`, and a clash is the `Conflict` from `Add`.
 
+## The task manager
+
+`pkg/services/task` is what runs every plan, and runs jobs of your own as well. `task.Manager`
+= `model.Task` + `Daemon`; its options are `WithLogger`, `WithLocation` and `MaxConcurrency`.
+
+```go
+// pkg/types/model
+type Task interface {
+    common.Service
+    Add(tasks ...*entity.Task) error                  // all or none: no Job is InvalidArgument, a taken ID a Conflict
+    Remove(ctx context.Context, tasks ...*entity.Task) error // by job, not by ID; waits until ctx ends, then SignalKill
+    Trigger(id string, params any) error              // queue it now; params replace Task.Params for this firing, nil keeps them
+    Cancel(id string) error                           // ends it queued, running, waiting to retry or requeueing; idle is a Conflict
+    Stats(id string) *entity.TaskStats                // nil if not registered
+}
+```
+
+A task's ID is its job's. `Schedule` (cron, [`cronutil`](utils.md) grammar) or `Manual: true`
+keeps it registered; with neither it is one-shot, queued at once and gone after it runs —
+both is an `InvalidArgument`. The queue runs lower `Priority` first, then first come first
+served; `Exclusive` waits for every slot and runs alone. `Timeout` bounds each attempt, and
+`RetryAttempts` / `RetryDelay` retry it in place, the delay doubling after each retry;
+`RequeueAttempts` / `RequeueCooldown` put a failed run
+back in the queue after a cooldown, freeing its slot meanwhile, so a task runs up to
+`(RetryAttempts+1) * (RequeueAttempts+1)` times per firing. A firing that finds the task
+already queued, running or cooling down is a `Conflict` from `Trigger`, and a cron tick that
+does is skipped.
+
 ## Command plans
 
 Every plan has a kind, and the plan manager builds its task's `Job` from it, under the plan's
@@ -89,7 +118,7 @@ task manager itself, as in [Commands and job signals](#commands-and-job-signals)
 `entity.PlanKindCommand` is the one predefined kind, defined in `pkg/utils/plans`:
 
 ```go
-err := pl.Add(&entity.Plan{
+err := pm.Add(&entity.Plan{
     ID:     "backup",
     Kind:   entity.PlanKindCommand,
     Params: jobs.Command{Argv: []string{"/usr/bin/pg_dump", "mydb"}, Dir: "/tmp"},
@@ -98,15 +127,18 @@ err := pl.Add(&entity.Plan{
         Timeout:  time.Hour,
     },
 })
-runID, err := pl.Trigger("backup", entity.PlanRunManual) // run it now as well
+runID, err := pm.Trigger("backup", entity.PlanRunManual) // run it now as well
 ```
 
 A plan of a kind takes what the kind needs in `Plan.Params` and leaves `Task.Params` empty:
 the plan manager passes each firing's run ID and source there. A command plan's job is its
 `jobs.Command` (see below) with the run's bookkeeping around it. Leave the command's `Out`
-unset: the plan manager sets it for each run. The command runs in its own process group, so stopping it reaches
+unset — a command plan with an `Out` is an `InvalidArgument`: the plan manager sets it for
+each run. The command runs in its own process group, so stopping it reaches
 its children, and one that ends on its own keeps any background children it left. Its
-output goes to `<log dir>/<plan ID>/<time>-<run>.log` and the tail of it into the run.
+output goes to `<log dir>/<plan ID>/<YYYYMMDD-HHMMSS>-<first 8 of the run ID>.log`, under a
+header naming the run, its source and the command line, and the tail of it into the run. A
+run whose log file cannot be created still runs, without a `LogPath`.
 
 ## Commands and job signals
 

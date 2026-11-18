@@ -5,7 +5,8 @@ the chain order, config resolution, the built-ins — is in
 [api.md](../pkgs/api.md).
 
 The example ships seven under `pkg/middlewares/`, one package each, a
-`middleware.go` per package (plus `option.go` where it takes options):
+`middleware.go` and an `option.go` per package (every one takes at least
+`WithName`):
 
 | Package | Does |
 |---|---|
@@ -16,6 +17,10 @@ The example ships seven under `pkg/middlewares/`, one package each, a
 | `authz` | Permission check against the route's declared `permission:` |
 | `feature` | License gating |
 | `throttle` | Per-client-IP rate limiting, configurable per route |
+
+The framework ships one of its own, `pkg/middlewares/trace` (the server
+span; [tracing.md](../pkgs/tracing.md)), written to the same contract and
+attached server-level ahead of `cors`.
 
 ## The Contract
 
@@ -45,7 +50,9 @@ The name defaults to the package name (`nameutil.Package`) — that's what
 router.yaml refers to — with a `WithName` option to rename an attachment:
 config keys follow the name, so two differently-named instances of the same
 middleware can run side by side, each activated and configured under its own
-key. Every middleware pins the contract at compile time:
+key. Names are unique per server manager: `RegisterMiddlewares` refuses a
+second middleware under a taken name with `Conflict`, so a second instance
+needs its own `WithName`. Every middleware pins the contract at compile time:
 
 ```go
 var _ fapi.Middleware = (*middleware)(nil)

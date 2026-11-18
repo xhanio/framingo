@@ -26,7 +26,8 @@ db:
     password: secret
     dbname: myapp_db
   migration:
-    dir: ./migrations         # path to migration SQL files
+    dir: ./migrations         # migration SQL files, run at every Init (relative to the working dir);
+                              # empty runs none - leave it empty where a one-off migrate command does it
     version: 0                # target version (0 = latest)
   connection:
     max_open: 10              # max open connections
@@ -51,6 +52,14 @@ tracing:
   #   compression: gzip          # stdout takes pretty/timestamps instead)
   #   timeout: 10s
   #   retry: { initial_interval: 5s }
+
+# Metrics (OpenTelemetry) — read in metrics.Manager.Init(ctx), like tracing
+metrics:
+  enabled: false              # off unless set; enabled with no exporter fails Init
+  exporter: stdout            # otlpgrpc | otlphttp | stdout — blank-import the matching
+                              # pkg/services/metrics/exporters/* subpackage
+  interval: 60s               # export loop period (the SDK's default)
+  # config: { endpoint: localhost:4317, insecure: true }   # exporter-specific, strict-decoded
 
 # API servers — iterated by m.config.GetStringMap("api") in service.go
 # Each key becomes a named server instance via m.api.Add(name, ...)
@@ -113,3 +122,19 @@ pprof:
 - Custom service config keys are accessed in `Init(ctx)` via `confutil.FromContext(ctx).GetString("%s.key", nameutil.ConfigRoot(m.name))` — a format string, so the root follows the service's name (see [app/services.md](../app/services.md))
 - Pubsub, messagebus, plan and task manager services are configured entirely via functional options, not YAML keys
 - `tracing.*` keys (or `<name>.*` for a `WithName`d instance) are read dynamically in `tracing.Manager.Init(ctx)` — a set key wins over the constructed options and stays sticky across restarts until overridden. Per-server activation is the standard middleware mapping: `trace: true` under `api.<name>.middlewares` enables the framework's tracing middleware on that server ([tracing.md](tracing.md))
+- `metrics.*` keys are re-read in `metrics.Manager.Init(ctx)` on every restart, an absent key landing on the default ([metrics.md](metrics.md))
+
+## Environment Overrides
+
+The wiring layer builds the viper, and the example makes every key settable from the environment ([components-server.md](../app/components-server.md#configgo--viper-and-env)):
+
+```go
+conf.SetEnvPrefix(envutil.EnvPrefix(info.ProductName))  // "framingo-example" -> FRAMINGO_EXAMPLE
+conf.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+conf.AutomaticEnv()
+```
+
+- A key's variable is the prefix, `_`, and the key upper-cased with dots as underscores: `db.source.host` is `FRAMINGO_EXAMPLE_DB_SOURCE_HOST`. Without the replacer viper would look for `..._DB.SOURCE.HOST`, which no shell can set. With no product name injected by the build, the prefix is empty and the variable is `DB_SOURCE_HOST`.
+- An env var beats the YAML file, the YAML file beats a default; framingo binds no CLI flags.
+- `AutomaticEnv` answers a key only when something asks for it by name. A getter that iterates — `GetStringMap("api")` — sees only what the file declares, so a whole new api server cannot come from the environment, only values under one the file names.
+- This is why `nameutil.ConfigRoot` never returns a slashed name: `services/db/manager` as a root could not be spelled as a variable, `db` can.

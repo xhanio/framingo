@@ -10,15 +10,15 @@ The example is structured as a self-contained module (`github.com/xhanio/framing
 
 | Layer | What's wired up |
 |---|---|
-| **Binaries** | `exampleapp` (daemon) + `examplecli` (HTTP client CLI) |
-| **Supervisor** | Topologically-sorted lifecycle, auto-restart on liveness failure. Signal handling is app code, in `pkg/components/server/example/signal.go` — the framework installs no handlers |
-| **Persistence** | PostgreSQL via GORM, migrations, connection pooling, transactions |
+| **Binaries** | `exampleapp` (`daemon`, `migrate`, `version`) + `examplecli` (HTTP client CLI) |
+| **Supervisor** | Topologically-sorted lifecycle, a bounded stop (`WithStopPolicy(20s)`); auto-restart on liveness failure is one `supervisor.WithMonitorPolicy` away, off in the example. Signal handling is app code, in `pkg/components/server/example/signal.go` — the framework installs no handlers |
+| **Persistence** | PostgreSQL via GORM, migrations (on start locally, by a one-off `exampleapp migrate` Job in prod), connection pooling, transactions |
 | **AuthN/AuthZ** | User login (with optional LDAP/API-token hooks), session cookies, role-based authorization. `pkg/middlewares/authnagent/` sketches mTLS agent auth but is **not registered and not working** — its CN parsing rejects the certs this system issues, and it verifies only the signature, not expiry or key usage |
 | **Messaging** | Pub/sub primitive + message bus + WebSocket stream endpoint (`/api/v1/messages/stream`) |
-| **HTTP API** | Echo-based server with declarative YAML routing, throttling, deflate compression, feature flags |
+| **HTTP API** | Echo-based server with declarative YAML routing, CORS, throttling, deflate compression; a feature-flag middleware (`pkg/middlewares/feature/`) ships unregistered |
 | **System services** | User, role, organization, certificate (PKI) management |
 | **Build & deploy** | GoPro-driven binary, Docker image, docker-compose, and Kubernetes manifests |
-| **Observability** | Structured logging with rotation, pprof on `:6060`, debug dump on `SIGUSR1`, stack dump on `SIGUSR2` |
+| **Observability** | Structured logging with rotation, OpenTelemetry tracing (HTTP + GORM spans) and metrics (stdout exporter locally), `/healthz` + `/readyz` on the health listener (`:8081`), pprof on `:6060`, debug dump on `SIGUSR1`, stack dump on `SIGUSR2` |
 
 ### Forking the Example into Your Own Repo
 
@@ -39,8 +39,9 @@ find . -type f -name '*.go' -exec sed -i 's|github.com/xhanio/framingo/example|g
 #    - product: framingo-example   →   myapp           (project.yaml)
 #    - exampleapp / examplecli     →   myappd / myapp  (project.yaml, build/, env/)
 #    - framingo-example            →   myapp           (Dockerfile, K8s manifests, log paths)
-find . -type f \( -name '*.yaml' -o -name '*.go' -o -name 'Dockerfile' \) \
-  -exec sed -i 's/framingo-example/myapp/g; s/exampleapp/myappd/g; s/examplecli/myapp/g' {} +
+#    - FRAMINGO_EXAMPLE_           →   MYAPP_          (secret.env*: the env prefix follows the product)
+find . -type f \( -name '*.yaml' -o -name '*.go' -o -name 'Dockerfile' -o -name 'secret.env*' \) \
+  -exec sed -i 's/framingo-example/myapp/g; s/exampleapp/myappd/g; s/examplecli/myapp/g; s/FRAMINGO_EXAMPLE_/MYAPP_/g' {} +
 
 # 4. Rename the per-binary directories and configs
 mv build/binary/exampleapp build/binary/myappd
@@ -63,7 +64,7 @@ gopro build binary -e local
 | Keep | Why |
 |---|---|
 | `pkg/components/server/` | The supervisor wiring pattern; just register/unregister services |
-| `pkg/components/cmd/app/` | The Cobra `daemon` / `version` skeleton |
+| `pkg/components/cmd/app/` | The Cobra `daemon` / `migrate` / `version` skeleton |
 | `pkg/services/repository/` | One-file-per-domain GORM repo pattern; add your own |
 | `pkg/types/{api,entity,model,orm,repo}/` | The strict type-separation layout |
 | Build/env/K8s templates | GoPro builds, Docker image, manifests |
@@ -71,7 +72,7 @@ gopro build binary -e local
 | Optional — remove if you don't need it | Where |
 |---|---|
 | RBAC + user/role/org/cert system services | `pkg/services/system/`, `pkg/routers/{auth,user,role,certificate}/`, `pkg/middlewares/{authnuser,authnagent,authz}/`, `pkg/types/{rbac,preset}/` |
-| WebSocket message bus stream | `pkg/routers/messagebus/`, drop `messagebus` from `pkg/components/server/example/service.go` |
+| WebSocket message bus stream | `pkg/routers/messagebus/` and its `messagebusRouter.New` line in `pkg/components/server/example/api.go`, plus the CLI's `stream` (`pkg/components/cmd/cli/messagebus.go`) |
 | Feature-flag middleware | `pkg/middlewares/feature/`, `pkg/types/rbac/feature.go` |
 | Deflate compression middleware | `pkg/middlewares/deflate/` |
 | Demo HelloWorld feature | `pkg/services/example/`, `pkg/routers/example/`, `pkg/types/message/`, plus the `001_create_helloworld_table.*.sql` migration |
@@ -128,7 +129,12 @@ Two things GoPro does for you that you then have to handle yourself:
 ```bash
 cd example/                          # or your forked project root
 gopro build binary -e local          # CGO-enabled local dev build
+gopro generate config -e local       # → dist/local/config/exampleapp/: config.yaml + migrations
 ```
+
+The second step matters: the local `config.yaml` points `db.migration.dir`
+at `./dist/local/config/exampleapp/migrations`, relative to the project
+root, and `gopro build binary` does not render it.
 
 `project.yaml` defines two environments: `local`, which runs under docker
 compose, and `prod`, which deploys to Kubernetes. `env/default/` holds what
@@ -150,19 +156,24 @@ set -a; . env/local/config/exampleapp/secret.env; set +a
 ./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
 
+The daemon migrates on start, since the local config sets `db.migration`.
+To migrate without serving, as prod's Job does:
+`./bin/exampleapp migrate -c env/local/config/exampleapp/config.yaml`.
+
 Any config key can be overridden this way: the product prefix, then the key
 with its dots as underscores — `db.source.host` is
 `FRAMINGO_EXAMPLE_DB_SOURCE_HOST` — and the environment wins over the file.
 
 ### Exercise the HelloWorld Endpoint
 
-The endpoint is protected by `authnuser`, so log in first:
+The endpoint is protected by `authnuser`, so log in first. `-e` is the API
+base, prefix included; it defaults to `http://127.0.0.1:8080/api/v1`:
 
 ```bash
-./bin/examplecli -e http://localhost:8080 login           # default: admin / admin
-./bin/examplecli -e http://localhost:8080 helloworld "Hello"
+./bin/examplecli -e http://localhost:8080/api/v1 login    # -u defaults to admin; prompts for the password (admin)
+./bin/examplecli -e http://localhost:8080/api/v1 helloworld "Hello"
 # {"id":1,"message":"Hello","created_at":"...","updated_at":"..."}   (the greeting only goes to the server log)
-./bin/examplecli -e http://localhost:8080 logout
+./bin/examplecli -e http://localhost:8080/api/v1 logout
 ```
 
 Equivalent curl. `login` persists the session id to `~/.example` as
@@ -179,18 +190,18 @@ curl -X POST http://localhost:8080/api/v1/example/helloworld \
 ### Other CLI Commands
 
 ```bash
-./bin/examplecli -e http://localhost:8080 messagebus stream    # subscribe to WS stream
-./bin/examplecli certutil -p framingo --domain localhost --ip 127.0.0.1
+./bin/examplecli -e http://localhost:8080/api/v1 stream   # subscribe to the WS stream; Ctrl-C closes it cleanly
+./bin/examplecli certutil -p framingo --domain localhost --ip 127.0.0.1   # writes ca.crt/.key + server.crt/.key here
 ./bin/examplecli version
 ./bin/exampleapp version
 ```
 
-Global flags: `-e/--endpoint`, `-v/--verbose`.
+Global flags: `-e/--endpoint`, `-v/--verbose` (request debug output).
 
 ## Development Workflow
 
 1. Edit code under `pkg/`
-2. `gopro build binary -e local`
+2. `gopro build binary -e local` (and `gopro generate config -e local` after touching `env/`)
 3. Re-run `./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml`
 4. Exercise via `./bin/examplecli` or `curl`
 
@@ -265,7 +276,8 @@ open http://localhost:6060/debug/pprof/                        # web UI
 PID=$(pgrep exampleapp)
 kill -USR1 $PID    # dump per-service info to stdout (Debuggable.Info)
 kill -USR2 $PID    # dump goroutine stack traces
-kill -INT  $PID    # graceful shutdown
+kill -HUP  $PID    # restart every service (ignored while shutting down)
+kill -INT  $PID    # graceful shutdown; a second INT/TERM forces it, a third exits at once
 ```
 
 ## Directory Structure
@@ -283,7 +295,7 @@ example/
 │   ├── default/config/exampleapp/migrations/ # shared by every env: 000_create_system_tables, 001_create_helloworld_table
 │   ├── local/                                # docker compose
 │   │   ├── config/exampleapp/
-│   │   │   ├── config.yaml                   # log, db, api, pprof
+│   │   │   ├── config.yaml                   # log, db, tracing, metrics, api, example, pprof
 │   │   │   └── secret.env                    # development credentials, env-var overrides
 │   │   └── docker-compose/template.docker-compose.yaml   # postgres + the daemon
 │   └── prod/                                 # Kubernetes
@@ -299,20 +311,21 @@ example/
     │   ├── cmd/
     │   │   ├── app/                          # daemon Cobra commands (root, daemon, migrate, version)
     │   │   └── cli/                          # CLI commands (auth, cert, example, messagebus)
-    │   └── server/example/                   # supervisor wiring (model, manager, lifecycle, config, service, api, signal)
+    │   └── server/example/                   # supervisor wiring (model, manager, lifecycle, config, service, api, signal, migrate)
     ├── services/
     │   ├── example/                          # demo HelloWorld business service
     │   ├── repository/                       # one file per domain (helloworld, user, role, ...)
     │   └── system/
+    │       ├── platform/                     # the db/meter/pubsub/messagebus bundle services take first
     │       ├── auth/                         # user / LDAP / API-token authentication
     │       ├── user/                         # user CRUD
     │       ├── role/                         # role definitions
     │       ├── organization/                 # multi-tenant orgs
     │       └── certificate/                  # mTLS / PKI cert management
-    ├── routers/                              # auth, certificate, example, messagebus, role, user
-    ├── middlewares/                          # authnagent, authnuser, authz, deflate, feature
-    ├── types/                                # api, entity, infra, message, model, orm, preset, rbac, repo
-    └── utils/infra/                          # local infra helpers
+    ├── routers/                              # auth, certificate, example, health, messagebus, role, user
+    ├── middlewares/                          # authnagent, authnuser, authz, cors, deflate, feature, throttle
+    ├── types/                                # api, entity, message, model, orm, preset, rbac, repo
+    └── utils/infra/                          # process-wide facts set at startup: env prefix, config dir, start time
 ```
 
 ## Troubleshooting
@@ -333,9 +346,9 @@ psql -h localhost -U framingo -d framingo_example          # verify DB reachable
 
 ### API returns 404 or 401
 
-- Endpoint: `POST /api/v1/example/helloworld` (prefix from `api.http.prefix`)
+- Endpoint: `POST /api/v1/example/helloworld` (prefix from `api.http.prefix`); `examplecli -e` must carry the prefix too
 - Requires `authnuser` — log in first via `examplecli login`
-- Check registered routes: `grep "Registering route" /var/log/framingo-example/app.log`
+- Check registered routers (logged at debug, which local's `log.level: -1` is): `grep "registered router" <log.file>`
 
 ## Next Steps
 
