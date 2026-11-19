@@ -96,6 +96,13 @@ func (m *manager) initServices() error {
 		supervisor.WithLogger(m.log),
 		// within the platform's stop timeout, so shutdown ends here, not in a SIGKILL
 		supervisor.WithStopPolicy(20*time.Second),
+		// probes feed /healthz and /readyz: without a sweep they would report
+		// only what Init and Start left behind
+		supervisor.WithMonitorPolicy(
+			m.config.GetDuration("supervisor.monitor.interval"),
+			m.config.GetInt("supervisor.monitor.max_retries"),
+			m.config.GetDuration("supervisor.monitor.restart_delay"),
+		),
 	)
 
 	// Init re-reads these keys, so a restart picks up changes

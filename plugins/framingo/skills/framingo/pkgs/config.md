@@ -5,6 +5,14 @@ Reference config structure for all framework services. Use this as a template wh
 ## Example Config YAML
 
 ```yaml
+# Supervisor monitor — read once, at wiring, into supervisor.WithMonitorPolicy.
+# Without a sweep /healthz and /readyz report only what Init and Start left.
+supervisor:
+  monitor:
+    interval: 10s             # probe every service this often; 0 disables monitoring
+    max_retries: 3            # in-process restarts on failed liveness, then /healthz fails
+    restart_delay: 5s
+
 # Logging — used by log.New() in service.go
 log:
   level: 0                    # zapcore.Level: -1=Debug, 0=Info, 1=Warn, 2=Error (raise/lower to filter)

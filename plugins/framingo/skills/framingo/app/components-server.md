@@ -166,6 +166,13 @@ func (m *manager) initServices() error {
 		supervisor.WithLogger(m.log),
 		// within the platform's stop timeout, so shutdown ends here, not in a SIGKILL
 		supervisor.WithStopPolicy(20*time.Second),
+		// probes feed /healthz and /readyz: without a sweep they would report
+		// only what Init and Start left behind
+		supervisor.WithMonitorPolicy(
+			m.config.GetDuration("supervisor.monitor.interval"),
+			m.config.GetInt("supervisor.monitor.max_retries"),
+			m.config.GetDuration("supervisor.monitor.restart_delay"),
+		),
 	)
 
 	/* init infra level services */
@@ -352,9 +359,9 @@ func (m *manager) Init(ctx context.Context) error {
 	}
 
 	// init all services — a failure is logged, not fatal, so the listeners
-	// still come up and /readyz reports what failed; liveness monitoring and
-	// restarts take over only where supervisor.WithMonitorPolicy enables
-	// them, which the example leaves off
+	// still come up and /readyz reports what failed; from then on the
+	// monitor (supervisor.monitor.*) keeps the probes current and restarts
+	// a service whose liveness fails
 	if err := m.services.Init(ctx); err != nil {
 		m.log.Error(err)
 	}

@@ -11,7 +11,7 @@ The example is structured as a self-contained module (`github.com/xhanio/framing
 | Layer | What's wired up |
 |---|---|
 | **Binaries** | `exampleapp` (`daemon`, `migrate`, `version`) + `examplecli` (HTTP client CLI) |
-| **Supervisor** | Topologically-sorted lifecycle, a bounded stop (`WithStopPolicy(20s)`); auto-restart on liveness failure is one `supervisor.WithMonitorPolicy` away, off in the example. Signal handling is app code, in `pkg/components/server/example/signal.go` — the framework installs no handlers |
+| **Supervisor** | Topologically-sorted lifecycle, a bounded stop (`WithStopPolicy(20s)`); a monitor (`supervisor.monitor.*`: every 10s, 3 restarts) keeps `/readyz` live and restarts a service whose liveness fails, `/healthz` failing once those restarts are spent. Signal handling is app code, in `pkg/components/server/example/signal.go` — the framework installs no handlers |
 | **Persistence** | PostgreSQL via GORM, migrations (on start locally, by a one-off `exampleapp migrate` Job in prod), connection pooling, transactions |
 | **AuthN/AuthZ** | User login (with optional LDAP/API-token hooks), session cookies, role-based authorization. `pkg/middlewares/authnagent/` sketches mTLS agent auth but is **not registered and not working** — its CN parsing rejects the certs this system issues, and it verifies only the signature, not expiry or key usage |
 | **Messaging** | Pub/sub primitive + message bus + WebSocket stream endpoint (`/api/v1/messages/stream`) |

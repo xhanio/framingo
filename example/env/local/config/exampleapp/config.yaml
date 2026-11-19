@@ -1,5 +1,14 @@
 # Framingo Example Application Configuration (Local Environment)
 
+# probe every service each interval: /readyz follows readiness live, and a
+# failed liveness restarts the service in process - max_retries times, then
+# /healthz fails and the platform restarts the process. interval 0 disables it.
+supervisor:
+  monitor:
+    interval: 10s
+    max_retries: 3
+    restart_delay: 5s
+
 # Logging configuration
 log:
   level: -1  # -1=Debug, 0=Info, 1=Warn, 2=Error
