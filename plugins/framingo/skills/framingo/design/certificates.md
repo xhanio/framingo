@@ -41,6 +41,21 @@ nginx's `ssl_client_certificate`, an agent's trust store — needs the
 certificate, not the key. The cost: the keys are as safe as the database; a
 production CA keeps its root offline and its keys in a KMS or HSM.
 
+## A download is encoded as the caller asks
+
+**Decision.** `POST /certificates/:id/download` takes a `format`: `pem`, the
+certificate alone; `tar`, with its key, as `<name>.crt` and `<name>.key`; or
+`p12`, with its key and chain. No format is tar with a key, pem without. A
+p12 is encoded on download, by `certutil.EncodePKCS12`, with the password the
+request carries: an uploaded PKCS#12 keeps neither its file nor its password.
+
+**Why.** A stored password would sit beside the key it encrypts, which the
+database holds anyway, so it would protect nothing; and the uploader's
+password is not the downloader's to have. A stored original is a second copy
+of the key to keep in step, often under algorithms OpenSSL 3 refuses without
+`-legacy`. Encoded anew, a p12 is AES-256 with PBKDF2, and any certificate
+with its key downloads as one, not only those uploaded as one.
+
 ## Not yet
 
 - Trust is one certificate per CA, so a CA cannot be rotated with an

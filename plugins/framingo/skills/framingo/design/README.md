@@ -12,7 +12,7 @@ these say *why*, so a change can tell a principle from an accident.
 | [data-access.md](data-access.md) | orm types never leave the repository; `types/repo` carries the contracts and repo-only inputs; the repository decides nothing |
 | [service-wiring.md](service-wiring.md) | Platform first in every `New`, and every platform handle always there, never nil; `Dependencies` lists optional ones as is, nil skipped; one instance per name; the api server starts last by ordering |
 | [websockets.md](websockets.md) | `wsutil.Bridge` as a session utility; `wsutil.Close` by the handler's result; the server closes its connections on stop |
-| [certificates.md](certificates.md) | A requester keeps its key and the request, not the CSR, decides its identity; one CA for the manager's certificates and one for agents'; CA keys in the database alone, their certificates from `GET /certificates/ca` |
+| [certificates.md](certificates.md) | A requester keeps its key and the request, not the CSR, decides its identity; one CA for the manager's certificates and one for agents'; CA keys in the database alone, their certificates from `GET /certificates/ca`; a download is encoded in the format and with the password the caller asks, nothing stored |
 | [migrations.md](migrations.md) | Locally the daemon migrates on start; in prod a Job runs `exampleapp migrate` once per release; every key overridable from the environment |
 
 When a design question is settled, add it to the file of its area — or a

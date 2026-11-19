@@ -7,6 +7,20 @@ type CertificateUploadRequest struct {
 	Password string `json:"password" form:"password"`
 }
 
+// The formats a certificate downloads as, whatever it was uploaded as.
+const (
+	CertFormatPEM = "pem" // the certificate alone
+	CertFormatTar = "tar" // the certificate and its key, as <name>.crt and <name>.key
+	CertFormatP12 = "p12" // the certificate, its key and chain, encrypted with Password
+)
+
+// CertificateDownloadRequest is POST /certificates/:id/download. No format is
+// tar for a certificate with its key, pem for one without.
+type CertificateDownloadRequest struct {
+	Format   string `json:"format" validate:"omitempty,oneof=pem tar p12"`
+	Password string `json:"password" validate:"required_if=Format p12"` // the caller's: nothing stores it
+}
+
 type CertificateUpdateRequest struct {
 	Comments string `json:"comments"`
 }

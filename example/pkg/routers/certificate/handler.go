@@ -190,14 +190,36 @@ func (r *router) Download(c api.Context) error {
 	if err := c.BindPath().MustInt32("id", &certID).BindError(); err != nil {
 		return errors.BadRequest.Wrap(err)
 	}
+	var body api.CertificateDownloadRequest
+	if err := c.Bind(&body); err != nil {
+		return errors.BadRequest.Wrap(err)
+	}
+	if err := c.Validate(&body); err != nil {
+		return errors.Wrap(err)
+	}
 	cert, err := r.cm.Get(c, certID)
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	switch cert.UploadType {
-	case entity.CertTypePKCS12:
-		return attachment(c, cert.Name+".p12", "application/x-pkcs12", cert.Bundle.CertPEM())
-	case entity.CertTypeCertKey:
+	hasKey := cert.Bundle.Key() != nil
+	format := body.Format
+	if format == "" {
+		format = api.CertFormatPEM
+		if hasKey {
+			format = api.CertFormatTar
+		}
+	}
+	if format != api.CertFormatPEM && !hasKey {
+		return errors.BadRequest.Newf("The certificate %s has no private key to download as %s", cert.Name, format)
+	}
+	switch format {
+	case api.CertFormatP12:
+		data, err := certutil.EncodePKCS12(cert.Bundle, body.Password)
+		if err != nil {
+			return errors.Wrap(err)
+		}
+		return attachment(c, cert.Name+".p12", "application/x-pkcs12", data)
+	case api.CertFormatTar:
 		data, err := certKeyTar(cert.Name, cert.Bundle.CertPEM(), cert.Bundle.KeyPEM())
 		if err != nil {
 			return errors.Wrap(err)

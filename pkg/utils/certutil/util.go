@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/xhanio/errors"
+	"software.sslmate.com/src/go-pkcs12"
+
 	"github.com/xhanio/framingo/pkg/utils/timeutil"
 )
 
@@ -232,6 +234,20 @@ func Decode(bundleData []byte) (CertBundle, error) {
 	}
 
 	return b, nil
+}
+
+// EncodePKCS12 is b's certificate, key and chain as a PKCS#12 file encrypted
+// with password - by modern algorithms, AES-256 and PBKDF2-SHA256, which
+// OpenSSL 3 reads without -legacy.
+func EncodePKCS12(b CertBundle, password string) ([]byte, error) {
+	if b.Key() == nil {
+		return nil, errors.InvalidArgument.Newf("no private key to encode into PKCS#12")
+	}
+	data, err := pkcs12.Modern2023.Encode(b.Key(), b.Cert(), b.CAs(), password)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to encode PKCS#12")
+	}
+	return data, nil
 }
 
 func NewCABundle(certBytes []byte, keyPEM []byte) (CABundle, error) {
