@@ -75,11 +75,8 @@ the expiry and the client-auth usage.
 
 ## Not yet
 
-- Trust is one certificate per CA, so a CA cannot be rotated with an
-  overlap; a pool of trusted CAs comes first.
-- No hierarchy: an offline root signing the two as intermediates.
-- No enrollment token, renewal, or revocation, and a certificate is not
-  bound to an agent record. The example's server is given no agent CA yet:
-  the CA is in the database, and the server's options are built before Init. `authnagent` is not registered: it checks only
-  the signature — not expiry nor key usage — and its header path, for a
-  proxy in front, carries no proof of possession.
+Trust is one certificate per CA, both CAs are self-signed, and an agent has
+no way in of its own: no enrollment, renewal or revocation, and a
+certificate is bound to no agent record. `authnagent` is not registered and
+the example's server is given no agent CA. The repository's `ROADMAP.md`
+plans each, in order.
