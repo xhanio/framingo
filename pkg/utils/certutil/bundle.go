@@ -54,7 +54,7 @@ func newBundleFromFile(certFile, caFile, keyFile string) (*bundle, error) {
 	if caFile != "" {
 		caBytes, err = os.ReadFile(caFile)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to read ca file %s", certFile)
+			return nil, errors.Wrapf(err, "failed to read ca file %s", caFile)
 		}
 	}
 	if keyFile != "" {

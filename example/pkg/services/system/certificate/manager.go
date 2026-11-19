@@ -16,7 +16,7 @@ type manager struct {
 
 	repository Repository
 
-	mu       sync.Mutex // guards the two CAs, loaded once
+	mu       sync.Mutex // guards the two CAs: Init writes them, a restart again
 	serverCA certutil.CABundle
 	agentCA  certutil.CABundle
 }

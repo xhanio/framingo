@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
@@ -92,8 +93,17 @@ func TestDownloadTar(t *testing.T) {
 		data, err := io.ReadAll(tr)
 		require.NoError(t, err)
 		files[h.Name] = string(data)
+		assert.WithinDuration(t, time.Now(), h.ModTime, time.Minute, "%s is dated", h.Name)
 	}
 	assert.Equal(t, map[string]string{"srv.crt": string(withKey.Bundle.CertPEM()), "srv.key": string(withKey.Bundle.KeyPEM())}, files)
+}
+
+func TestDownloadFilenameIsQuotedWhenItMustBe(t *testing.T) {
+	_, certOnly := serverCert(t)
+	certOnly.Name = "agent 7; v2"
+	rec, err := download(t, certOnly, "")
+	require.NoError(t, err)
+	assert.Equal(t, `attachment; filename="agent 7; v2.pem"`, rec.Header().Get("Content-Disposition"))
 }
 
 func TestDownloadPEM(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"crypto/x509"
 	"io"
+	"mime"
 	"net/http"
 	"time"
 
@@ -231,7 +232,7 @@ func (r *router) Download(c api.Context) error {
 }
 
 func attachment(c api.Context, filename, contentType string, data []byte) error {
-	c.Response().Header().Set("Content-Disposition", "attachment; filename="+filename)
+	c.Response().Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	return c.Blob(http.StatusOK, contentType, data)
 }
 
@@ -244,7 +245,7 @@ func certKeyTar(name string, certPEM, keyPEM []byte) ([]byte, error) {
 		name string
 		data []byte
 	}{{name + ".crt", certPEM}, {name + ".key", keyPEM}} {
-		if err := tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0600, Size: int64(len(f.data))}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0600, Size: int64(len(f.data)), ModTime: time.Now()}); err != nil {
 			return nil, errors.Wrap(err)
 		}
 		if _, err := tw.Write(f.data); err != nil {

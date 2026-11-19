@@ -201,23 +201,26 @@ func (m *manager) DecRefCount(ctx context.Context, certID int32) error {
 
 // ServerCA signs the manager's own certificates; agents verify the manager against it.
 func (m *manager) ServerCA() (certutil.CABundle, error) {
-	return m.systemCA(&m.serverCA, preset.ServerCAName, "server CA")
+	return m.loaded(&m.serverCA, preset.ServerCAName)
 }
 
 // AgentCA signs the certificates agents present; the manager verifies agents against it.
 func (m *manager) AgentCA() (certutil.CABundle, error) {
-	return m.systemCA(&m.agentCA, preset.AgentCAName, "agent CA")
+	return m.loaded(&m.agentCA, preset.AgentCAName)
 }
 
-// systemCA loads a system CA into *slot, creating it on first use. Its private
-// key lives in the database only: nothing writes it to disk.
-func (m *manager) systemCA(slot *certutil.CABundle, name, role string) (certutil.CABundle, error) {
+func (m *manager) loaded(slot *certutil.CABundle, name string) (certutil.CABundle, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if *slot != nil {
-		return *slot, nil
+	if *slot == nil {
+		return nil, errors.Newf("the system CA %s is loaded by Init, which has not run", name)
 	}
-	ctx := context.Background()
+	return *slot, nil
+}
+
+// loadSystemCA is the system CA stored as name, created when there is none. Its
+// private key lives in the database only: nothing writes it to disk.
+func (m *manager) loadSystemCA(ctx context.Context, name, role string) (certutil.CABundle, error) {
 	stored, err := m.repository.GetCertificateByName(ctx, name)
 	switch {
 	case err == nil:
@@ -225,7 +228,7 @@ func (m *manager) systemCA(slot *certutil.CABundle, name, role string) (certutil
 		if !ok {
 			return nil, errors.Newf("system CA %s holds no CA bundle", name)
 		}
-		*slot = ca
+		return ca, nil
 	case errors.Is(err, errors.NotFound):
 		ca, err := certutil.New(certutil.WithCommonName(strings.TrimSpace(info.ProductName + " " + role)))
 		if err != nil {
@@ -241,11 +244,10 @@ func (m *manager) systemCA(slot *certutil.CABundle, name, role string) (certutil
 		}); err != nil {
 			return nil, errors.Wrapf(err, "Failed to store the system CA %s", name)
 		}
-		*slot = ca
+		return ca, nil
 	default:
 		return nil, errors.Wrap(err)
 	}
-	return *slot, nil
 }
 
 func isSystemCA(name string) bool {

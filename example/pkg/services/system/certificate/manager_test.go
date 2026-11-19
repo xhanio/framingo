@@ -64,6 +64,8 @@ func TestSystemCAs(t *testing.T) {
 	assert.Contains(t, agent.Cert().Subject.CommonName, "agent CA")
 
 	restarted := newManager(p, repository.New(p))
+	_, err = restarted.ServerCA()
+	assert.Error(t, err, "Init loads the CAs")
 	require.NoError(t, restarted.Init(context.Background()))
 	reloaded, err := restarted.ServerCA()
 	require.NoError(t, err)

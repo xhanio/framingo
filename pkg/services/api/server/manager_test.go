@@ -18,6 +18,7 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -1168,4 +1169,19 @@ handlers:
 	case <-time.After(3 * time.Second):
 		t.Fatal("the connection still going was left open")
 	}
+}
+
+// https without a private key is refused when the server is added, not by every handshake.
+func TestAddRefusesHTTPSWithoutAKey(t *testing.T) {
+	ca, err := certutil.New()
+	require.NoError(t, err)
+	signed, err := ca.SignServer(&certutil.ServerRequest{CommonName: "srv.local"})
+	require.NoError(t, err)
+	certOnly, err := certutil.NewCertBundleWithoutKey(signed.CertPEM())
+	require.NoError(t, err)
+
+	m := testManager()
+	err = m.Add("https", WithEndpoint("127.0.0.1", 8443, "/"), WithTLS(certOnly))
+	assert.True(t, err != nil && errors.Is(err, errors.InvalidArgument), "a certificate without its key: got %v", err)
+	require.NoError(t, m.Add("https", WithEndpoint("127.0.0.1", 8443, "/"), WithTLS(signed)), "with its key")
 }

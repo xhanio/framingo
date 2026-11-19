@@ -148,6 +148,9 @@ func (m *manager) Add(name string, opts ...ServerOption) error {
 	if s.endpoint == nil {
 		return errors.Newf("server must have a valid endpoint")
 	}
+	if s.tlsConfig != nil && (s.tlsConfig.CertBundle == nil || s.tlsConfig.CertBundle.Key() == nil) {
+		return errors.InvalidArgument.Newf("server %s: https needs a certificate with its private key", name)
+	}
 	inst, err := s.newInstruments()
 	if err != nil {
 		return errors.Wrapf(err, "server %s: failed to build metrics instruments", name)

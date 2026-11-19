@@ -160,4 +160,19 @@ func TestMustCertFromFileIsReadyForTLS(t *testing.T) {
 	require.Len(t, tc.Certificate, 1)
 	assert.Equal(t, signed.CertDER(), tc.Certificate[0])
 	assert.NotNil(t, tc.PrivateKey)
+
+	missing := filepath.Join(dir, "missing-ca.crt")
+	assertPanicsMentioning(t, missing, func() { MustCertFromFile(certFile, missing, keyFile) })
+	assertPanicsMentioning(t, "is not a CA", func() { MustCAFromFile(certFile, "", keyFile) })
+}
+
+func assertPanicsMentioning(t *testing.T, text string, f func()) {
+	t.Helper()
+	defer func() {
+		r := recover()
+		err, ok := r.(error)
+		require.True(t, ok, "panics with an error, got %v", r)
+		assert.Contains(t, err.Error(), text)
+	}()
+	f()
 }

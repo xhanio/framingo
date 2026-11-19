@@ -316,7 +316,7 @@ func MustCAFromFile(certFile, caFile, keyFile string) CABundle {
 		panic(err)
 	}
 	if !b.cert.IsCA {
-		panic(err)
+		panic(errors.Newf("%s is not a CA", certFile))
 	}
 	return b
 }
