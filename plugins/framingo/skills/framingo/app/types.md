@@ -27,7 +27,7 @@ The example's grown categories:
 | Directory | Holds |
 |---|---|
 | `types/message/` | Typed message-bus payloads, each implementing `Kind() string` — `message.Example{From, To, Message}` is kind `"example_event"`; account events (`LocalUsersDeleted`, `LocalUserPasswordReset`, `LocalUserIdentityChanged`) name users by ID |
-| `types/preset/` | Seeded constants and defaults: auth sources, session TTLs, the built-in admin user, the default organization, the CA name |
+| `types/preset/` | Seeded constants and defaults: auth sources, session TTLs, the built-in admin user, the default organization, the system CA names |
 | `types/rbac/` | Permission, feature, and preset role names — shared by the role service, the `permission:` entries in router.yaml, and the authz middleware that checks them |
 
 The framework's own `pkg/types/` — the `common` interfaces, `fapi`, ORM base

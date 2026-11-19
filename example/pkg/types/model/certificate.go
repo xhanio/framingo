@@ -20,5 +20,6 @@ type Certificate interface {
 	Update(ctx context.Context, certID int32, opts entity.CertUpdateOptions) error
 	IncRefCount(ctx context.Context, certID int32) error
 	DecRefCount(ctx context.Context, certID int32) error
-	DefaultCA() (certutil.CABundle, error)
+	ServerCA() (certutil.CABundle, error) // signs the manager's own certificates; agents verify the manager against it
+	AgentCA() (certutil.CABundle, error)  // signs the certificates agents present; the manager verifies agents against it
 }

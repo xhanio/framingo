@@ -57,7 +57,7 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 
 func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		ca, err := m.cert.DefaultCA()
+		ca, err := m.cert.AgentCA()
 		if err != nil {
 			return errors.Wrap(err)
 		}

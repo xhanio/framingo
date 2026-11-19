@@ -67,10 +67,10 @@ type CertIssueOptions struct {
 	Name           string
 	CommonName     string
 	SubjectAltName string
-	CAID           int32
+	CAID           int32 // 0: the server CA
 }
 
-// CertSignOptions signs a requester's CSR with the default CA - the one agents
+// CertSignOptions signs a requester's CSR with the agent CA - the one agents
 // are verified against. The requester keeps its private key; CommonName and
 // SubjectAltName are what the CA grants, and the CSR may ask for no other name.
 type CertSignOptions struct {

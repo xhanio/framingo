@@ -31,6 +31,10 @@ handlers:
     func: Download
     # write, not read: the download carries a local certificate's private key
     permission: certificate_write
+  - method: GET
+    path: /ca
+    func: GetCA
+    permission: certificate_read
   - method: POST
     path: /csr
     func: SignCSR

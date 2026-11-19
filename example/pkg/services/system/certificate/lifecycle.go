@@ -7,6 +7,11 @@ import (
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	_, err := m.DefaultCA()
-	return errors.Wrapf(err, "Failed to reload the default CA")
+	if _, err := m.ServerCA(); err != nil {
+		return errors.Wrapf(err, "Failed to load the server CA")
+	}
+	if _, err := m.AgentCA(); err != nil {
+		return errors.Wrapf(err, "Failed to load the agent CA")
+	}
+	return nil
 }

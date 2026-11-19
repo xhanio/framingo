@@ -113,8 +113,8 @@ Two things GoPro does for you that you then have to handle yourself:
 2. **Build metadata is injected at link time** into `pkg/types/info` (product
    name, version, git commit). Without it `info.ProductName` is empty, which
    leaves the env-var prefix blank — so overrides are `DB_SOURCE_HOST` rather than
-   `FRAMINGO_EXAMPLE_DB_SOURCE_HOST` — and gives generated CA certificates an empty
-   common name. Harmless for local poking; supply your own `-ldflags` if you
+   `FRAMINGO_EXAMPLE_DB_SOURCE_HOST` — and leaves the product name out of the
+   system CAs' common names. Harmless for local poking; supply your own `-ldflags` if you
    care.
 
 ## Prerequisites

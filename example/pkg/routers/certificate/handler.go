@@ -269,14 +269,29 @@ func (r *router) SignCSR(c api.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	ca, err := r.cm.DefaultCA()
+	ca, err := r.cm.ServerCA()
 	if err != nil {
 		return errors.Wrap(err)
 	}
 	return c.JSON(http.StatusOK, api.CertificateSignResponse{
 		CertificateID: cert.ID,
 		Certificate:   string(cert.Bundle.CertPEM()),
-		CA:            string(ca.CertPEM()),
+		ServerCA:      string(ca.CertPEM()),
+	})
+}
+
+func (r *router) GetCA(c api.Context) error {
+	server, err := r.cm.ServerCA()
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	agent, err := r.cm.AgentCA()
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	return c.JSON(http.StatusOK, api.CertificateCAResponse{
+		ServerCA: string(server.CertPEM()),
+		AgentCA:  string(agent.CertPEM()),
 	})
 }
 

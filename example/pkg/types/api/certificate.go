@@ -15,11 +15,11 @@ type CertificateGenerateRequest struct {
 	Name           string `json:"name" validate:"required"`
 	CommonName     string `json:"common_name" validate:"required"`
 	SubjectAltName string `json:"subject_alt_name"`
-	CAID           int32  `json:"ca_id" validate:"required"`
+	CAID           int32  `json:"ca_id"` // empty: the server CA
 }
 
 // CertificateSignRequest is POST /certificates/csr: the requester sends a CSR
-// and keeps its private key; the manager's default CA signs it.
+// and keeps its private key; the manager's agent CA signs it.
 type CertificateSignRequest struct {
 	Name           string `json:"name" validate:"required"`
 	CSR            string `json:"csr" validate:"required"` // PEM
@@ -32,7 +32,14 @@ type CertificateSignRequest struct {
 type CertificateSignResponse struct {
 	CertificateID int32  `json:"certificate_id"`
 	Certificate   string `json:"certificate"` // PEM
-	CA            string `json:"ca"`          // PEM: what the requester trusts the manager by
+	ServerCA      string `json:"server_ca"`   // PEM: what the requester trusts the manager by
+}
+
+// CertificateCAResponse is GET /certificates/ca: the system CAs' certificates,
+// for whatever verifies against them - nginx checking agents, a trust store.
+type CertificateCAResponse struct {
+	ServerCA string `json:"server_ca"` // PEM
+	AgentCA  string `json:"agent_ca"`  // PEM
 }
 
 type CertificateCreateResponse struct {
