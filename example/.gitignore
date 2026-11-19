@@ -30,6 +30,9 @@ Thumbs.db
 !secret.env
 env/prod/**/secret.env
 
+# the CA a running daemon generates beside its config - a private key
+env/**/cert/
+
 # Test coverage
 *.out
 coverage.html
