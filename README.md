@@ -258,7 +258,7 @@ Interface contracts and shared types:
 
 | Package | Purpose |
 | --- | --- |
-| **[certutil](pkg/utils/certutil/)** | X.509 CA/server/client cert generation and TLS config |
+| **[certutil](pkg/utils/certutil/)** | X.509 CA/server/client cert generation, CSR signing (`ParseCSR`, `SignCSR`: the requester keeps its key) and TLS config |
 | **[cmdutil](pkg/utils/cmdutil/)** | External command execution: `Start`/`Wait`/`Run`, `Terminate`/`Kill` of the process or its process group, output to writers or collected; plus `MergeArgs` for last-wins flag merging. Keeps `exec.Cmd`'s contract — wait once, read the collected output after `Wait` |
 | **[cronutil](pkg/utils/cronutil/)** | The cron grammar the task manager schedules with, and `Validate(spec)` to reject a bad schedule up front |
 | **[confutil](pkg/utils/confutil/)** | `Config` read-side over a Viper instance, propagated via `context.Context`; getters take format-string keys |

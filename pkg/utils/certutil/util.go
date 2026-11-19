@@ -7,7 +7,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"math/big"
+	"net"
 	"time"
 
 	"github.com/xhanio/errors"
@@ -23,8 +25,12 @@ func generateKey() (*rsa.PrivateKey, error) {
 }
 
 func generateCA(cn string, key *rsa.PrivateKey) (*x509.Certificate, error) {
+	sn, err := newSerial()
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
 	template := &x509.Certificate{
-		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		SerialNumber: sn,
 		Subject: pkix.Name{
 			CommonName: cn,
 		},
@@ -66,10 +72,9 @@ func signCA(req *CARequest, key *rsa.PrivateKey, ca *bundle) (*x509.Certificate,
 		return nil, errors.Wrapf(err, "failed to parse certificate request")
 	}
 
-	// RFC 5280: at most 20 octets
-	sn, err := rand.Int(rand.Reader, big.NewInt(1).Lsh(big.NewInt(1), 159))
+	sn, err := newSerial()
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to generate certificate serial number")
+		return nil, errors.Wrap(err)
 	}
 
 	template := &x509.Certificate{
@@ -98,48 +103,56 @@ func signCA(req *CARequest, key *rsa.PrivateKey, ca *bundle) (*x509.Certificate,
 	return cert, nil
 }
 
-func signServer(req *ServerRequest, key *rsa.PrivateKey, ca *bundle) (*x509.Certificate, error) {
-	subject := ca.cert.Subject
-	subject.CommonName = req.CommonName // overwrite common name
-	// fmt.Println(ca.cert.SignatureAlgorithm)
-	cr := &x509.CertificateRequest{
-		PublicKey:          key.PublicKey,
-		SignatureAlgorithm: x509.SHA256WithRSA,
-		Subject:            subject,
-		DNSNames:           req.DNSNames,
-	}
-	if len(req.IPs) > 0 {
-		cr.IPAddresses = req.IPs
-	}
-	crb, err := x509.CreateCertificateRequest(rand.Reader, cr, key)
+// newSerial is random, within RFC 5280's 20 octets.
+func newSerial() (*big.Int, error) {
+	sn, err := rand.Int(rand.Reader, big.NewInt(1).Lsh(big.NewInt(1), 159))
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to create certificate request")
+		return nil, errors.Wrapf(err, "failed to generate certificate serial number")
 	}
-	pcr, err := x509.ParseCertificateRequest(crb)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse certificate request")
-	}
+	return sn, nil
+}
 
-	template := &x509.Certificate{
-		Signature:          pcr.Signature,
-		SignatureAlgorithm: pcr.SignatureAlgorithm,
-		PublicKeyAlgorithm: pcr.PublicKeyAlgorithm,
-		PublicKey:          pcr.PublicKey,
-		SerialNumber:       big.NewInt(time.Now().UnixNano()),
-		Subject:            pcr.Subject,
-		NotBefore:          ca.cert.NotBefore,
-		NotAfter:           ca.cert.NotAfter,
-		KeyUsage:           x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage: []x509.ExtKeyUsage{
-			x509.ExtKeyUsageServerAuth,
-		},
-		DNSNames:    pcr.DNSNames,
-		IPAddresses: pcr.IPAddresses,
-	}
+func signServer(req *ServerRequest, key *rsa.PrivateKey, ca *bundle) (*x509.Certificate, error) {
+	return signLeaf(ca, &key.PublicKey, req.CommonName, req.DNSNames, req.IPs, []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, req.ValidPeriod)
+}
+
+func signClient(req *ClientRequest, key *rsa.PrivateKey, ca *bundle) (*x509.Certificate, error) {
+	return signLeaf(ca, &key.PublicKey, req.CommonName, nil, nil, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, req.ValidPeriod)
+}
+
+// signLeaf issues ca's certificate for pub, under ca's subject with cn; a zero
+// validPeriod lasts as long as ca.
+func signLeaf(ca *bundle, pub crypto.PublicKey, cn string, dnsNames []string, ips []net.IP, ekus []x509.ExtKeyUsage, validPeriod time.Duration) (*x509.Certificate, error) {
 	if ca.Key() == nil {
 		return nil, errors.Newf("failed to sign certificate: no private key found")
 	}
-	certDER, err := x509.CreateCertificate(rand.Reader, template, ca.cert, pcr.PublicKey, ca.Key())
+	if len(ekus) == 0 {
+		return nil, errors.InvalidArgument.Newf("no extended key usage to sign the certificate for")
+	}
+	keyUsage := x509.KeyUsageDigitalSignature
+	if _, ok := pub.(*rsa.PublicKey); ok {
+		keyUsage |= x509.KeyUsageKeyEncipherment // RSA key exchange; meaningless for other keys
+	}
+	sn, err := newSerial()
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	subject := ca.cert.Subject
+	subject.CommonName = cn
+	template := &x509.Certificate{
+		SerialNumber: sn,
+		Subject:      subject,
+		NotBefore:    ca.cert.NotBefore,
+		NotAfter:     ca.cert.NotAfter,
+		KeyUsage:     keyUsage,
+		ExtKeyUsage:  ekus,
+		DNSNames:     dnsNames,
+		IPAddresses:  ips,
+	}
+	if validPeriod > 0 {
+		template.NotAfter = timeutil.Earliest(true, ca.cert.NotAfter, time.Now().Add(validPeriod))
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, ca.cert, pub, ca.Key())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create certificate")
 	}
@@ -150,52 +163,18 @@ func signServer(req *ServerRequest, key *rsa.PrivateKey, ca *bundle) (*x509.Cert
 	return cert, nil
 }
 
-func signClient(req *ClientRequest, key *rsa.PrivateKey, ca *bundle) (*x509.Certificate, error) {
-	name := ca.cert.Subject
-	name.CommonName = req.CommonName // overwrite common name
-
-	cr := &x509.CertificateRequest{
-		PublicKey:          key.PublicKey,
-		SignatureAlgorithm: x509.SHA256WithRSA,
-		Subject:            name,
-	}
-	crb, err := x509.CreateCertificateRequest(rand.Reader, cr, key)
+// NewCSR is a PEM certificate request for key's public key - what a requester
+// sends to have it signed while keeping key to itself.
+func NewCSR(key crypto.Signer, cn string, dnsNames []string, ips []net.IP) ([]byte, error) {
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject:     pkix.Name{CommonName: cn},
+		DNSNames:    dnsNames,
+		IPAddresses: ips,
+	}, key)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, errors.Wrapf(err, "failed to create certificate request")
 	}
-	pcr, err := x509.ParseCertificateRequest(crb)
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-
-	template := &x509.Certificate{
-		Signature:          pcr.Signature,
-		SignatureAlgorithm: pcr.SignatureAlgorithm,
-		PublicKeyAlgorithm: pcr.PublicKeyAlgorithm,
-		PublicKey:          pcr.PublicKey,
-		SerialNumber:       big.NewInt(time.Now().UnixNano()),
-		Subject:            pcr.Subject,
-		NotBefore:          ca.cert.NotBefore,
-		NotAfter:           ca.cert.NotAfter,
-		KeyUsage:           x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage: []x509.ExtKeyUsage{
-			x509.ExtKeyUsageClientAuth,
-		},
-		DNSNames:    pcr.DNSNames,
-		IPAddresses: pcr.IPAddresses,
-	}
-	if req.ValidPeriod > 0 {
-		template.NotAfter = timeutil.Earliest(true, ca.cert.NotAfter, time.Now().Add(req.ValidPeriod))
-	}
-	certDER, err := x509.CreateCertificate(rand.Reader, template, ca.cert, pcr.PublicKey, ca.Key())
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	cert, err := x509.ParseCertificate(certDER)
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	return cert, nil
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}), nil
 }
 
 func Encode(b CertBundle) ([]byte, error) {

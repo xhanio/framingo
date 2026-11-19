@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/xhanio/errors"
 )
@@ -304,6 +305,55 @@ func (b *bundle) SignClient(req *ClientRequest) (CertBundle, error) {
 		return nil, errors.Wrap(err)
 	}
 	return result, nil
+}
+
+func (b *bundle) SignCSR(csr *x509.CertificateRequest, req *CSRRequest) (CertBundle, error) {
+	if !b.cert.IsCA {
+		return nil, errors.Newf("unable to sign cert from bundle: bundle is not a ca")
+	}
+	if csr == nil {
+		return nil, errors.InvalidArgument.Newf("no certificate request to sign")
+	}
+	if err := csr.CheckSignature(); err != nil {
+		return nil, errors.InvalidArgument.Wrapf(err, "certificate request signature")
+	}
+	if err := checkCSRIdentity(csr, req); err != nil {
+		return nil, errors.Wrap(err)
+	}
+	cert, err := signLeaf(b, csr.PublicKey, req.CommonName, req.DNSNames, req.IPs, req.ExtKeyUsage, req.ValidPeriod)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	var pool []*x509.Certificate
+	if req.KeepChain {
+		pool = append(append(pool, b.cert), b.pool...)
+	}
+	return NewCert(cert, pool, nil)
+}
+
+// checkCSRIdentity refuses a CSR asking for a name the request does not grant:
+// the CSR's subject is the requester's claim, the request is the CA's decision.
+func checkCSRIdentity(csr *x509.CertificateRequest, req *CSRRequest) error {
+	if req.CommonName == "" {
+		return errors.InvalidArgument.Newf("no common name to sign the request for")
+	}
+	if cn := csr.Subject.CommonName; cn != "" && cn != req.CommonName {
+		return errors.InvalidArgument.Newf("certificate request asks for %q, not %q", cn, req.CommonName)
+	}
+	for _, name := range csr.DNSNames {
+		if !slices.Contains(req.DNSNames, name) {
+			return errors.InvalidArgument.Newf("certificate request asks for DNS name %q, which is not granted", name)
+		}
+	}
+	for _, ip := range csr.IPAddresses {
+		if !slices.ContainsFunc(req.IPs, ip.Equal) {
+			return errors.InvalidArgument.Newf("certificate request asks for IP %s, which is not granted", ip)
+		}
+	}
+	if len(csr.EmailAddresses) > 0 || len(csr.URIs) > 0 {
+		return errors.InvalidArgument.Newf("certificate request asks for email or URI names, which are never granted")
+	}
+	return nil
 }
 
 func (b *bundle) Dump(certFile, keyFile string) error {

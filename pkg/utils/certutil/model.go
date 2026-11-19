@@ -21,10 +21,22 @@ type ClientRequest struct {
 }
 
 type ServerRequest struct {
-	CommonName string
-	DNSNames   []string
-	IPs        []net.IP
-	KeepChain  bool
+	CommonName  string
+	DNSNames    []string
+	IPs         []net.IP
+	ValidPeriod time.Duration
+	KeepChain   bool
+}
+
+// CSRRequest is what a CSR is signed into. The CA decides the identity: the
+// CSR contributes its public key, and any name it asks for must be one of these.
+type CSRRequest struct {
+	ExtKeyUsage []x509.ExtKeyUsage // at least one
+	CommonName  string
+	DNSNames    []string
+	IPs         []net.IP
+	ValidPeriod time.Duration // 0: until the CA expires
+	KeepChain   bool
 }
 
 type CARequest struct {
@@ -58,5 +70,7 @@ type CABundle interface {
 	CertBundle
 	SignClient(req *ClientRequest) (CertBundle, error)
 	SignServer(req *ServerRequest) (CertBundle, error)
+	// SignCSR returns the certificate without a key: the key stays with the requester.
+	SignCSR(csr *x509.CertificateRequest, req *CSRRequest) (CertBundle, error)
 	SignCA(req *CARequest) (CABundle, error)
 }

@@ -12,6 +12,26 @@ import (
 	"github.com/xhanio/errors"
 )
 
+// ParseCSR reads a PEM or DER certificate request and checks its signature,
+// which proves the requester holds the private key of the public key it sends.
+func ParseCSR(b []byte) (*x509.CertificateRequest, error) {
+	der := b
+	if block, _ := pem.Decode(b); block != nil {
+		if block.Type != "CERTIFICATE REQUEST" && block.Type != "NEW CERTIFICATE REQUEST" {
+			return nil, errors.InvalidArgument.Newf("PEM block is a %s, not a certificate request", block.Type)
+		}
+		der = block.Bytes
+	}
+	csr, err := x509.ParseCertificateRequest(der)
+	if err != nil {
+		return nil, errors.InvalidArgument.Wrapf(err, "failed to parse certificate request")
+	}
+	if err := csr.CheckSignature(); err != nil {
+		return nil, errors.InvalidArgument.Wrapf(err, "certificate request signature")
+	}
+	return csr, nil
+}
+
 func ParsePEMCert(b []byte) (*x509.Certificate, []*x509.Certificate, error) {
 	var certs []*x509.Certificate
 	curr := b
