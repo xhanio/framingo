@@ -2,11 +2,11 @@ package certificate
 
 import (
 	"archive/tar"
+	"bytes"
 	"crypto"
 	"crypto/x509"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/xhanio/errors"
@@ -194,53 +194,45 @@ func (r *router) Download(c api.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	var tempFile *os.File
-	defer func() {
-		if tempFile != nil {
-			tempFile.Close()
-			if err := os.Remove(tempFile.Name()); err != nil {
-				r.log.Warnf("failed to remove temp file %s", tempFile.Name())
-			}
-		}
-	}()
 	switch cert.UploadType {
 	case entity.CertTypePKCS12:
-		tempFile, err = os.CreateTemp("", "certificate-*.p12")
-		if err != nil {
-			return errors.Wrap(err)
-		}
-		if _, err := tempFile.Write(cert.Bundle.CertPEM()); err != nil {
-			return errors.Wrap(err)
-		}
-		c.Response().Header().Set("Content-Disposition", "attachment; filename="+cert.Name+".p12")
-		c.Response().Header().Set("Content-Type", "application/x-pkcs12")
+		return attachment(c, cert.Name+".p12", "application/x-pkcs12", cert.Bundle.CertPEM())
 	case entity.CertTypeCertKey:
-		tempFile, err = os.CreateTemp("", "cert-key-bundle-*.tar")
+		data, err := certKeyTar(cert.Name, cert.Bundle.CertPEM(), cert.Bundle.KeyPEM())
 		if err != nil {
 			return errors.Wrap(err)
 		}
-		tw := tar.NewWriter(tempFile)
-		defer tw.Close()
-		for _, data := range [][]byte{cert.Bundle.CertPEM(), cert.Bundle.KeyPEM()} {
-			if err := tw.WriteHeader(&tar.Header{Name: cert.Name, Mode: 0600, Size: int64(len(data))}); err != nil {
-				return errors.Wrap(err)
-			}
-			if _, err := tw.Write(data); err != nil {
-				return errors.Wrap(err)
-			}
-		}
-		c.Response().Header().Set("Content-Disposition", "attachment; filename="+cert.Name+".tar")
+		return attachment(c, cert.Name+".tar", "application/x-tar", data)
 	default:
-		tempFile, err = os.CreateTemp("", "certificate-*.pem")
-		if err != nil {
-			return errors.Wrap(err)
-		}
-		if _, err := tempFile.Write(cert.Bundle.CertPEM()); err != nil {
-			return errors.Wrap(err)
-		}
-		c.Response().Header().Set("Content-Disposition", "attachment; filename="+cert.Name+".pem")
+		return attachment(c, cert.Name+".pem", "application/x-pem-file", cert.Bundle.CertPEM())
 	}
-	return c.File(tempFile.Name())
+}
+
+func attachment(c api.Context, filename, contentType string, data []byte) error {
+	c.Response().Header().Set("Content-Disposition", "attachment; filename="+filename)
+	return c.Blob(http.StatusOK, contentType, data)
+}
+
+// certKeyTar is name.crt and name.key, closed before it is sent: the close
+// writes the end of the archive.
+func certKeyTar(name string, certPEM, keyPEM []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, f := range []struct {
+		name string
+		data []byte
+	}{{name + ".crt", certPEM}, {name + ".key", keyPEM}} {
+		if err := tw.WriteHeader(&tar.Header{Name: f.name, Mode: 0600, Size: int64(len(f.data))}); err != nil {
+			return nil, errors.Wrap(err)
+		}
+		if _, err := tw.Write(f.data); err != nil {
+			return nil, errors.Wrap(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return nil, errors.Wrap(err)
+	}
+	return buf.Bytes(), nil
 }
 
 func (r *router) SignCSR(c api.Context) error {
