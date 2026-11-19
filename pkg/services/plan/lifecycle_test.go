@@ -87,7 +87,7 @@ func TestStopWaitsForTheSlowestPlanNotTheSum(t *testing.T) {
 	for i := range plans {
 		id := fmt.Sprintf("slow-%d", i)
 		ready := filepath.Join(dir, id)
-		script := `trap 'sleep 0.5; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
+		script := readyThenSleep("sleep 0.5; exit 0", ready)
 		if err := m.Add(commandPlan(id, &entity.Task{}, "sh", "-c", script)); err != nil {
 			t.Fatal(err)
 		}

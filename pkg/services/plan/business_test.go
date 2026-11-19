@@ -221,7 +221,7 @@ func TestDeleteWithoutARunReturnsNil(t *testing.T) {
 func TestDeleteReturnsOnlyOnceTheCanceledRunHasEnded(t *testing.T) {
 	m, sender := startedManager(t)
 	ready := filepath.Join(t.TempDir(), "ready")
-	script := `trap 'sleep 0.3; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
+	script := readyThenSleep("sleep 0.3; exit 0", ready)
 	if err := m.Add(commandPlan("slow", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +300,7 @@ func TestNoCronRunStartsAfterDeleteBegan(t *testing.T) {
 	m, sender := startedManager(t)
 	ready := filepath.Join(t.TempDir(), "ready")
 	// the run ends just as the next ticks are due
-	script := `trap 'sleep 1.1; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
+	script := readyThenSleep("sleep 1.1; exit 0", ready)
 	if err := m.Add(commandPlan("cron", &entity.Task{Schedule: "* * * * * *"}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}

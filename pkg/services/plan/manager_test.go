@@ -172,6 +172,15 @@ func trigger(t *testing.T, m *manager, id string) string {
 	return runID
 }
 
+// readyThenSleep runs onTerm on SIGTERM and otherwise waits on a background
+// sleep; ready appears once that sleep can be signaled. The background child
+// touches it itself: a SIGTERM that reaches a forked child before it resets the
+// shell's trap is swallowed, and the surviving sleep would hold the output
+// open until the grace period runs out.
+func readyThenSleep(onTerm, ready string) string {
+	return `trap '` + onTerm + `' TERM; sh -c 'touch "$0"; exec sleep 30' ` + ready + ` & wait`
+}
+
 // each writes its pid once it ignores SIGTERM, so a test can signal it from then on
 const (
 	// the shell dies of SIGTERM and the child does not

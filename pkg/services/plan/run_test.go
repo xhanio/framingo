@@ -343,7 +343,7 @@ func TestShortGracePeriodEndsEarlierThanTheDefault(t *testing.T) {
 func TestZeroGracePeriodStillGivesACommandTimeToCleanUp(t *testing.T) {
 	m, sender := startedManager(t)
 	ready := filepath.Join(t.TempDir(), "ready")
-	script := `trap 'sleep 0.3; echo cleaned; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
+	script := readyThenSleep("sleep 0.3; echo cleaned; exit 0", ready)
 	if err := m.Add(commandPlan("tidy", &entity.Task{}, "sh", "-c", script)); err != nil {
 		t.Fatal(err)
 	}

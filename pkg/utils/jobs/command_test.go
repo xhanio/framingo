@@ -192,7 +192,10 @@ func TestCommandIsNotStartedOnceItsContextIsDone(t *testing.T) {
 
 func TestCanceledCommandGetsItsGracePeriodToCleanUp(t *testing.T) {
 	ready := filepath.Join(t.TempDir(), "ready")
-	script := `trap 'sleep 0.3; echo cleaned; exit 0' TERM; sleep 30 & touch ` + ready + `; wait`
+	// the background child touches ready itself: a SIGTERM reaching it before it
+	// resets the shell's trap would be swallowed, and the surviving sleep would
+	// hold the output open until the grace period ends
+	script := `trap 'sleep 0.3; echo cleaned; exit 0' TERM; sh -c 'touch "$0"; exec sleep 30' ` + ready + ` & wait`
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, out, ended := commandRun(ctx, sh(script), 5*time.Second)
