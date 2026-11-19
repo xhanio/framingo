@@ -100,10 +100,6 @@ api:
   #   cert: /path/to/server.crt
   #   key: /path/to/server.key
 
-# TLS CA certificate (used when any api server has cert/key configured)
-# ca:
-#   cert: /path/to/ca.crt
-
 # pprof profiling — optional, set port to enable
 pprof:
   port: 6060                  # 0 = disabled

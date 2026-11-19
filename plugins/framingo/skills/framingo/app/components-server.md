@@ -266,7 +266,7 @@ func (m *manager) initServices() error {
 		}
 		// add TLS if configured
 		if m.config.IsSet(fmt.Sprintf("api.%s.cert", name)) {
-			opts = append(opts, server.WithTLS(certutil.MustCAFromFile( /* ca.cert, api.<name>.cert/key */ ), true))
+			opts = append(opts, server.WithTLS(certutil.MustCertFromFile( /* api.<name>.cert, "", api.<name>.key */ )))
 		}
 		if err := m.api.Add(name, opts...); err != nil {
 			return errors.Wrap(err)

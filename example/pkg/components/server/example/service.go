@@ -223,14 +223,11 @@ func (m *manager) initServices() error {
 			opts = append(opts, server.WithMiddlewareConfigs(raw))
 		}
 		if m.config.IsSet(fmt.Sprintf("api.%s.cert", name)) {
-			opts = append(opts, server.WithTLS(
-				certutil.MustCAFromFile(
-					m.config.GetString("ca.cert"),
-					m.config.GetString(fmt.Sprintf("api.%s.cert", name)),
-					m.config.GetString(fmt.Sprintf("api.%s.key", name)),
-				),
-				true,
-			))
+			opts = append(opts, server.WithTLS(certutil.MustCertFromFile(
+				m.config.GetString(fmt.Sprintf("api.%s.cert", name)),
+				"",
+				m.config.GetString(fmt.Sprintf("api.%s.key", name)),
+			)))
 		}
 		if err := m.api.Add(name, opts...); err != nil {
 			return errors.Wrap(err)

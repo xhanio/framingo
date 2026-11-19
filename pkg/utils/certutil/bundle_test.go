@@ -8,9 +8,12 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/youmark/pkcs8"
 )
 
@@ -143,4 +146,18 @@ func TestParseEncryptedPEMKey(t *testing.T) {
 	if _, err := ParsePEMKey(encrypted, "wrong"); err == nil {
 		t.Fatal("wrong password should fail")
 	}
+}
+
+// A certificate and key loaded from files are ready to serve TLS with.
+func TestMustCertFromFileIsReadyForTLS(t *testing.T) {
+	signed, err := newTestCA(t).SignServer(&ServerRequest{CommonName: "srv.local"})
+	require.NoError(t, err)
+	dir := t.TempDir()
+	certFile, keyFile := filepath.Join(dir, "srv.crt"), filepath.Join(dir, "srv.key")
+	require.NoError(t, signed.Dump(certFile, keyFile))
+
+	tc := MustCertFromFile(certFile, "", keyFile).CertTLS()
+	require.Len(t, tc.Certificate, 1)
+	assert.Equal(t, signed.CertDER(), tc.Certificate[0])
+	assert.NotNil(t, tc.PrivateKey)
 }

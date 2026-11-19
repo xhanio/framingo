@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/x509"
+
 	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
@@ -57,11 +59,13 @@ func WithEndpoint(host string, port uint, prefix string) ServerOption {
 	}
 }
 
-func WithTLS(cert certutil.CertBundle, auth bool) ServerOption {
+// WithTLS serves https with cert, verifying a client certificate, when one is
+// given, against clientCAs; none is asked for without them.
+func WithTLS(cert certutil.CertBundle, clientCAs ...*x509.Certificate) ServerOption {
 	return func(s *server) {
 		s.tlsConfig = &api.ServerTLS{
-			CertBundle:  cert,
-			AuthEnabled: auth,
+			CertBundle: cert,
+			ClientCAs:  clientCAs,
 		}
 	}
 }

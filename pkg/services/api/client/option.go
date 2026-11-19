@@ -1,7 +1,7 @@
 package client
 
 import (
-	"crypto/tls"
+	"crypto/x509"
 	"net/http"
 	"time"
 
@@ -31,11 +31,13 @@ func WithLogger(logger log.Logger) Option {
 	}
 }
 
-func WithCert(cert certutil.CertBundle, authType tls.ClientAuthType) Option {
+// WithTLS presents cert, when not nil, and verifies the server against rootCAs,
+// the system's when none.
+func WithTLS(cert certutil.CertBundle, rootCAs ...*x509.Certificate) Option {
 	return func(c *client) {
 		c.tlsConfig = &api.ClientTLS{
 			CertBundle: cert,
-			AuthType:   authType,
+			RootCAs:    rootCAs,
 		}
 	}
 }

@@ -70,6 +70,11 @@ func newBundleFromFile(certFile, caFile, keyFile string) (*bundle, error) {
 	if keyFile != "" && b.key == nil {
 		return nil, errors.NotFound.Newf("private key not found")
 	}
+	if b.key != nil {
+		if err := b.initTLS(); err != nil {
+			return nil, errors.Wrap(err)
+		}
+	}
 	return b, nil
 }
 

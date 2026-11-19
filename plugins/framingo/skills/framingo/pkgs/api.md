@@ -63,8 +63,9 @@ srvMgr := server.New(
 srvMgr.Add("http", server.WithEndpoint("0.0.0.0", 8080, "/"),
     // HTTP request metrics through the metrics service - see Metrics below
     server.WithMeter(meter),
-    // HTTPS from a certutil.CertBundle (the example passes true for auth)
-    // server.WithTLS(certBundle, true),
+    // HTTPS from a certutil.CertBundle; with CAs, a client certificate is
+    // asked for and verified against them, not required
+    // server.WithTLS(certBundle, agentCA),
 )
 srvMgr.Add("admin", server.WithEndpoint("0.0.0.0", 9090, "/admin"),
     // Server-level middlewares run on every request, matched or not, in this

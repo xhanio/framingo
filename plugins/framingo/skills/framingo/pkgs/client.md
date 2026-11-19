@@ -10,7 +10,7 @@ import "github.com/xhanio/framingo/pkg/services/api/client"
 cli := client.New("https://api.example.com/api/v1", // scheme, host and base path
     client.WithLogger(logger),
     client.WithTimeout(10*time.Second),
-    client.WithCert(certBundle, tls.RequireAndVerifyClientCert), // TLS: required for https
+    client.WithTLS(certBundle, serverCA), // optional: present certBundle (nil: none), trust serverCA (none: the system's)
     // client.WithDebug(), // debug-log each request's URL and headers, and the status
 )
 if err := cli.Init(ctx); err != nil { // builds the http.Client; required before any request
@@ -19,11 +19,10 @@ if err := cli.Init(ctx); err != nil { // builds the http.Client; required before
 ```
 
 `Init` builds the transport from the endpoint's scheme: plain `http.Client`
-for `http://`, a TLS transport from `WithCert` for `https://` — an https
-endpoint without `WithCert` is not supported. `WithCert`'s
-`tls.ClientAuthType` doubles as the verification switch: `tls.NoClientCert`
-skips verifying the server's certificate, anything else verifies it against
-the bundle's CAs.
+for `http://`, a TLS transport for `https://`. The server's certificate is
+always verified — against the CAs `WithTLS` names, or the system's without
+them; the client's own bundle is only what it presents, never what it trusts
+the server by.
 
 ```go
 type Client interface {
