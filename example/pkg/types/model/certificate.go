@@ -13,6 +13,7 @@ type Certificate interface {
 	common.Service
 	Import(ctx context.Context, opts entity.CertCreateOptions) (*entity.Certificate, error)
 	Issue(ctx context.Context, opts entity.CertIssueOptions) (*entity.Certificate, error)
+	SignCSR(ctx context.Context, opts entity.CertSignOptions) (*entity.Certificate, error)
 	List(ctx context.Context, opts entity.CertListOptions) ([]*entity.Certificate, error)
 	Get(ctx context.Context, certID int32) (*entity.Certificate, error)
 	Delete(ctx context.Context, certIDs []int32) error

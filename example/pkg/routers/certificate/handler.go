@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/certutil"
@@ -240,6 +241,43 @@ func (r *router) Download(c api.Context) error {
 		c.Response().Header().Set("Content-Disposition", "attachment; filename="+cert.Name+".pem")
 	}
 	return c.File(tempFile.Name())
+}
+
+func (r *router) SignCSR(c api.Context) error {
+	var body api.CertificateSignRequest
+	if err := c.Bind(&body); err != nil {
+		return errors.BadRequest.Wrap(err)
+	}
+	if err := c.Validate(&body); err != nil {
+		return errors.Wrap(err)
+	}
+	opts := entity.CertSignOptions{
+		Name:           body.Name,
+		CSR:            []byte(body.CSR),
+		CommonName:     body.CommonName,
+		SubjectAltName: body.SubjectAltName,
+		Usage:          body.Usage,
+	}
+	if body.ValidPeriod != "" {
+		period, err := time.ParseDuration(body.ValidPeriod)
+		if err != nil {
+			return errors.InvalidArgument.Wrapf(err, "valid_period")
+		}
+		opts.ValidPeriod = period
+	}
+	cert, err := r.cm.SignCSR(c, opts)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	ca, err := r.cm.DefaultCA()
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	return c.JSON(http.StatusOK, api.CertificateSignResponse{
+		CertificateID: cert.ID,
+		Certificate:   string(cert.Bundle.CertPEM()),
+		CA:            string(ca.CertPEM()),
+	})
 }
 
 func (r *router) Generate(c api.Context) error {

@@ -2,7 +2,9 @@ package certificate
 
 import (
 	"context"
+	"crypto/x509"
 	"path/filepath"
+	"time"
 
 	"github.com/xhanio/errors"
 	"go.step.sm/crypto/x509util"
@@ -65,6 +67,51 @@ func (m *manager) Issue(ctx context.Context, opts entity.CertIssueOptions) (*ent
 		return nil, errors.Wrap(err)
 	}
 	return cert, nil
+}
+
+// defaultSignValidity is short because a requester renews rather than holds a
+// certificate for the CA's lifetime.
+const defaultSignValidity = 90 * 24 * time.Hour
+
+// SignCSR signs with the default CA, which agents are verified against, and
+// stores only the certificate: the private key never reaches the manager.
+func (m *manager) SignCSR(ctx context.Context, opts entity.CertSignOptions) (*entity.Certificate, error) {
+	usage := x509.ExtKeyUsageClientAuth
+	switch opts.Usage {
+	case "", entity.CertUsageClient:
+	case entity.CertUsageServer:
+		usage = x509.ExtKeyUsageServerAuth
+	default:
+		return nil, errors.InvalidArgument.Newf("Unknown certificate usage %s", opts.Usage)
+	}
+	if opts.ValidPeriod <= 0 {
+		opts.ValidPeriod = defaultSignValidity
+	}
+	csr, err := certutil.ParseCSR(opts.CSR)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	ca, err := m.DefaultCA()
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	dns, ips, _, _ := x509util.SplitSANs([]string{opts.CommonName, opts.SubjectAltName})
+	signed, err := ca.SignCSR(csr, &certutil.CSRRequest{
+		ExtKeyUsage: []x509.ExtKeyUsage{usage},
+		CommonName:  opts.CommonName,
+		DNSNames:    dns,
+		IPs:         ips,
+		ValidPeriod: opts.ValidPeriod,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	return m.Import(ctx, entity.CertCreateOptions{
+		Name:   opts.Name,
+		IsCA:   false,
+		Type:   entity.CertTypeRemoteCert,
+		Bundle: signed,
+	})
 }
 
 func (m *manager) Get(ctx context.Context, certID int32) (*entity.Certificate, error) {

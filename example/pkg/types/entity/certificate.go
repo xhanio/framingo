@@ -1,6 +1,10 @@
 package entity
 
-import "github.com/xhanio/framingo/pkg/utils/certutil"
+import (
+	"time"
+
+	"github.com/xhanio/framingo/pkg/utils/certutil"
+)
 
 const (
 	CertTypePKCS12     = "PKCS#12"
@@ -14,6 +18,9 @@ const (
 	CertCategoryRemoteCA          = "remoteCA"
 	CertCategoryLocalCertificate  = "localCertificate"
 	CertCategoryRemoteCertificate = "remoteCertificate"
+
+	CertUsageClient = "client"
+	CertUsageServer = "server"
 )
 
 type Certificate struct {
@@ -61,6 +68,18 @@ type CertIssueOptions struct {
 	CommonName     string
 	SubjectAltName string
 	CAID           int32
+}
+
+// CertSignOptions signs a requester's CSR with the default CA - the one agents
+// are verified against. The requester keeps its private key; CommonName and
+// SubjectAltName are what the CA grants, and the CSR may ask for no other name.
+type CertSignOptions struct {
+	Name           string
+	CSR            []byte // PEM or DER
+	CommonName     string
+	SubjectAltName string
+	Usage          string        // CertUsageClient (empty) or CertUsageServer
+	ValidPeriod    time.Duration // 0: the service's default
 }
 
 type CertUpdateOptions struct {

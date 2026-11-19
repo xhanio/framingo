@@ -32,6 +32,10 @@ handlers:
     # write, not read: the download carries a local certificate's private key
     permission: certificate_write
   - method: POST
+    path: /csr
+    func: SignCSR
+    permission: certificate_write
+  - method: POST
     path: /generate
     func: Generate
     permission: certificate_write
