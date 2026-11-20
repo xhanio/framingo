@@ -26,7 +26,15 @@ would not know them, and a user's sessions end only when an event says so.
 
 - **Delivery, said per driver.** `pubsub.md` says an in-process bus is no
   guarantee; it does not say, driver by driver, when a message is lost and
-  what a consumer must do about it.
+  what a consumer must do about it. Known so far, of the kafka driver: an
+  instance reads from the latest offset once its own group holds the
+  partition, so what is published while it starts — half a minute on a new
+  cluster — never reaches it; the first write to a topic not yet created
+  fails as it creates it, the caller getting the error; and each instance
+  leaves its group on the broker until the broker's retention drops it. The
+  driver creating its topic at `Start` would end the failed first write, not
+  the gap while an instance starts: that is `LastOffset`, chosen so that a new
+  instance replays no history, and the design weighs the two together.
 - **Candidate, not designed:** a transactional outbox for events that must
   follow a commit, perhaps on the change capture the config cache needs.
 
