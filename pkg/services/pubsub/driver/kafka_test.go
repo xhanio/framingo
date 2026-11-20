@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
@@ -120,16 +121,49 @@ func TestKafkaCrossInstance(t *testing.T) {
 		_ = b2.Stop(context.Background())
 	}()
 
-	time.Sleep(5 * time.Second)
+	untilDelivering(t, b1, ch, "cross/topic")
 
 	err = b1.Publish(context.Background(), "publisher", "cross/topic", "cross-event", map[string]string{"key": "value"})
 	require.NoError(t, err)
 
-	select {
-	case msg := <-ch:
-		assert.Equal(t, "cross-event", msg.Kind)
-	case <-time.After(5 * time.Second):
-		t.Fatal("timeout waiting for cross-instance message")
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case msg := <-ch:
+			if msg.Kind == "probe" {
+				continue // published before the subscriber was seen receiving
+			}
+			assert.Equal(t, "cross-event", msg.Kind)
+			return
+		case <-timeout:
+			t.Fatal("timeout waiting for cross-instance message")
+		}
+	}
+}
+
+// untilDelivering publishes probes from pub until ch yields one. A new instance
+// reads from the latest offset once its group holds the partition, and the
+// topic exists only once first written: what is published before then never
+// reaches it, so a fixed sleep is a guess.
+func untilDelivering(t *testing.T, pub Driver, ch <-chan entity.PubsubMessage, topic string) {
+	t.Helper()
+	deadline := time.After(60 * time.Second)
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		// the first write creates the topic, and fails doing so
+		if err := pub.Publish(context.Background(), "prober", topic, "probe", nil); err != nil {
+			t.Logf("probe not published: %v", err)
+		}
+		select {
+		case msg := <-ch:
+			if msg.Kind == "probe" {
+				return
+			}
+		case <-tick.C:
+		case <-deadline:
+			t.Fatal("the subscriber never started receiving")
+		}
 	}
 }
 
