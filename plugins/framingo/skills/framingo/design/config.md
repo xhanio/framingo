@@ -27,7 +27,24 @@ settings — or inside the immutable value a restart swaps in, as
 
 **Why.** A service restarted alone — by the monitor, or by
 `RestartService` — runs its `Init` while its dependents go on serving, so
-requests are in flight; SIGHUP's restart stops everything first, but a stop
+requests are in flight; SIGHUP's reload stops everything first, but a stop
 that passes its deadline leaves handlers behind. Fields rewritten one by one
 under a reader are a data race, and a reader caught between two of them sees
 a configuration no file ever said.
+
+## The file is re-read on SIGHUP alone
+
+**Decision.** Nothing watches the config file. The example re-reads it only
+on SIGHUP: it checks that the file reads — one that does not changes
+nothing, and everything goes on running — then stops every service, re-reads
+the file, and inits and starts them on it. A restart the monitor makes
+reads the version last read.
+
+**Why.** A change taking effect whenever the file is written is of little
+use; one taking effect when the operator says so is. Stopped first, no
+`Init` reads the config while it is rewritten — viper is not safe for that —
+and every service starts on one version of the file.
+
+**Cost.** Keys the wiring reads once at startup — `db.source.*`, the api
+servers' listeners — still need a process restart; SIGHUP reaches only what
+services read in `Init`.

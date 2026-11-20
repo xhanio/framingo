@@ -51,9 +51,9 @@ func (m *manager) listenSignals(ctx context.Context) {
 					m.log.Infof("received %s while shutting down, ignored", sig)
 					continue
 				}
-				m.log.Infof("received %s, restarting all services...", sig)
-				if err := m.services.Restart(ctx); err != nil {
-					m.log.Errorf("failed to restart services: %s", err)
+				m.log.Infof("received %s, re-reading the config and restarting all services...", sig)
+				if err := m.reload(ctx); err != nil {
+					m.log.Errorf("failed to reload: %s", err)
 				}
 			case syscall.SIGUSR1:
 				m.Info(os.Stdout, true)

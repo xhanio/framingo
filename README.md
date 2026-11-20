@@ -586,7 +586,6 @@ func main() {
             if err := config.ReadInConfig(); err != nil {
                 return fmt.Errorf("read config: %w", err)
             }
-            config.WatchConfig()
 
             mgr := myapp.New(config)
             if err := mgr.Init(cmd.Context()); err != nil {

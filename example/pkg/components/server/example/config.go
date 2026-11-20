@@ -1,6 +1,7 @@
 package example
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,11 +31,33 @@ func (m *manager) initConfig() error {
 	if err := m.config.ReadInConfig(); err != nil {
 		return errors.Wrapf(err, "failed to read config file %s", configFile)
 	}
-	m.config.WatchConfig()
 	absPath, err := filepath.Abs(configFile)
 	if err != nil {
 		return errors.Wrapf(err, "failed to resolve config path %s", configFile)
 	}
 	infra.ConfigDir = filepath.Dir(absPath)
 	return nil
+}
+
+// reload is SIGHUP's, the one time the file is re-read: services stopped
+// first, no Init reads the config while it is rewritten, and every service
+// starts on one version of the file. A file that does not read changes nothing.
+func (m *manager) reload(ctx context.Context) error {
+	configFile := m.config.ConfigFileUsed()
+	check := viper.New()
+	check.SetConfigFile(configFile)
+	if err := check.ReadInConfig(); err != nil {
+		return errors.Wrapf(err, "config file %s does not read, nothing restarted", configFile)
+	}
+	if err := m.services.Stop(ctx); err != nil {
+		m.log.Errorf("failed to stop services for the reload: %s", err)
+	}
+	// changed again since the check: viper keeps what it had, and the services start on that
+	if err := m.config.ReadInConfig(); err != nil {
+		m.log.Errorf("failed to re-read config file %s, starting on the config already read: %s", configFile, err)
+	}
+	if err := m.services.Init(ctx); err != nil {
+		return errors.Wrap(err)
+	}
+	return errors.Wrap(m.services.Start(ctx))
 }

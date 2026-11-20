@@ -73,7 +73,7 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [design/narrow-contracts.md](design/narrow-contracts.md) | The smallest interface per dependency: a service's own `Repository`, `common.*` collaborators, message handlers as `Named` |
 | [design/data-access.md](design/data-access.md) | orm stays in the repository; `types/repo` contracts and repo-only inputs; the repository decides nothing |
 | [design/service-wiring.md](design/service-wiring.md) | Platform first, nil-tolerant `Dependencies`, one instance per name, the api server last by ordering, restarts invisible to dependents |
-| [design/config.md](design/config.md) | Config read in `Init` from the context, a restart as the reload; a reload published whole |
+| [design/config.md](design/config.md) | Config read in `Init` from the context, a restart as the reload; a reload published whole; the file re-read on SIGHUP alone |
 | [design/websockets.md](design/websockets.md) | `wsutil.Bridge`, `wsutil.Close`, the server closing its connections on stop |
 | [design/certificates.md](design/certificates.md) | CSRs keep the requester's key; a server CA and an agent CA; CA keys in the database alone; downloads encoded as the caller asks; TLS verifies each side against the CAs it is given |
 | [design/migrations.md](design/migrations.md) | Migrate on start locally, once per release in prod (`exampleapp migrate`), env-overridable config |
