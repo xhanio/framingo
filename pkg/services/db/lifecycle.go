@@ -29,10 +29,6 @@ func (m *manager) Init(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	m.sqlDB.SetMaxOpenConns(m.connection.MaxOpen)
-	m.sqlDB.SetMaxIdleConns(m.connection.MaxIdle)
-	m.sqlDB.SetConnMaxLifetime(m.connection.MaxLifetime)
-	m.sqlDB.SetConnMaxIdleTime(m.connection.MaxIdleTime)
 	if m.migration.Directory != "" {
 		err = m.migrate(fmt.Sprintf("file://%s", m.migration.Directory), m.migration.Version)
 		if err != nil {
@@ -53,8 +49,8 @@ func (m *manager) Info(w io.Writer, debug bool) {
 		t.Object(m.migration)
 		t.NewLine()
 	}
-	if m.sqlDB != nil {
-		t.Object(m.sqlDB.Stats())
+	if sqlDB := m.DB(); sqlDB != nil {
+		t.Object(sqlDB.Stats())
 	}
 	t.NewLine()
 	t.Flush()

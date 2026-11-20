@@ -6,25 +6,6 @@ what it is and where it stands, and links to the design note that holds the
 reasoning. A finished item is deleted — git history keeps it — and its
 design note brought up to date.
 
-## Restarts under load
-
-The restart policy holds already: only a liveness failure restarts a
-service, a dependency's outage fails readiness instead, and restarts spent
-escalate to the platform through `/healthz`
-([supervisor.md](plugins/framingo/skills/framingo/pkgs/supervisor.md#health-probes--escalation)).
-What a restart does to the requests in flight is not yet safe.
-
-- **A handle swaps what it holds safely.** A restart reruns `Init`, and
-  `db.Manager`'s reconnect replaces the pool `ORM()` and `FromContext` hand
-  out with no synchronization — a data race with every query in flight.
-  Every `Init` a restart reruns that replaces what other goroutines read gets
-  the same check, and a test restarts a dependency while its dependents
-  serve, under `-race`.
-- **The rule, written down.** A dependent keeps its dependency's handle,
-  never what the handle hands out, so a dependency's restart needs no restart
-  of its dependents: `design/service-wiring.md` says so, and why the
-  supervisor never restarts them.
-
 ## Events: what the bus may lose
 
 - **Session revocation off the best-effort path.** The example ends a

@@ -125,7 +125,8 @@ type manager struct {
 	mb         common.RawMessageSender
 	meter      fmodel.Meter
 
-	greeting string // dynamic config
+	mu       sync.RWMutex // guards greeting: Init rewrites it, a restart again
+	greeting string       // dynamic config
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -298,10 +299,13 @@ func (m *manager) Init(ctx context.Context) error {
 	// dynamic config change, read under this service's root
 	config := confutil.FromContext(ctx)
 	root := nameutil.ConfigRoot(m.name)
+	// locked: requests read the greeting while a restart reloads it
+	m.mu.Lock()
 	m.applyOptions(
 		WithDynamicConfig(config.GetString("%s.greeting", root)),
 	)
 	m.setDefaults()
+	m.mu.Unlock()
 	if m.inst == nil {
 		inst, err := m.newInstruments()
 		if err != nil {
@@ -412,7 +416,9 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 	if !ok {
 		return nil, traceutil.Fail(span, errors.Unauthorized.Newf("credential not found in context"))
 	}
+	m.mu.RLock()
 	greeting := m.greeting
+	m.mu.RUnlock()
 	if greeting == "" {
 		greeting = "hello world!"
 	}

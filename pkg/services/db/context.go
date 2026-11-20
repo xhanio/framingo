@@ -14,14 +14,14 @@ import (
 func (m *manager) FromContext(ctx context.Context) *gorm.DB {
 	tx, ok := ctx.Value(common.ContextKeyTX).(*gorm.DB)
 	if !ok {
-		return m.ormDB.WithContext(ctx)
+		return m.ORM().WithContext(ctx)
 	}
 	return tx
 }
 
 func (m *manager) FromContextTimeout(ctx context.Context, timeout time.Duration) (*gorm.DB, context.CancelFunc) {
 	if timeout == 0 {
-		timeout = m.connection.ExecTimeout
+		timeout = m.pool.Load().execTimeout
 	}
 	tx := m.FromContext(ctx)
 	_ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -42,7 +42,7 @@ func (m *manager) Transaction(ctx context.Context, fn func(ctx context.Context) 
 		})
 	}
 
-	tx := m.ormDB.WithContext(ctx).Begin(opts...)
+	tx := m.ORM().WithContext(ctx).Begin(opts...)
 	if tx.Error != nil {
 		return tx.Error
 	}

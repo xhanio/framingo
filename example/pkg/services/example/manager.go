@@ -2,6 +2,7 @@ package example
 
 import (
 	"context"
+	"sync"
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	fmodel "github.com/xhanio/framingo/pkg/types/model"
@@ -19,6 +20,7 @@ type manager struct {
 	mb         common.RawMessageSender
 	meter      fmodel.Meter
 
+	mu       sync.RWMutex // guards greeting: Init rewrites it, a restart again
 	greeting string
 
 	ctx    context.Context

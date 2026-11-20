@@ -18,7 +18,9 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 	if !ok {
 		return nil, traceutil.Fail(span, errors.Unauthorized.Newf("credential not found in context"))
 	}
+	m.mu.RLock()
 	greeting := m.greeting
+	m.mu.RUnlock()
 	if greeting == "" {
 		greeting = "hello world!"
 	}

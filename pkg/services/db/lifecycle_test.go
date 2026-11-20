@@ -3,6 +3,7 @@ package db_test
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -53,4 +54,41 @@ func TestReInitClosesThePreviousPool(t *testing.T) {
 	assert.NotSame(t, first, mgr.DB(), "Init reconnects")
 	assert.ErrorContains(t, first.Ping(), "database is closed")
 	assert.NoError(t, mgr.DB().Ping())
+}
+
+// a restart re-inits while dependents keep querying through the same handle:
+// what they read is replaced whole, never written under them (run with -race)
+func TestReInitUnderQueries(t *testing.T) {
+	mgr := newSQLiteMgr(t, nil)
+	ctx := context.Background()
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				// a query on the pool being replaced may fail; reading the handle must not race
+				var n int
+				mgr.FromContext(ctx).Raw("SELECT 1").Scan(&n)
+				tx, cancel := mgr.FromContextTimeout(ctx, 0)
+				tx.Raw("SELECT 1").Scan(&n)
+				cancel()
+				mgr.Transaction(ctx, func(context.Context) error { return nil }) //nolint:errcheck // see above
+				mgr.Ready(ctx)                                                   //nolint:errcheck // see above
+			}
+		})
+	}
+	for range 5 {
+		require.NoError(t, mgr.Init(ctx))
+	}
+	close(stop)
+	wg.Wait()
+
+	var n int
+	require.NoError(t, mgr.FromContext(ctx).Raw("SELECT 1").Scan(&n).Error)
+	assert.Equal(t, 1, n, "the last pool serves")
 }

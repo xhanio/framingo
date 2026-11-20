@@ -31,10 +31,10 @@ func (stubConn) Begin() (driver.Tx, error)           { return nil, driver.ErrSki
 
 func TestReadyPingsDatabase(t *testing.T) {
 	m := newManager()
-	m.sqlDB = sql.OpenDB(stubConnector{})
+	m.pool.Store(&pool{sql: sql.OpenDB(stubConnector{})})
 	require.NoError(t, m.Ready(context.Background()))
 
-	m.sqlDB = sql.OpenDB(stubConnector{err: sql.ErrConnDone})
+	m.pool.Store(&pool{sql: sql.OpenDB(stubConnector{err: sql.ErrConnDone})})
 	err := m.Ready(context.Background())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ping")
@@ -42,15 +42,15 @@ func TestReadyPingsDatabase(t *testing.T) {
 
 func TestAliveChecksOwnWiringOnly(t *testing.T) {
 	m := newManager()
-	m.sqlDB = sql.OpenDB(stubConnector{})
+	m.pool.Store(&pool{sql: sql.OpenDB(stubConnector{})})
 	require.NoError(t, m.Alive(context.Background()))
 
 	// unreachable database: still alive
-	m.sqlDB = sql.OpenDB(stubConnector{err: sql.ErrConnDone})
+	m.pool.Store(&pool{sql: sql.OpenDB(stubConnector{err: sql.ErrConnDone})})
 	assert.NoError(t, m.Alive(context.Background()))
 
 	// no handle: not alive
-	m.sqlDB = nil
+	m.pool.Store(nil)
 	require.Error(t, m.Alive(context.Background()))
 	require.Error(t, m.Ready(context.Background()))
 }

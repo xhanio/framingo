@@ -16,7 +16,7 @@ func (m *manager) migrate(url string, version uint) error {
 	if d.Migration == nil {
 		return errors.Newf("driver %s does not provide a migration driver", m.dbtype)
 	}
-	driver, err := d.Migration(m.sqlDB)
+	driver, err := d.Migration(m.DB())
 	if err != nil {
 		return errors.Wrap(err)
 	}

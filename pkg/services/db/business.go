@@ -56,26 +56,40 @@ func (m *manager) connect(dbtype string, s Source) error {
 			return errors.Wrapf(err, "failed to install gorm plugin %s", p.Name())
 		}
 	}
+	sqlDB.SetMaxOpenConns(m.connection.MaxOpen)
+	sqlDB.SetMaxIdleConns(m.connection.MaxIdle)
+	sqlDB.SetConnMaxLifetime(m.connection.MaxLifetime)
+	sqlDB.SetConnMaxIdleTime(m.connection.MaxIdleTime)
 	// every Init reconnects: the previous pool is closed once replaced, after
 	// the queries already running on it finish
-	previous := m.sqlDB
-	m.dialector = dialector
-	m.ormDB = ormDB
-	m.sqlDB = sqlDB
+	previous := m.pool.Swap(&pool{
+		dialector:   dialector,
+		orm:         ormDB,
+		sql:         sqlDB,
+		execTimeout: m.connection.ExecTimeout,
+	})
 	if previous != nil {
-		if err := previous.Close(); err != nil {
+		if err := previous.sql.Close(); err != nil {
 			m.log.Warnf("failed to close the previous connection pool: %v", err)
 		}
 	}
 	return nil
 }
 
+// ORM is the current pool's, nil before Init.
 func (m *manager) ORM() *gorm.DB {
-	return m.ormDB
+	if p := m.pool.Load(); p != nil {
+		return p.orm
+	}
+	return nil
 }
 
+// DB is the current pool's, nil before Init.
 func (m *manager) DB() *sql.DB {
-	return m.sqlDB
+	if p := m.pool.Load(); p != nil {
+		return p.sql
+	}
+	return nil
 }
 
 func (m *manager) Cleanup(schema bool) error {
@@ -86,7 +100,7 @@ func (m *manager) Cleanup(schema bool) error {
 	if d.Cleanup == nil {
 		return errors.Newf("cleanup operation not supported for database type: %s", m.dbtype)
 	}
-	return d.Cleanup(m.ormDB, m.source.DBName, schema)
+	return d.Cleanup(m.ORM(), m.source.DBName, schema)
 }
 
 func (m *manager) Reload() error {
