@@ -251,3 +251,19 @@ func TestStopGivesUpOnAHandlerThatHangsOnceItsContextEnds(t *testing.T) {
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Less(t, time.Since(begin), 2*time.Second)
 }
+
+// Start's ctx bounds the start alone: a module registered after it ends is
+// still dispatched to, until Stop.
+func TestListenersOutliveTheStartContext(t *testing.T) {
+	mb := New(newBus(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, mb.Start(ctx))
+	t.Cleanup(func() { _ = mb.Stop(context.Background()) })
+	cancel()
+
+	tt := &target{}
+	mb.Register(tt)
+	mb.SendMessage(context.Background(), &source{}, &msg{Body: "hi"})
+	waitFor(t, 2*time.Second, func() bool { return tt.typed.Load() == 1 })
+}
+

@@ -29,37 +29,29 @@ func (m *manager) Init(ctx context.Context) error {
 }
 
 func (m *manager) Start(ctx context.Context) error {
-	if m.cancel != nil {
+	if !m.loop.Start(ctx, m.run) {
 		m.log.Warnf("%s already started", m.Name())
-		return nil
 	}
-	ctx, cancel := context.WithCancel(m.ctx)
-	m.cancel = cancel
-	looped := make(chan struct{})
-	m.looped = looped
-	go func() {
-		defer close(looped)
-		// template run loop: add tickers or queues as cases; hand-off work runs in m.wg.Go
-		//nolint:gosimple // S1000: kept as a loop for the cases that come later
-		for {
-			select {
-			case <-ctx.Done():
-				// put stop logic here
-				m.log.Infof("service %s stopped", m.Name())
-				return
-			}
-		}
-	}()
 	return nil
 }
 
 func (m *manager) Stop(ctx context.Context) error {
-	if m.cancel != nil {
-		m.cancel()
-		m.cancel = nil
-		<-m.looped
-	}
+	m.loop.Stop()
 	return m.wg.Wait(ctx)
+}
+
+// run is the template's run loop: add tickers or queues as cases, and hand
+// work that takes time to m.wg.Go, with ctx as an argument.
+func (m *manager) run(ctx context.Context) {
+	//nolint:staticcheck // S1000: kept as a loop for the cases that come later
+	for {
+		select {
+		case <-ctx.Done():
+			// return at once: Stop waits for the loop with no deadline, so slow cleanup goes in m.wg.Go
+			m.log.Infof("service %s stopped", m.Name())
+			return
+		}
+	}
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

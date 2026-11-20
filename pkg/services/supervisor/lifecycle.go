@@ -21,7 +21,8 @@ func (m *manager) Start(ctx context.Context) error {
 	if err := m.c.startAll(); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	// until Stop: Start's ctx bounds the start alone
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	m.cancel = cancel
 	m.wg.Add(1)
 	go func() {

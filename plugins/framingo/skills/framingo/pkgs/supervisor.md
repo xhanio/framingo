@@ -32,6 +32,10 @@ type Debuggable interface { Info(w io.Writer, debug bool) }            // debug 
 run `Stop`, `Init` and `Start` on the same service.
 
 - `Start` on a started service does nothing.
+- What a start runs lives until `Stop`: `Start`'s `ctx` bounds the start alone and is never
+  kept, its values aside. The start's own context comes from
+  `context.WithCancel(context.WithoutCancel(ctx))`, as `syncutil.Loop` makes it, and only
+  `Stop` cancels it. `Stop`'s `ctx` bounds the stop the same way.
 - `Stop(ctx)` takes no new work, cancels the work going on, and waits for all of it to end,
   what an earlier `Stop` left included, until `ctx` ends. With `context.Background()` it
   waits as long as that takes.
@@ -55,7 +59,8 @@ The bound is the caller's, carried by the context:
 - An API that stops on request turns the grace period it was given into the context, with
   `context.WithTimeout`.
 
-Keep on the manager what lasts across starts: the service's state, and a `syncutil.WaitGroup`
+Keep on the manager what lasts across starts: the service's state, a `syncutil.Loop` for
+what takes new work, whose `Stop()` returns once the loop has, and a `syncutil.WaitGroup`
 that counts the work of every start, whose `Wait(ctx)` gives up when `Stop`'s context ends.
 Give a start its own context, and its own of whatever hands out work or capacity, such as a
 semaphore; what a stop leaves holds only those of the start it came from. A goroutine takes

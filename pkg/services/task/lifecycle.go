@@ -9,24 +9,19 @@ import (
 
 // Start can come right after any Stop, while what that Stop left still runs.
 func (m *manager) Start(ctx context.Context) error {
-	if m.cancel != nil {
+	if m.loop.Running() {
 		m.log.Warnf("service already started")
 		return nil
 	}
-	ctx, m.cancel = context.WithCancel(ctx)
-	looped := make(chan struct{})
-	m.looped = looped
 	m.cm.Start()
-	go func() {
-		defer close(looped)
-		m.loop(ctx, semaphore.NewWeighted(int64(m.concurrent)))
-	}()
+	slots := semaphore.NewWeighted(int64(m.concurrent))
+	m.loop.Start(ctx, func(ctx context.Context) { m.run(ctx, slots) })
 	return nil
 }
 
-// loop runs the queue in slots of its own Start, so that what a forced stop leaves running
+// run runs the queue in slots of its own Start, so that what a forced stop leaves running
 // takes none from the next.
-func (m *manager) loop(ctx context.Context, slots *semaphore.Weighted) {
+func (m *manager) run(ctx context.Context, slots *semaphore.Weighted) {
 	defer m.log.Infof("stopped executing tasks")
 	for slots.Acquire(ctx, 1) == nil {
 		reg := m.pop(ctx)
@@ -136,10 +131,7 @@ func (m *manager) admit(ctx context.Context, reg *registration) func() {
 // earlier Stop left included, until ctx ends. What still runs then is sent SignalKill and left
 // to end beside whatever Start comes next.
 func (m *manager) Stop(ctx context.Context) error {
-	if m.cancel != nil {
-		m.cancel()
-		m.cancel = nil
-		<-m.looped
+	if m.loop.Stop() {
 		m.halt()
 	}
 	err := m.executions.Wait(ctx)

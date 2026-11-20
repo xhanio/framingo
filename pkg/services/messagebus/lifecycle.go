@@ -16,7 +16,8 @@ func (m *manager) Start(ctx context.Context) error {
 		m.mu.Unlock()
 		return nil
 	}
-	ctx, m.cancel = context.WithCancel(ctx)
+	// until Stop: Start's ctx bounds the start alone
+	ctx, m.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	m.ctx = ctx
 	m.started = true
 	modules := make([]common.Named, 0, len(m.modules))

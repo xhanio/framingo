@@ -174,7 +174,8 @@ func (b *redisDriver) remove(topic string, target *subscriber) {
 }
 
 func (b *redisDriver) Start(ctx context.Context) error {
-	b.ctx, b.cancel = context.WithCancel(ctx)
+	// until Stop: Start's ctx bounds the start alone
+	b.ctx, b.cancel = context.WithCancel(context.WithoutCancel(ctx))
 
 	b.mu.Lock()
 	defer b.mu.Unlock()

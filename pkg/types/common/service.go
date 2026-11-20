@@ -11,10 +11,12 @@ type Service interface {
 	Dependencies() []Service
 }
 
-// Daemon may be started and stopped repeatedly on one instance. Stop refuses new
-// work, cancels and awaits the rest (an earlier Stop's leftovers included) until
-// ctx ends, then forces what it can and returns an error wrapping ctx's; it
-// returns only after intake has stopped, and leftovers must not reach a later Start.
+// Daemon may be started and stopped repeatedly on one instance. What a start runs
+// lives until Stop: Start's ctx bounds the start alone and is never kept, its values
+// aside. Stop refuses new work, cancels and awaits the rest (an earlier Stop's
+// leftovers included) until ctx ends, then forces what it can and returns an error
+// wrapping ctx's; it returns only after intake has stopped, and leftovers must not
+// reach a later Start.
 type Daemon interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error

@@ -1,8 +1,6 @@
 package example
 
 import (
-	"context"
-
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
@@ -21,9 +19,6 @@ func (m *manager) setDefaults() {
 	}
 	if m.name == "" {
 		m.name = nameutil.Name(m)
-	}
-	if m.ctx == nil {
-		m.ctx = context.Background()
 	}
 }
 

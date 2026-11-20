@@ -210,7 +210,8 @@ func (b *kafkaDriver) Publish(ctx context.Context, from string, topic string, ki
 }
 
 func (b *kafkaDriver) Start(ctx context.Context) error {
-	b.ctx, b.cancel = context.WithCancel(ctx)
+	// until Stop: Start's ctx bounds the start alone
+	b.ctx, b.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	b.wg.Add(1)
 	go b.consumeLoop()
 	return nil

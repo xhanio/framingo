@@ -1,7 +1,6 @@
 package example
 
 import (
-	"context"
 	"sync"
 
 	"github.com/xhanio/framingo/pkg/types/common"
@@ -23,10 +22,8 @@ type manager struct {
 	mu       sync.RWMutex // guards greeting: Init rewrites it, a restart again
 	greeting string
 
-	ctx    context.Context
-	cancel context.CancelFunc
-	looped chan struct{}      // closed as the run loop of the latest Start returns
-	wg     syncutil.WaitGroup // work the run loop hands off, whichever Start it came from
+	loop syncutil.Loop      // takes new work: Stop waits for it, no deadline
+	wg   syncutil.WaitGroup // work the loop hands off, from any Start: Stop waits until its ctx ends
 
 	inst *instruments
 }

@@ -145,3 +145,20 @@ func TestRestartDelayHonorsCancel(t *testing.T) {
 	}
 	assert.Less(t, time.Since(start), time.Second, "cancellation must cut the restart delay short")
 }
+
+// Start's ctx bounds the start alone: canceling it leaves the monitor sweeping
+// until Stop.
+func TestMonitorOutlivesTheStartContext(t *testing.T) {
+	m := newTestManager(WithMonitorPolicy(20*time.Millisecond, 0, 0))
+	svc := newMockService("svc")
+	require.NoError(t, m.Register(svc))
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()))
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, m.Start(ctx))
+	cancel()
+	time.Sleep(150 * time.Millisecond)
+	require.NoError(t, m.Stop(context.Background()))
+	assert.GreaterOrEqual(t, svc.aliveCalled, 2, "the monitor kept probing after Start's ctx ended")
+}
+

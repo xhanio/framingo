@@ -557,3 +557,24 @@ func TestAnExclusiveTaskDoesNotWaitForWhatAForcedStopLeft(t *testing.T) {
 		return runs.Load() == 1
 	})
 }
+
+// Start's ctx bounds the start alone: tasks added after it ends still run.
+func TestTheLoopOutlivesTheStartContext(t *testing.T) {
+	m := newManager(MaxConcurrency(3))
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Stop(context.Background()) })
+	cancel()
+
+	var ran atomic.Bool
+	if err := m.Add(&entity.Task{Job: job.New("after-cancel", func(job.Context) error {
+		ran.Store(true)
+		return nil
+	})}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the task to run", ran.Load)
+}
+

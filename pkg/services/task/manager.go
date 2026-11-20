@@ -1,7 +1,6 @@
 package task
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -31,9 +30,7 @@ type manager struct {
 	running    map[job.Job]*execution // by job: a job runs once at a time, whichever copy of its task started it
 	arrivals   uint64                 // numbers each entry into the queue, for first come first served
 	executions syncutil.WaitGroup     // whichever Start they came from
-
-	cancel context.CancelFunc
-	looped chan struct{} // closed as the loop of the latest Start returns
+	loop       syncutil.Loop          // pops, admits and spawns: Stop waits for it, no deadline
 }
 
 func New(opts ...Option) Manager {
