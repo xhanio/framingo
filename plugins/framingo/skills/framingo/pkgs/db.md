@@ -235,7 +235,7 @@ statement. Three forms carry one:
 func (m *manager) FromContext(ctx context.Context) *gorm.DB {
 	tx, ok := ctx.Value(common.ContextKeyTX).(*gorm.DB)
 	if !ok {
-		return m.ormDB.WithContext(ctx)
+		return m.ORM().WithContext(ctx)
 	}
 	return tx
 }

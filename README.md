@@ -25,7 +25,7 @@
 
 - **OpenTelemetry Metrics** — Supervised `MeterProvider` with the same pluggable exporters and a periodic export loop, handed out as an explicit `model.Meter`; the API server records per-listener HTTP metrics through it
 
-- **Instance-Based Configuration** — Viper instance propagated through `context.Context` (no global singletons), with hot-reload
+- **Instance-Based Configuration** — Viper instance propagated through `context.Context` (no global singletons), re-read by each service's `Init` on every restart; the bundled example re-reads its file on SIGHUP alone
 
 - **Structured Logging** — Zap-based logger with file rotation and per-service scoping
 
@@ -281,7 +281,7 @@ Interface contracts and shared types:
 | **[reflectutil](pkg/utils/reflectutil/)** | Type location, byte conversion, field scan/apply |
 | **[sliceutil](pkg/utils/sliceutil/)** | Membership, dedupe, diff, copy, change tracking |
 | **[strutil](pkg/utils/strutil/)** | Validation, join, clean, random, hex format |
-| **[syncutil](pkg/utils/syncutil/)** | `WaitGroup` whose `Wait(ctx)` gives up once the context ends |
+| **[syncutil](pkg/utils/syncutil/)** | `WaitGroup` whose `Wait(ctx)` gives up once the context ends; `Loop`, the goroutine a start runs to take new work, which `Stop` ends and waits for |
 | **[testutil](pkg/utils/testutil/)** | Test helpers: `SetupDB` (in-memory SQLite, needs cgo), and `Tracer`/`Meter` doubles with in-memory recorders |
 | **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
 | **[traceutil](pkg/utils/traceutil/)** | `model.Tracer` as plain OpenTelemetry: `Start`/`Fail` for spans, `LiveProvider` for libraries that cache their tracer |

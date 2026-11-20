@@ -276,7 +276,7 @@ open http://localhost:6060/debug/pprof/                        # web UI
 PID=$(pgrep exampleapp)
 kill -USR1 $PID    # dump per-service info to stdout (Debuggable.Info)
 kill -USR2 $PID    # dump goroutine stack traces
-kill -HUP  $PID    # restart every service (ignored while shutting down)
+kill -HUP  $PID    # re-read the config file and restart every service on it; a file that does not read changes nothing (ignored while shutting down)
 kill -INT  $PID    # graceful shutdown; a second INT/TERM forces it, a third exits at once
 ```
 
