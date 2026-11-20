@@ -4,7 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,49 +12,53 @@ import (
 	"github.com/xhanio/errors"
 )
 
+// Targz writes the regular files under src into dst.
 func Targz(ctx context.Context, src, dst string) error {
 	if _, err := os.Stat(src); err != nil {
-		return fmt.Errorf("Unable to tar files - %v", err.Error())
+		return errors.Wrapf(err, "unable to tar %s", src)
 	}
 
 	w, err := os.Create(dst)
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	defer w.Close()
+	err = writeTargz(ctx, src, w)
+	return errors.Combine(err, w.Close())
+}
 
+// writeTargz closes each writer into the next: small files sit in gzip's
+// buffer until then, so a failed close fails the archive.
+func writeTargz(ctx context.Context, src string, w io.Writer) error {
 	gzw := gzip.NewWriter(w)
-	defer gzw.Close()
-
 	tw := tar.NewWriter(gzw)
-	defer tw.Close()
 
-	return filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
+	err := filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if !fi.Mode().IsRegular() {
 			return nil
 		}
-
 		header, err := tar.FileInfoHeader(fi, fi.Name())
 		if err != nil {
 			return err
 		}
-		header.Name = strings.TrimPrefix(strings.Replace(file, src, "", -1), string(filepath.Separator))
+		header.Name = strings.TrimPrefix(strings.ReplaceAll(file, src, ""), string(filepath.Separator))
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
-
-		f, err := os.Open(file)
-		if err != nil {
-			return err
-		}
-		if _, err := CopyBuffer(ctx, tw, f, nil); err != nil {
-			return err
-		}
-		f.Close()
-
-		return nil
+		return copyInto(ctx, tw, file)
 	})
+	return errors.Combine(err, tw.Close(), gzw.Close())
+}
+
+func copyInto(ctx context.Context, w io.Writer, file string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	//nolint:errcheck // read only: nothing a failed close could lose
+	defer f.Close()
+	_, err = CopyBuffer(ctx, w, f, nil)
+	return err
 }

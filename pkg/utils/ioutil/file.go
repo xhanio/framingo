@@ -13,19 +13,16 @@ func CopyFile(ctx context.Context, src, dst string) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
+	//nolint:errcheck // read only: nothing a failed close could lose
 	defer r.Close()
 
 	w, err := os.Create(dst)
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	defer w.Close()
-
 	_, err = CopyBuffer(ctx, w, r, nil)
-	if err != nil {
-		return errors.Wrap(err)
-	}
-	return nil
+	// a write the OS deferred fails at close
+	return errors.Combine(err, w.Close())
 }
 
 func CopyDir(ctx context.Context, source string, dest string) (err error) {
@@ -43,6 +40,7 @@ func CopyDir(ctx context.Context, source string, dest string) (err error) {
 	if err != nil {
 		return err
 	}
+	//nolint:errcheck // read only: nothing a failed close could lose
 	defer directory.Close()
 
 	objects, err := directory.Readdir(-1)
