@@ -161,4 +161,3 @@ func TestMonitorOutlivesTheStartContext(t *testing.T) {
 	require.NoError(t, m.Stop(context.Background()))
 	assert.GreaterOrEqual(t, svc.aliveCalled, 2, "the monitor kept probing after Start's ctx ended")
 }
-

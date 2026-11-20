@@ -577,4 +577,3 @@ func TestTheLoopOutlivesTheStartContext(t *testing.T) {
 	}
 	eventually(t, "the task to run", ran.Load)
 }
-

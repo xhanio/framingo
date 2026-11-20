@@ -266,4 +266,3 @@ func TestListenersOutliveTheStartContext(t *testing.T) {
 	mb.SendMessage(context.Background(), &source{}, &msg{Body: "hi"})
 	waitFor(t, 2*time.Second, func() bool { return tt.typed.Load() == 1 })
 }
-

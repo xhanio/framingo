@@ -107,22 +107,15 @@ func (m *manager) export(ctx context.Context) error {
 }
 
 // Start drives the ManualReader, which never collects on its own.
-func (m *manager) Start(_ context.Context) error {
-	if m.loopCancel != nil {
+func (m *manager) Start(ctx context.Context) error {
+	if !m.loop.Start(ctx, m.run) {
 		m.log.Warnf("%s already started", m.Name())
-		return nil
 	}
-	// detached: only Stop ends the loop, after flushing
-	ctx, cancel := context.WithCancel(context.Background())
-	m.loopCancel = cancel
-	m.wg.Add(1)
-	go m.run(ctx)
 	return nil
 }
 
 // run re-reads the interval each tick so Init can change it live.
 func (m *manager) run(ctx context.Context) {
-	defer m.wg.Done()
 	interval := m.currentInterval()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -151,11 +144,7 @@ func (m *manager) currentInterval() time.Duration {
 // Stop is idempotent; the final flush is best-effort, only a failed exporter
 // shutdown is returned.
 func (m *manager) Stop(ctx context.Context) error {
-	if m.loopCancel != nil {
-		m.loopCancel()
-		m.loopCancel = nil
-		m.wg.Wait()
-	}
+	m.loop.Stop()
 	// flush before retiring, bounded by shutdownTimeout rather than exportTimeout
 	flushCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()

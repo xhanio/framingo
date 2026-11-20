@@ -12,43 +12,36 @@ func (m *manager) Init(ctx context.Context) error {
 	return m.c.initAll(ctx)
 }
 
-// Init/Start/Stop/Restart are not concurrency-safe: m.cancel is unsynchronized.
+// Init/Start/Stop/Restart are not concurrency-safe: the caller serializes them.
 func (m *manager) Start(ctx context.Context) error {
-	if m.cancel != nil {
+	if m.loop.Running() {
 		m.log.Warnf("%s already started", m.Name())
 		return nil
 	}
 	if err := m.c.startAll(); err != nil {
 		return err
 	}
-	// until Stop: Start's ctx bounds the start alone
-	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	m.cancel = cancel
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
-		<-ctx.Done()
-		m.log.Infof("service %s stopped", m.Name())
-	}()
-	if m.monitor.policy.Interval > 0 {
-		m.wg.Add(1)
-		go func() {
-			defer m.wg.Done()
-			m.monitor.run(ctx)
-		}()
-	}
+	m.loop.Start(ctx, m.watch)
 	return nil
+}
+
+// watch runs the health monitor, when the policy sets one, until Stop.
+func (m *manager) watch(ctx context.Context) {
+	if m.monitor.policy.Interval > 0 {
+		m.monitor.run(ctx)
+	} else {
+		<-ctx.Done()
+	}
+	m.log.Infof("service %s stopped", m.Name())
 }
 
 // Stop on a stopped supervisor returns at once.
 func (m *manager) Stop(ctx context.Context) error {
-	if m.cancel == nil {
+	// waits for the monitor: a restart it is in holds the lock the stops need anyway
+	if !m.loop.Stop() {
 		m.log.Warnf("%s already stopped", m.Name())
 		return nil
 	}
-	m.cancel()
-	m.wg.Wait() // the monitor: a restart it is in holds the lock the stops need anyway
-	m.cancel = nil
 	return m.c.StopAll(ctx)
 }
 

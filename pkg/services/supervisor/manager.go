@@ -1,20 +1,17 @@
 package supervisor
 
 import (
-	"context"
-	"sync"
-
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/syncutil"
 )
 
 type manager struct {
 	name string
 	log  log.Logger
 
-	cancel context.CancelFunc
-	wg     *sync.WaitGroup
+	loop syncutil.Loop // the health monitor, from Start to Stop
 
 	c       *controller
 	monitor *monitor
@@ -27,8 +24,7 @@ func New(config confutil.Config, opts ...Option) Manager {
 func newManager(config confutil.Config, opts ...Option) *manager {
 	c := newController(config)
 	m := &manager{
-		wg: &sync.WaitGroup{},
-		c:  c,
+		c: c,
 		monitor: &monitor{
 			c: c,
 		},

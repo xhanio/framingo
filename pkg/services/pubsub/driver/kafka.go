@@ -11,13 +11,11 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/syncutil"
 )
 
 type kafkaDriver struct {
 	*dispatcher
-
-	ctx    context.Context
-	cancel context.CancelFunc
 
 	kafkaTopic string // one Kafka topic carries every pubsub topic
 
@@ -29,7 +27,7 @@ type kafkaDriver struct {
 
 	origin string // this instance, on every event it publishes
 
-	wg sync.WaitGroup
+	loop syncutil.Loop // consumes the Kafka topic, from Start to Stop
 }
 
 func NewKafka(brokers []string, groupID string, log log.Logger, opts ...Option) (Driver, error) {
@@ -210,18 +208,13 @@ func (b *kafkaDriver) Publish(ctx context.Context, from string, topic string, ki
 }
 
 func (b *kafkaDriver) Start(ctx context.Context) error {
-	// until Stop: Start's ctx bounds the start alone
-	b.ctx, b.cancel = context.WithCancel(context.WithoutCancel(ctx))
-	b.wg.Add(1)
-	go b.consumeLoop()
+	b.loop.Start(ctx, b.consume)
 	return nil
 }
 
 // Stop ignores ctx: the listener and pumps end as soon as they are stopped.
 func (b *kafkaDriver) Stop(_ context.Context) error {
-	if b.cancel != nil {
-		b.cancel()
-	}
+	b.loop.Stop()
 
 	b.mu.Lock()
 	var stopped []*subscriber
@@ -235,7 +228,6 @@ func (b *kafkaDriver) Stop(_ context.Context) error {
 		sub.stop()
 	}
 
-	b.wg.Wait()
 	for _, sub := range stopped {
 		sub.wait()
 	}
@@ -246,13 +238,11 @@ func (b *kafkaDriver) Stop(_ context.Context) error {
 	return errors.Combine(werr, rerr)
 }
 
-func (b *kafkaDriver) consumeLoop() {
-	defer b.wg.Done()
-
+func (b *kafkaDriver) consume(ctx context.Context) {
 	for {
-		msg, err := b.reader.ReadMessage(b.ctx)
+		msg, err := b.reader.ReadMessage(ctx)
 		if err != nil {
-			if b.ctx.Err() != nil {
+			if ctx.Err() != nil {
 				return
 			}
 			b.log.Errorf("kafka read error: %v", err)

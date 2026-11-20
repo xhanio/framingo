@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/info"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/syncutil"
 )
 
 type manager struct {
@@ -35,9 +35,7 @@ type manager struct {
 	mu         sync.RWMutex
 	controller *controller
 
-	// unguarded: the supervisor serializes Start and Stop
-	loopCancel context.CancelFunc
-	wg         sync.WaitGroup
+	loop syncutil.Loop // the export loop: Stop ends it, then flushes
 }
 
 var _ Manager = (*manager)(nil)
