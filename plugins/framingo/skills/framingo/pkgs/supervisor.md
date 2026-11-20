@@ -50,6 +50,9 @@ run `Stop`, `Init` and `Start` on the same service.
 - `Stop` on a stopped service waits for what an earlier one left, until `ctx` ends. The
   supervisor, which leaves that to its services, returns at once.
 
+Which work a stop may leave, which it ends hard, and which the next start waits for depends
+on what the work holds: [design/lifecycle.md](../design/lifecycle.md).
+
 The bound is the caller's, carried by the context:
 
 - `WithStopPolicy(timeout)` gives the supervisor's whole shutdown, and the stop of each
