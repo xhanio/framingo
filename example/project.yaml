@@ -5,7 +5,7 @@
 # to Kubernetes. env/default holds what both share - the migrations.
 
 product: framingo-example
-version: v0.9.0
+version: v0.9.1
 
 default:
   binary_src: build/binary
