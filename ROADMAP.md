@@ -6,14 +6,24 @@ what it is and where it stands, and links to the design note that holds the
 reasoning. A finished item is deleted — git history keeps it — and its
 design note brought up to date.
 
-## Events: what the bus may lose
+## Sessions in a shared store
 
-- **Session revocation off the best-effort path.** The example ends a
-  user's sessions on `LocalUsersDeleted`, `LocalUserPasswordReset` and
+The example keeps its sessions in one process's memory: a second replica
+would not know them, and a user's sessions end only when an event says so.
+
+- **A shared store.** Sessions in Redis or the database, so any replica
+  serves any session.
+- **Revocation that cannot be lost.** A user's sessions end on
+  `LocalUsersDeleted`, `LocalUserPasswordReset` and
   `LocalUserIdentityChanged`, published after the commit. One lost — a full
   subscriber queue drops it by default — leaves the session alive, and every
-  refresh extends it. A session checked on use, against what it was issued
-  for, needs no message to arrive.
+  refresh extends it. A store alone does not fix that, since ending the
+  sessions is still a second write after the commit: either the store is the
+  database and the user's change ends its sessions in the same transaction,
+  or a session is checked on use against a version the change bumps.
+
+## Events: what the bus may lose
+
 - **Delivery, said per driver.** `pubsub.md` says an in-process bus is no
   guarantee; it does not say, driver by driver, when a message is lost and
   what a consumer must do about it.
@@ -31,8 +41,8 @@ design note brought up to date.
 
 ## Toward 1.0
 
-- **A compatibility policy.** What is stable and what may still break:
-  v0.9.0 alone carried twenty breaking changes.
+- **What 1.0 keeps.** Until 1.0 a change is free to break whatever a better
+  design needs; 1.0 names the surface that stays from then on.
 - **The end-to-end checks as a suite.** What was checked by hand this
   release — a paused database, restarts, the TLS handshakes, the certificate
   flows — kept and runnable instead of rewritten each time.
