@@ -95,7 +95,7 @@ func pointsWith[N int64 | float64](pts []metricdata.HistogramDataPoint[N], want 
 		ok := true
 		for _, kv := range want {
 			v, has := p.Attributes.Value(kv.Key)
-			if !has || v.Emit() != kv.Value.Emit() {
+			if !has || v.String() != kv.Value.String() {
 				ok = false
 				break
 			}

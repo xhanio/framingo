@@ -115,7 +115,7 @@ func startGroup(t *testing.T, script, pidFile string) (*exec.Cmd, <-chan error) 
 func waitDone(t *testing.T, done <-chan error) {
 	t.Helper()
 	select {
-	case <-done:
+	case <-done: //nolint:errcheck // only that it ended: how is the caller's to check
 	case <-time.After(5 * time.Second):
 		t.Fatal("the command did not end")
 	}

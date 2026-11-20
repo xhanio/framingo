@@ -1,0 +1,24 @@
+# golangci-lint v2. One config for both modules: run it in . and in example/.
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # calls whose error nothing can act on
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close # through an interface: a response body, an upload; a file's own Close is still checked
+        - (*text/tabwriter.Writer).Flush
+  exclusions:
+    rules:
+      # a test's cleanup
+      - path: _test\.go
+        linters: [errcheck]
+        text: Close
+
+issues:
+  # report everything: the defaults stop at 50 per linter and 3 of a kind
+  max-issues-per-linter: 0
+  max-same-issues: 0

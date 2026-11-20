@@ -155,7 +155,9 @@ func TestCommandTakesItsDirAndEnv(t *testing.T) {
 	c := sh(`pwd; echo "$TASK_TEST_INHERITED $TASK_TEST_OVERRIDDEN"`)
 	c.Dir, c.Env = dir, map[string]string{"TASK_TEST_OVERRIDDEN": "new"}
 	_, out, ended := commandRun(context.Background(), c, time.Second)
-	result(t, ended)
+	if r := result(t, ended); r.ExitCode != 0 {
+		t.Fatalf("result = %+v", r)
+	}
 	if want := dir + "\nkept new\n"; out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)
 	}

@@ -142,6 +142,7 @@ func (m *manager) OpenRunLog(path string, tailBytes int64) (io.ReadCloser, error
 	if tailBytes > 0 {
 		if st, err := f.Stat(); err == nil && st.Size() > tailBytes {
 			if _, err := f.Seek(st.Size()-tailBytes, io.SeekStart); err != nil {
+				//nolint:errcheck // read only, and the seek's error is the one to report
 				f.Close()
 				return nil, errors.Wrap(err)
 			}

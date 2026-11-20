@@ -89,7 +89,7 @@ func (c *ctx) BindForm() *echo.ValueBinder {
 }
 
 func (c *ctx) BindAny(i any) error {
-	return c.Context.Bind(i)
+	return c.Bind(i)
 }
 
 type WebSocketHandlerFunc func(Context, *websocket.Conn) error

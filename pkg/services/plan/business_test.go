@@ -441,7 +441,7 @@ func TestDeleteUnderStress(t *testing.T) {
 				m.RLock()
 				own := m.plans[id].plan.Task
 				m.RUnlock()
-				if _, err := m.Delete(ctx, id); err != nil && !(forced && errors.Is(err, context.Canceled)) {
+				if _, err := m.Delete(ctx, id); err != nil && (!forced || !errors.Is(err, context.Canceled)) {
 					t.Errorf("Delete = %v", err)
 					return
 				}

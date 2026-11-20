@@ -133,6 +133,7 @@ func TestSignalReachesAnExecutionBeingCanceled(t *testing.T) {
 func TestSignalSentTwiceIsHarmless(t *testing.T) {
 	release := make(chan struct{})
 	j, got := listening(t, release)
+	//nolint:staticcheck // SA4000: sent twice on purpose
 	if !j.Signal(SignalKill) || !j.Signal(SignalKill) {
 		t.Fatal("Signal to a running job = false")
 	}

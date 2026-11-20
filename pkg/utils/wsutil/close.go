@@ -10,6 +10,8 @@ import (
 
 // Close closes conn per the handler's err (nil, peer close, EOF, ctx done: no failure); it returns
 // err only for an otherwise unexplained error, sent as an internal error.
+//
+//nolint:errcheck // closing is the last act on conn: a failed close has nowhere to go
 func Close(ctx context.Context, conn *websocket.Conn, err error) error {
 	if err == nil {
 		conn.Close(websocket.StatusNormalClosure, "")
