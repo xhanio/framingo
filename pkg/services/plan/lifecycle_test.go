@@ -115,9 +115,9 @@ func TestStopKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
 	}
 	trigger(t, m, "stubborn")
 	child := waitPid(t, pids)
+	begin := time.Now() // before the deadline starts, or the call can seem to beat it
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	begin := time.Now()
 	if err := m.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Stop = %v, want the deadline's error", err)
 	}

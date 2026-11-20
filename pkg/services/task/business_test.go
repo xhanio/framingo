@@ -260,9 +260,9 @@ func TestRemoveInterruptsARetryWait(t *testing.T) {
 func TestRemoveKillsWhatStillRunsOnceItsContextEnds(t *testing.T) {
 	m := startedManager(t)
 	tk, killed := stubborn(t, m)
+	begin := time.Now() // before the deadline starts, or the call can seem to beat it
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	begin := time.Now()
 	if err := m.Remove(ctx, tk); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Remove = %v, want the deadline's error", err)
 	}

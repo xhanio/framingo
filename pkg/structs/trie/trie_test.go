@@ -496,7 +496,7 @@ func TestKeysDoesNotDeadlockWithAWriter(t *testing.T) {
 	}()
 	select {
 	case <-readers:
-	case <-time.After(10 * time.Second):
+	case <-time.After(time.Minute): // 3s alone, several times that beside the whole suite
 		t.Fatal("Keys deadlocked against a concurrent Add")
 	}
 	close(stop)

@@ -322,9 +322,9 @@ func TestDeleteReturnsTheRunStillGoingOnceItsContextEnds(t *testing.T) {
 	}
 	runID := trigger(t, m, "stubborn")
 	child := waitPid(t, pids)
+	begin := time.Now() // before the deadline starts, or Delete can seem to beat it
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	begin := time.Now()
 	run, err := m.Delete(ctx, "stubborn")
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Delete = %v, want the deadline's error", err)
