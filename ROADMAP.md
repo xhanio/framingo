@@ -25,6 +25,42 @@ What is left are candidates:
   one contract reaches; a set of tasks to measure how well a coding agent
   works in the framework.
 
+## A partial outage takes down only what needs it
+
+A service the app cannot run without is waited for at `Init` for as long
+as it takes. Meanwhile what does not need it should serve, and what does
+should say it cannot. Today one service waiting holds the whole boot, the
+api server and its health listener with it: the example's pod is killed by
+its liveness probe some 70s into a wait that `Alive` would call healthy.
+Designed in outline, not built; in the order planned:
+
+- **Each service starts when its own dependencies run.** The supervisor
+  runs the graph as one pass — every `Init`, then every `Start` — so a
+  service waiting at its turn holds every service after it. Instead each
+  is initialized and started as soon as what it lists runs, and a wait
+  holds its dependents alone: with the database down, the api server,
+  metrics, tracing and pubsub come up at once. To settle: when the
+  supervisor's `Init` and `Start` return while services still wait, and
+  how the monitor takes those over; the start gate and `Reconcile` carry
+  over as they are. The routers are registered before the services init,
+  which needs only their handlers and `router.yaml`.
+- **A route answers 503 while its router's dependencies do not run.** The
+  api server is told at wiring how to ask whether a service runs — a
+  function, not the supervisor — and a request to a router whose
+  dependencies do not run gets a 503 naming the service, instead of a
+  handler whose service is down. The health router is never held back.
+- **Readiness that tells a partial outage from a pod of no use.**
+  `/readyz` fails while any service is not ready, so the pod leaves the
+  load balancer and the routes' 503s are never seen. The app names the
+  services the pod is of no use without — the database, most likely: one
+  of those down fails `/readyz`, any other leaves it `200`, reported as
+  degraded in its body. To settle: where they are named, the supervisor or
+  the health router.
+- **A wait per service.** `WithInitPolicy` is the supervisor's, so a
+  service that may fail without holding anything — an optional source
+  configured wrong — is waited for as long as the database is. A policy
+  per service lets it fail, and be reported, instead.
+
 ## Sessions in a shared store
 
 The example keeps its sessions in one process's memory: a second replica
