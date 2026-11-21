@@ -11,7 +11,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
-	"github.com/xhanio/framingo/example/pkg/services/system/auth"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
@@ -20,11 +20,11 @@ var _ fapi.Middleware = (*middleware)(nil)
 type middleware struct {
 	name string
 	log  log.Logger
-	auth auth.Manager
+	auth model.Auth
 }
 
 // New authenticates only; what a role may do is authz's job.
-func New(auth auth.Manager, opts ...Option) fapi.Middleware {
+func New(auth model.Auth, opts ...Option) fapi.Middleware {
 	m := &middleware{
 		auth: auth,
 	}

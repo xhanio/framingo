@@ -11,7 +11,7 @@ built on the layout.
 
 | Check | Holds | Decided in |
 |---|---|---|
-| depguard `routers` | a router imports no service package | [narrow-contracts.md](narrow-contracts.md) |
+| depguard `routers` | a router or a middleware imports no service package | [narrow-contracts.md](narrow-contracts.md) |
 | depguard `services` | services do not import each other: each holds `types/model` interfaces, `model.Platform` among them | [narrow-contracts.md](narrow-contracts.md) |
 | depguard `orm` | `types/orm` is imported by the repository alone | [data-access.md](data-access.md) |
 | depguard `errors`, forbidigo `fmt.Errorf` | errors come from `xhanio/errors`, which categorizes and wraps | — |
@@ -19,7 +19,8 @@ built on the layout.
 | errcheck | a file's own `Close` is checked: a write the OS deferred fails there | — |
 
 The boundary rules bind non-test files: a service's test builds the real
-repository, and migrates `types/orm` tables to do it.
+repository, and migrates `types/orm` tables to do it, as a middleware's
+builds the real service it checks against.
 
 **Why.** A rule only a reviewer holds is held until the review that misses
 it. The config costs nothing to run and catches at the import line what a

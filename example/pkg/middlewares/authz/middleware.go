@@ -8,8 +8,8 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
-	"github.com/xhanio/framingo/example/pkg/services/system/role"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
@@ -17,10 +17,10 @@ var _ fapi.Middleware = (*middleware)(nil)
 
 type middleware struct {
 	name string
-	role role.Manager
+	role model.Role
 }
 
-func New(role role.Manager, opts ...Option) fapi.Middleware {
+func New(role model.Role, opts ...Option) fapi.Middleware {
 	m := &middleware{
 		role: role,
 	}

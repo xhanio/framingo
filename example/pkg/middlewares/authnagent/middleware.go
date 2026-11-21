@@ -13,8 +13,8 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
-	"github.com/xhanio/framingo/example/pkg/services/system/certificate"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
@@ -23,10 +23,10 @@ var _ fapi.Middleware = (*middleware)(nil)
 type middleware struct {
 	name string
 	log  log.Logger
-	cert certificate.Manager
+	cert model.Certificate
 }
 
-func New(cert certificate.Manager, opts ...Option) fapi.Middleware {
+func New(cert model.Certificate, opts ...Option) fapi.Middleware {
 	m := &middleware{
 		cert: cert,
 	}

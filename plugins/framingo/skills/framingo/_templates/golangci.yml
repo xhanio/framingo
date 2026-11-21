@@ -21,10 +21,10 @@ linters:
             - pkg: errors
               desc: use github.com/xhanio/errors, which categorizes and wraps
         routers:
-          files: ["**/pkg/routers/**"]
+          files: ["**/pkg/routers/**", "**/pkg/middlewares/**", "!$test"]
           deny:
             - pkg: github.com/yourorg/myapp/pkg/services
-              desc: a router holds a types/model interface, never a service package (design/narrow-contracts.md)
+              desc: a router or middleware holds a types/model interface, never a service package (design/narrow-contracts.md)
         services:
           files: ["**/pkg/services/**", "!$test"]
           deny:
