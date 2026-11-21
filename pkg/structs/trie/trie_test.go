@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 )
@@ -470,35 +471,37 @@ func BenchmarkAdd(b *testing.B) {
 }
 
 // Keys must take the read lock once: re-acquiring it inside deadlocks as soon
-// as a writer queues between the two acquisitions.
+// as a writer queues between the two acquisitions. Several writers keep one
+// queued nearly always, so a Keys that re-locked would hang within a few calls.
 func TestKeysDoesNotDeadlockWithAWriter(t *testing.T) {
 	tr := New[int]()
 	tr.Add("a", 1)
 	stop := make(chan struct{})
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for i := 0; ; i++ {
-			select {
-			case <-stop:
-				return
-			default:
-				tr.Add(fmt.Sprintf("k%d", i%64), i)
+	var writers sync.WaitGroup
+	for w := range 8 {
+		writers.Go(func() {
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				default:
+					tr.Add(fmt.Sprintf("w%d-k%d", w, i%8), i)
+				}
 			}
-		}
-	}()
+		})
+	}
 	readers := make(chan struct{})
 	go func() {
 		defer close(readers)
-		for i := 0; i < 20000; i++ {
+		for range 500 {
 			tr.Keys()
 		}
 	}()
 	select {
 	case <-readers:
-	case <-time.After(time.Minute): // 3s alone, several times that beside the whole suite
+	case <-time.After(30 * time.Second): // a tenth of a second when it works
 		t.Fatal("Keys deadlocked against a concurrent Add")
 	}
 	close(stop)
-	<-done
+	writers.Wait()
 }
