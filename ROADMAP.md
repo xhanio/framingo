@@ -11,17 +11,14 @@ design note brought up to date.
 The lint config holds the import boundaries and the forbidden calls,
 `server.CheckRouter` a router's config against its handlers, `framingo vet`
 five rules that need types — a `Start`'s context, a service's `Dependencies`
-among them — and `framingo verify`
-gives one verdict on a change
+among them — the repository's tests its docs' links, marked snippets and
+version surfaces, and `framingo verify` gives one verdict on a change
 ([design/checks.md](plugins/framingo/skills/framingo/design/checks.md)).
-Next, in order:
+What is left are candidates:
 
 - **A candidate analyzer:** the keys a service reads in `Init` against the
   keys its config file sets, since a misspelled key lands silently on the
   default.
-- **The docs and a release, verified.** A doc's snippet against the function
-  it copies, every markdown link and anchor, the four version surfaces
-  agreeing — what a doc review and a release check by hand today.
 - **Candidates, not designed:** the architecture as a graph a tool can query
   — packages, routes, the supervisor's dependencies — and what a change to
   one contract reaches; a set of tasks to measure how well a coding agent
@@ -109,12 +106,17 @@ designed as a whole; the items below are what that design has to settle.
 
 ## Metrics
 
-- **db pool gauges.** Designed, not built: connection counts by state and
-  the pool's limits, registered by the db manager on each connect
-  ([design](docs/superpowers/specs/2026-09-06-framework-metrics-design.md#deferred-db-pool-gauges-design-kept-for-the-next-version)).
+- **db pool gauges.** Designed, not built. `db.WithMeter(meter)`: the
+  manager, which owns the pool and its rebuilds, registers one observable
+  callback as it swaps a new pool in, and unregisters the last, so a
+  reconnect never leaves two observers. Instruments by semconv —
+  `db.client.connection.count` by state (idle, used),
+  `db.client.connection.max`, `db.client.connection.idle.max` — attributed
+  with the pool's name, the service's. The meter is no dependency of the db;
+  gorm's own pool reporter is unusable, hardwired to the global meter
+  provider.
 - **Candidates, not designed:** Prometheus pull, runtime metrics, histogram
-  views and buckets, delta temporality
-  ([follow-ups](docs/superpowers/specs/2026-08-30-otel-metrics-design.md#out-of-scope-explicit-follow-ups)).
+  views and buckets, delta temporality.
 
 ## Config cache by CDC
 

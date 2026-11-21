@@ -9,7 +9,8 @@ review, and is said to. The first means is a golangci-lint config: the
 repository's own `.golangci.yml`, and `_templates/golangci.yml` for an app
 built on the layout. What needs types takes an analyzer, in
 `pkg/tools/vet/<rule>`, run by `framingo vet` through `go vet`. What is not
-Go source takes a test: `router.yaml` against its handlers.
+Go source takes a test: `router.yaml` against its handlers, the docs
+against the code they point at and copy (`pkg/tools/docs`).
 
 | Check | Holds | Decided in |
 |---|---|---|
@@ -26,6 +27,9 @@ Go source takes a test: `router.yaml` against its handlers.
 | `framingo vet`: `confinit` | `confutil.FromContext` is called in `Init` alone | [config.md](config.md) |
 | `server.CheckRouter`, in each router's test | every `func:` in `router.yaml` is a discovered handler whose signature fits its method; no route twice | [who-decides.md](who-decides.md) |
 | the example's `apitest.CheckRouter` | a declared `permission:` is one `rbac` defines | [who-decides.md](who-decides.md) |
+| `docs.Links`, in `pkg/tools/docs`'s own test of the repository | a relative markdown link reaches a file, its anchor a heading | — |
+| `docs.Snippets`, in the same test | a Go snippet marked `<!-- source: path -->` shows that file's functions and types as they are, comments aside | — |
+| `TestVersionSurfacesAgree` | the plugin's version in its two places, the framework version it documents in five | — |
 
 The boundary rules bind non-test files: a service's test builds the real
 repository, and migrates `types/orm` tables to do it, as a middleware's
@@ -74,7 +78,8 @@ the same results without it.
 
 ## Not yet
 
-The docs' snippets against the code, which the repository's `ROADMAP.md`
-plans. The analyzers are not offered as a golangci-lint plugin: a v2 plugin
+A snippet is held to its source only once marked, and most are not yet: a
+marker goes on as a snippet is next touched, and one trimmed on purpose
+takes none. The analyzers are not offered as a golangci-lint plugin: a v2 plugin
 means a golangci-lint rebuilt with it, for every developer and for CI, to
 show in an editor what `framingo vet` already says.
