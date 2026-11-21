@@ -112,9 +112,9 @@ messenger, err := mb.NewMessenger("ws:" + session.UID() + ":" + uuid.NewString()
 if err != nil {
     return errors.Wrap(err)
 }
-// pkg/utils/wsutil: blocks until conn closes, then closes the messenger
-// (the conn stays the caller's - in a WS handler, the server closes it)
-wsutil.Bridge(wsConn, messenger, wsutil.WithLogger(logger))
+// pkg/utils/wsutil: blocks until the session ends, closes the messenger, and
+// returns how the server closes the conn (in a WS handler, the server closes it)
+return wsutil.Bridge(wsConn, messenger, wsutil.WithLogger(logger))
 ```
 
 `Register` works before or after `Start` — modules registered earlier are
@@ -124,7 +124,8 @@ for running handlers until its context ends. A pubsub stop forgets every
 subscription; when the supervisor restarts pubsub alone, the messagebus — a
 `common.Reconcilable` — subscribes every module again
 ([supervisor.md](supervisor.md#reconciling-with-a-dependency)). A
-`Messenger`'s channel closes with it, ending its `wsutil.Bridge`. Options: `WithLogger`,
+`Messenger`'s channel closes with it, and its `wsutil.Bridge` ends the
+session, telling the client to try again later (`StatusTryAgainLater`). Options: `WithLogger`,
 `WithName`, and `WithTopic` (default `messagebus.DefaultTopic`), which lets
 several buses share one pubsub. `messagebus.Manager` is the
 `model.MessageBus` plus `Daemon`, `Debuggable` and `Reconcilable`.

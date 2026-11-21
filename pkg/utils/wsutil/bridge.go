@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -25,12 +27,23 @@ type bridge struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	once   sync.Once
+	ending atomic.Bool // the session is ending: what fails from now on is that
+	err    error       // what ended the session, returned for the server to close the connection by
 }
 
-// Bridge relays JSON both ways between conn and messenger, blocking until the connection ends;
-// it closes the Messenger on return, but conn stays the caller's to close.
-func Bridge(conn *websocket.Conn, messenger model.Messenger, opts ...Option) {
-	newBridge(conn, messenger, opts...).run()
+// ErrSubscriptionDropped ends a session whose messenger's channel closed under it — the
+// bus evicted a subscriber that stopped draining, or pubsub stopped: the connection
+// would stay open and hear nothing, so the client is told to try again later.
+var ErrSubscriptionDropped = CloseWith(websocket.StatusTryAgainLater, "subscription dropped")
+
+// Bridge relays JSON both ways between conn and messenger, blocking until the session ends,
+// and returns what ended it: nil once the connection did, or the error the handler returns
+// for the server to close the connection by (wsutil.Close). It closes the Messenger on
+// return; conn stays the server's to close.
+func Bridge(conn *websocket.Conn, messenger model.Messenger, opts ...Option) error {
+	return newBridge(conn, messenger, opts...).run()
 }
 
 // ping defaults are seeded before the options since WithPing(0, ...) disables pings
@@ -46,7 +59,7 @@ func newBridge(conn *websocket.Conn, messenger model.Messenger, opts ...Option) 
 	return b
 }
 
-func (b *bridge) run() {
+func (b *bridge) run() error {
 	b.log.Infof("open message session for %s", b.messenger.Name())
 	b.ctx, b.cancel = context.WithCancel(context.Background())
 	defer b.messenger.Close()
@@ -57,6 +70,26 @@ func (b *bridge) run() {
 		go b.pumpPing()
 	}
 	b.pumpInbound()
+	b.end(nil)
+	return b.err
+}
+
+// end ends the session for the first reason given. One that closes the connection closes
+// it first: canceling the context a read waits on tears the connection down with no
+// close frame, and the peer would learn nothing of why. nil just stops the pumps.
+func (b *bridge) end(err error) {
+	b.once.Do(func() {
+		b.ending.Store(true)
+		b.err = err
+		if err != nil {
+			closeBy(b.conn, err) //nolint:errcheck // the server's Close reports err again, once
+		}
+		b.cancel()
+	})
+}
+
+func (b *bridge) ended() bool {
+	return b.ending.Load()
 }
 
 func (b *bridge) pumpInbound() {
@@ -70,7 +103,7 @@ func (b *bridge) pumpInbound() {
 				// dropped without a close frame: routine, not an error
 				b.log.Infof("message session %s disconnected", b.messenger.Name())
 			default:
-				if b.ctx.Err() == nil {
+				if !b.ended() {
 					b.log.Errorf("message session %s read error: %v", b.messenger.Name(), err)
 				}
 			}
@@ -84,7 +117,7 @@ func (b *bridge) pumpInbound() {
 			b.log.Debugf("got unparseable data from %s: %s", b.messenger.Name(), string(data))
 			continue
 		}
-		if err := b.messenger.Send(b.ctx, msg.Kind, msg.Payload); err != nil && b.ctx.Err() == nil {
+		if err := b.messenger.Send(b.ctx, msg.Kind, msg.Payload); err != nil && !b.ended() {
 			b.log.Errorf("failed to relay inbound message from %s: %v", b.messenger.Name(), err)
 		}
 	}
@@ -95,11 +128,17 @@ func (b *bridge) pumpOutbound() {
 		select {
 		case msg, ok := <-b.messenger.Ch():
 			if !ok {
+				// the session's own end closes the messenger only after the pumps saw ctx done
+				if !b.ended() {
+					b.log.Warnf("message session %s lost its subscription", b.messenger.Name())
+					b.end(ErrSubscriptionDropped)
+				}
 				return
 			}
 			if err := wsjson.Write(b.ctx, b.conn, msg); err != nil {
-				if b.ctx.Err() == nil {
+				if !b.ended() {
 					b.log.Errorf("failed to send message through ws for %s: %v", b.messenger.Name(), err)
+					b.end(nil) // a connection that takes no write takes no more: the server closes it
 				}
 				return
 			}
@@ -122,9 +161,9 @@ func (b *bridge) pumpPing() {
 			err := b.conn.Ping(pingCtx)
 			pingCancel()
 			if err != nil {
-				if b.ctx.Err() == nil {
+				if !b.ended() {
 					b.log.Infof("message session %s ping failed: %v", b.messenger.Name(), err)
-					b.cancel()
+					b.end(nil)
 				}
 				return
 			}

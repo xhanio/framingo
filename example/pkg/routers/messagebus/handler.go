@@ -23,7 +23,6 @@ func (r *router) Stream(c api.Context, conn *websocket.Conn) error {
 	if err != nil {
 		return errors.Wrap(err)
 	}
-	// Bridge closes the messenger on return
-	wsutil.Bridge(conn, messenger, wsutil.WithLogger(r.log))
-	return nil
+	// Bridge closes the messenger on return, and says how the server closes the connection
+	return wsutil.Bridge(conn, messenger, wsutil.WithLogger(r.log))
 }

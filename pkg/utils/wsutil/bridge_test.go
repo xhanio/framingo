@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/types/model"
@@ -55,6 +56,7 @@ type wsTestServer struct {
 	ready     chan struct{}
 	done      chan struct{}
 	wsURL     string
+	err       error // what Bridge returned, set before done closes
 }
 
 func newWSTestServer(t *testing.T, opts ...Option) *wsTestServer {
@@ -73,7 +75,7 @@ func newWSTestServer(t *testing.T, opts ...Option) *wsTestServer {
 		}
 		defer conn.CloseNow()
 		close(env.ready)
-		Bridge(conn, env.messenger, opts...)
+		env.err = Bridge(conn, env.messenger, opts...)
 	}))
 	t.Cleanup(server.Close)
 	env.wsURL = "ws" + strings.TrimPrefix(server.URL, "http")
@@ -205,4 +207,42 @@ func TestBridge_PingDisabledLeavesSessionOpen(t *testing.T) {
 		t.Fatal("Bridge returned without an explicit close")
 	case <-time.After(300 * time.Millisecond):
 	}
+}
+
+// A subscription dropped under the session ends it: the client is told to try again
+// later, not left on a connection that hears nothing.
+func TestBridge_DroppedSubscriptionEndsTheSession(t *testing.T) {
+	env := newWSTestServer(t)
+	conn := dialWS(t, env.wsURL)
+	defer conn.CloseNow()
+	<-env.ready
+
+	close(env.messenger.in) // the bus evicted the subscriber, or pubsub stopped
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _, err := conn.Read(ctx)
+	var ce websocket.CloseError
+	require.True(t, errors.As(err, &ce), "the client sees a close frame, got %v", err)
+	assert.Equal(t, websocket.StatusTryAgainLater, ce.Code)
+	assert.Equal(t, "subscription dropped", ce.Reason)
+	select {
+	case <-env.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Bridge did not return")
+	}
+	assert.ErrorIs(t, env.err, ErrSubscriptionDropped)
+}
+
+// The client's own close ends the session with nothing to report.
+func TestBridge_ClientCloseReturnsNil(t *testing.T) {
+	env := newWSTestServer(t)
+	conn := dialWS(t, env.wsURL)
+	<-env.ready
+	require.NoError(t, conn.Close(websocket.StatusNormalClosure, "bye"))
+	select {
+	case <-env.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Bridge did not return")
+	}
+	assert.NoError(t, env.err)
 }

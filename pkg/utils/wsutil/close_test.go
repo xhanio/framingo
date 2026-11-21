@@ -98,3 +98,25 @@ func TestClose_PeerDropIsReleasedNotAFailure(t *testing.T) {
 		assert.Equal(t, websocket.StatusCode(-1), websocket.CloseStatus(readErr), "nothing is sent to a dropped peer")
 	}
 }
+
+// A CloseWith says how to close, and is no failure.
+func TestClose_CloseWithSendsItsStatusAndReason(t *testing.T) {
+	returned, readErr := closeAfter(t, context.Background(), CloseWith(websocket.StatusPolicyViolation, "registration required"), true)
+	assert.NoError(t, returned, "a close the handler asked for is not a failure")
+	frame := closeFrame(t, readErr)
+	assert.Equal(t, websocket.StatusPolicyViolation, frame.Code)
+	assert.Equal(t, "registration required", frame.Reason)
+}
+
+// A reason longer than a close frame carries is cut, not lost: coder/websocket would
+// drop it whole, and the status with it.
+func TestClose_ALongReasonIsCut(t *testing.T) {
+	long := strings.Repeat("é", 100) // 200 bytes, two to a rune
+	returned, readErr := closeAfter(t, context.Background(), errors.Newf("%s", long), true)
+	require.Error(t, returned)
+	frame := closeFrame(t, readErr)
+	assert.Equal(t, websocket.StatusInternalError, frame.Code)
+	assert.LessOrEqual(t, len(frame.Reason), maxReason)
+	assert.NotEmpty(t, frame.Reason)
+	assert.True(t, strings.HasPrefix(long, frame.Reason), "cut at a rune's start")
+}
