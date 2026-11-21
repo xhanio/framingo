@@ -15,8 +15,9 @@ var _ model.Messenger = (*messenger)(nil)
 type messenger struct {
 	name  string
 	topic string
-	bus   model.Pubsub
-	ch    <-chan entity.PubsubMessage
+	//framingo:ignore depslist a messenger is a handle given to one connection, never supervised
+	bus model.Pubsub
+	ch  <-chan entity.PubsubMessage
 }
 
 func (m *manager) NewMessenger(name string) (model.Messenger, error) {

@@ -252,7 +252,8 @@ The module's root package is a command, versioned with the framework:
 [pkg/components/cmd/framingo](pkg/components/cmd/framingo/), what they run in
 `pkg/tools/`.
 
-- **[verify](pkg/tools/verify/)** — `framingo verify [dir...]`: gofmt, build, vet, golangci-lint and the tests with `-race` for each module, every step run, one verdict at the end
+- **[verify](pkg/tools/verify/)** — `framingo verify [dir...]`: gofmt, build, vet, the analyzers below, golangci-lint and the tests with `-race` for each module, every step run, one verdict at the end
+- **[vet](pkg/tools/vet/)** — `framingo vet [packages]`: the framework's analyzers, run through `go vet`, one package per rule — `startctx` (a `Start` that keeps its context) and `depslist` (a held service missing from `Dependencies`); `//framingo:ignore <rule> <reason>` opts a line out
 
 ### Data Structures (`pkg/structs/`)
 

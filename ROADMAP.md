@@ -9,18 +9,17 @@ design note brought up to date.
 ## Checks
 
 The lint config holds the import boundaries and the forbidden calls,
-`server.CheckRouter` a router's config against its handlers, and
-`framingo verify` gives one verdict on a change
+`server.CheckRouter` a router's config against its handlers, `framingo vet`
+a `Start`'s context and a service's `Dependencies`, and `framingo verify`
+gives one verdict on a change
 ([design/checks.md](plugins/framingo/skills/framingo/design/checks.md)).
 Next, in order:
 
-- **Analyzers, in `pkg/tools/`.** Run by `framingo verify` and `framingo
-  vet`, and loadable as `go vet -vettool` and as a golangci-lint plugin, for
-  apps as for the framework. First `startctx` (a
-  `Start` keeping its context, or deriving from it without `WithoutCancel`)
-  and `depslist` (a held `common.Service` missing from `Dependencies`); then
-  `platformfirst`, `gormfield` (a `*gorm.DB` kept in a field outside db) and
-  `confinit` (`confutil.FromContext` outside `Init`). A candidate after them:
+- **More analyzers, in `pkg/tools/vet/`.** `platformfirst`, `gormfield` (a
+  `*gorm.DB` kept in a field outside db) and `confinit`
+  (`confutil.FromContext` outside `Init`), beside `startctx` and `depslist`;
+  and the set loadable as a golangci-lint plugin, so an editor shows what
+  `framingo vet` does. A candidate after them:
   the keys a service reads in `Init` against the keys its config file sets,
   since a misspelled key lands silently on the default.
 - **The docs and a release, verified.** A doc's snippet against the function

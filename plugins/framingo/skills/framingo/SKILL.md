@@ -154,9 +154,12 @@ the PATH, built with the Go that builds the code
 
 It formats, builds, vets, lints and tests (with `-race`) each module, runs
 every step even after one fails, and ends with `verified` or the list of
-what failed, exiting non-zero. A lint failure names the design note it
-enforces — `(design/narrow-contracts.md)` — so read that note before
-changing the code or reaching for `//nolint`; a `//nolint` carries its
+what failed, exiting non-zero. Its `framingo vet` step — also a command of
+its own, `framingo vet ./...` — runs the framework's analyzers: a `Start`
+keeping its ctx, a held service missing from `Dependencies`. A lint or vet
+failure names the design note it enforces — `(design/narrow-contracts.md)`
+— so read that note before changing the code or opting out; a `//nolint`,
+or a `//framingo:ignore <rule> <reason>` for an analyzer, carries its
 reason. What each check holds: [design/checks.md](design/checks.md).
 
 ## Quick Reference

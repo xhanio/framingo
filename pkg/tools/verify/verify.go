@@ -1,9 +1,10 @@
-// Package verify gives one verdict on a change: format, build, vet, lint and
-// tests, by the standard tools, for each module directory given. The framingo
-// command's verify runs it.
+// Package verify gives one verdict on a change: format, build, vet, the
+// framework's own analyzers, lint and tests, by the standard tools, for each
+// module directory given. The framingo command's verify runs it.
 package verify
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -12,34 +13,53 @@ import (
 	"strings"
 
 	"github.com/xhanio/errors"
+
+	"github.com/xhanio/framingo/pkg/tools/vet"
+	"github.com/xhanio/framingo/pkg/utils/cmdutil"
 )
 
-const lintInstall = "go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"
-
-// a step's output is shown only when it fails
+// step is one command run in a module directory; its output is shown only
+// when it fails.
 type step struct {
 	name string
-	run  func(ctx context.Context, dir string) (string, error)
+	bin  string
+	args []string
+	// check fails the step on output its exit status does not speak for; nil: the status decides
+	check func(output string) error
+	// install is how to get bin, said when it is not found
+	install string
 }
+
+// runner runs a step in dir and returns its output.
+type runner func(ctx context.Context, dir string, s step) (string, error)
 
 // Run verifies each module directory, the current one when none is given,
 // writing a line per step to w. Every step runs even after one fails, so one
 // run shows everything to fix; the error says the change is not verified.
 func Run(ctx context.Context, w io.Writer, dirs ...string) error {
-	return run(ctx, w, steps(), dirs...)
+	self, err := os.Executable()
+	if err != nil {
+		return errors.Wrapf(err, "failed to locate the running binary")
+	}
+	return run(ctx, w, steps(self), execute, dirs...)
 }
 
-func steps() []step {
+// steps are what verify runs, in order; self is the binary go vet takes as its tool.
+func steps(self string) []step {
 	return []step{
-		{"gofmt", gofmt},
-		{"go build", command("go", "build", "./...")},
-		{"go vet", command("go", "vet", "./...")},
-		{"golangci-lint", lint},
-		{"go test -race", command("go", "test", "-race", "-count=1", "-timeout", "10m", "./...")},
+		{name: "gofmt", bin: "gofmt", args: []string{"-l", "."}, check: formatted},
+		{name: "go build", bin: "go", args: []string{"build", "./..."}},
+		{name: "go vet", bin: "go", args: []string{"vet", "./..."}},
+		{name: "framingo vet", bin: "go", args: vet.Args(self)},
+		{
+			name: "golangci-lint", bin: "golangci-lint", args: []string{"run", "--timeout", "10m", "./..."},
+			install: "go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest",
+		},
+		{name: "go test -race", bin: "go", args: []string{"test", "-race", "-count=1", "-timeout", "10m", "./..."}},
 	}
 }
 
-func run(ctx context.Context, w io.Writer, steps []step, dirs ...string) error {
+func run(ctx context.Context, w io.Writer, steps []step, run runner, dirs ...string) error {
 	if len(dirs) == 0 {
 		dirs = []string{"."}
 	}
@@ -52,7 +72,7 @@ func run(ctx context.Context, w io.Writer, steps []step, dirs ...string) error {
 			continue
 		}
 		for _, s := range steps {
-			out, err := s.run(ctx, dir)
+			out, err := run(ctx, dir, s)
 			if err == nil {
 				fmt.Fprintf(w, "  ok    %s\n", s.name)
 				continue
@@ -78,26 +98,34 @@ func run(ctx context.Context, w io.Writer, steps []step, dirs ...string) error {
 	return errors.Newf("not verified: %d step(s) failed", len(failed))
 }
 
-func command(name string, args ...string) func(context.Context, string) (string, error) {
-	return func(ctx context.Context, dir string) (string, error) {
-		cmd := exec.CommandContext(ctx, name, args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		return string(out), err
+// execute runs s in dir, its stdout and stderr as one output in the order written.
+func execute(ctx context.Context, dir string, s step) (string, error) {
+	if _, err := exec.LookPath(s.bin); err != nil {
+		if s.install != "" {
+			return fmt.Sprintf("%s is not installed: %s", s.bin, s.install), err
+		}
+		return "", err
 	}
+	var out bytes.Buffer
+	err := cmdutil.New(s.bin, s.args,
+		cmdutil.WithContext(ctx),
+		cmdutil.WithDir(dir),
+		cmdutil.WithStdout(&out),
+		cmdutil.WithStderr(&out),
+	).Run()
+	if err == nil && s.check != nil {
+		err = s.check(out.String())
+	}
+	return out.String(), err
 }
 
-// gofmt fails on any file gofmt would change, generated output and the
-// skill's templates aside.
-func gofmt(ctx context.Context, dir string) (string, error) {
-	out, err := command("gofmt", "-l", ".")(ctx, dir)
-	if err != nil {
-		return out, err
+// formatted fails on any file gofmt -l lists, generated output and the skill's
+// templates aside.
+func formatted(output string) error {
+	if files := unformatted(output); len(files) > 0 {
+		return errors.Newf("not gofmt-clean: %s", strings.Join(files, " "))
 	}
-	if files := unformatted(out); len(files) > 0 {
-		return strings.Join(files, "\n"), errors.Newf("%d file(s) not gofmt-clean", len(files))
-	}
-	return "", nil
+	return nil
 }
 
 func unformatted(gofmtOutput string) []string {
@@ -109,11 +137,4 @@ func unformatted(gofmtOutput string) []string {
 		files = append(files, f)
 	}
 	return files
-}
-
-func lint(ctx context.Context, dir string) (string, error) {
-	if _, err := exec.LookPath("golangci-lint"); err != nil {
-		return "golangci-lint is not installed: " + lintInstall, err
-	}
-	return command("golangci-lint", "run", "--timeout", "10m", "./...")(ctx, dir)
 }

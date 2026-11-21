@@ -11,6 +11,7 @@ func NewRootCmd() *cobra.Command {
 		Short: "Check a project built on the framingo framework",
 	}
 	cmd.AddCommand(NewVerifyCmd())
+	cmd.AddCommand(NewVetCmd())
 	cmd.AddCommand(NewVersionCmd())
 	return cmd
 }
