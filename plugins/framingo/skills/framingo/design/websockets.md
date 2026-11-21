@@ -3,7 +3,7 @@
 ## The bus bridge is a utility, not a messagebus method
 
 **Decision.** `wsutil.Bridge(conn, messenger, opts...)` joins a WebSocket
-connection to a bus `Messenger` both ways until the connection closes. It
+connection to a bus `Messenger` both ways until the session ends. It
 lives in `pkg/utils/wsutil`, not on `model.MessageBus`. Each connection it
 bridges is a `session` — its two loops, read and write, its ping, and the
 ends it watches for — and `end` is the one way out of it.
@@ -18,7 +18,8 @@ bridges two transports, both ways, blocking like `io.Copy`.
 **Decision.** When the messenger's channel closes under a running session —
 the bus evicted a subscriber that stopped draining, or pubsub stopped — the
 bridge ends the session with `StatusTryAgainLater`, "subscription dropped",
-and returns `ErrSubscriptionDropped`. A write that fails ends it too.
+and returns `ErrSubscriptionDropped`, which `errors.Is` matches. A write
+that fails ends it too.
 
 **Why.** Before, the write loop returned alone: the connection stayed
 open and heard nothing, and a client that sees an open connection has no

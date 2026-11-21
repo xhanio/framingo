@@ -3,8 +3,6 @@ package user
 import (
 	"sync"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
@@ -32,9 +30,8 @@ func New(platform model.Platform, repo Repository, opts ...Option) Manager {
 
 func newManager(platform model.Platform, repo Repository, opts ...Option) *manager {
 	m := &manager{
-		repository:   repo,
-		sender:       platform.MessageBus(),
-		passwordCost: bcrypt.DefaultCost,
+		repository: repo,
+		sender:     platform.MessageBus(),
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()

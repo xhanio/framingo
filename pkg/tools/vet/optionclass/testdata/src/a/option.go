@@ -11,6 +11,11 @@ func WithEarly(n int) Option { // want `option WithEarly is in no class`
 	return func(m *manager) {}
 }
 
+// an option by its type, whatever its name
+func Early() Option { // want `option Early is in no class`
+	return func(m *manager) {}
+}
+
 //framingo:ignore optionclass a reason the test gives
 func WithExcused(n int) Option {
 	return func(m *manager) {}
@@ -29,7 +34,13 @@ func WithInterval(n int) Option {
 	return func(m *manager) { m.interval = n }
 }
 
+func NoName() Option {
+	return func(m *manager) { m.name = "" }
+}
+
 // unexported, a method, or no option: not this rule's
 func withHidden() Option { return nil }
 
 func (m *manager) WithMethod() {}
+
+func WithoutOption() string { return "" }

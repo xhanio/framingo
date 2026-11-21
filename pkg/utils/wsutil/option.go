@@ -55,34 +55,34 @@ func WithPing(interval, timeout time.Duration) Option {
 	}
 }
 
-// WithFilter writes only the bus messages filter keeps: the session's own, matched
-// against what its handshake said, say. By default every message is written.
+// WithFilter writes only the bus messages filter keeps — the session's own, matched
+// against its handshake, for instance. By default every message is written.
 func WithFilter(filter func(msg entity.PubsubMessage) bool) Option {
 	return func(s *session) {
 		s.filter = filter
 	}
 }
 
-// WithFrame writes what frame makes of a bus message, as JSON: its payload alone, say.
-// By default the message itself is written.
+// WithFrame writes what frame makes of a bus message, as JSON — its payload alone, for
+// instance. By default the message itself is written.
 func WithFrame(frame func(msg entity.PubsubMessage) any) Option {
 	return func(s *session) {
 		s.frame = frame
 	}
 }
 
-// WithInbound hands each text or binary frame the client sends to inbound: an ack, say.
-// An error ends the session with it — a CloseWith its status and reason, any other an
-// internal error. By default a frame is relayed to the bus.
+// WithInbound hands each text or binary frame the client sends to inbound — an ack, for
+// instance. An error ends the session with that close: a CloseWith's status and reason,
+// an internal error for any other. By default a frame is relayed to the bus.
 func WithInbound(inbound func(ctx context.Context, data []byte) error) Option {
 	return func(s *session) {
 		s.inbound = inbound
 	}
 }
 
-// WithDone ends the session once ch closes, closing with err: a
-// CloseWith(StatusNormalClosure, reason) for a session another displaced, say; nil a
-// normal closure. Given more than once, the first to close ends it.
+// WithDone ends the session once ch closes, closing with err — a
+// CloseWith(StatusNormalClosure, "displaced") for a session a newer one claimed, for
+// instance; nil is a normal closure. Given more than once, the first to close ends it.
 func WithDone(ch <-chan struct{}, err error) Option {
 	if err == nil {
 		err = CloseWith(websocket.StatusNormalClosure, "")

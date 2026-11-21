@@ -31,8 +31,8 @@ func (m *manager) setDefaults() {
 	}
 }
 
-// settings are what Init re-reads at every start, under the config root (metrics by
-// default, or the WithName name).
+// settings are the reloadable ones, re-read by every Init under the config root
+// (metrics, or the WithName name).
 type settings struct {
 	enabled        bool
 	exporterName   string
@@ -40,15 +40,14 @@ type settings struct {
 	interval       time.Duration
 }
 
-// resolve is the settings of a start: the defaults, each key config sets overriding
-// one, a value that is not one falling back to its default (design/config.md).
+// resolve is a start's settings: the defaults, overridden by each key the config
+// sets; an invalid value falls back to its default (design/config.md).
 func (m *manager) resolve(config confutil.Config) settings {
 	s := m.defaults
 	root := nameutil.ConfigRoot(m.name)
 	s.enabled = config.GetBoolOr(s.enabled, "%s.enabled", root)
-	// a block belongs to the exporter in effect: one the config names takes the
-	// config's block alone, never the default exporter's; the default one takes
-	// the config's block where it sets one
+	// the block belongs to the exporter in effect: one the config names comes with
+	// the config's block alone, the default one takes the config's block if set
 	if config.IsSet("%s.exporter", root) {
 		s.exporterName = config.GetString("%s.exporter", root)
 		s.exporterConfig = config.GetStringMap("%s.config", root)
@@ -56,7 +55,7 @@ func (m *manager) resolve(config confutil.Config) settings {
 		s.exporterConfig = config.GetStringMapOr(s.exporterConfig, "%s.config", root)
 	}
 	s.interval = config.GetDurationOr(s.interval, "%s.interval", root)
-	// zero or negative is unset, so it never spins the loop
+	// zero or negative is unset: the loop never spins
 	if s.interval <= 0 {
 		s.interval = m.defaults.interval
 	}
@@ -81,16 +80,16 @@ func WithName(name string) Option {
 // Reloadable options: each sets the default of a key Init re-reads at every start;
 // where the config sets the key, the config wins (design/config.md).
 
-// WithEnabled sets the default of metrics.enabled, itself off.
+// WithEnabled sets the default of metrics.enabled (built-in: off).
 func WithEnabled(enabled bool) Option {
 	return func(m *manager) {
 		m.defaults.enabled = enabled
 	}
 }
 
-// WithExporter sets the default of metrics.exporter and metrics.config, itself none; a
-// metrics.config alone configures this exporter, a metrics.exporter brings its own
-// block. It does not enable the service.
+// WithExporter sets the default of metrics.exporter and metrics.config (built-in:
+// none). A metrics.config alone configures this exporter; a metrics.exporter brings
+// its own block. It does not enable the service.
 func WithExporter(name string, config map[string]any) Option {
 	return func(m *manager) {
 		m.defaults.exporterName = name
@@ -98,8 +97,8 @@ func WithExporter(name string, config map[string]any) Option {
 	}
 }
 
-// WithInterval sets the default of metrics.interval, itself 60s, zero or negative
-// being unset.
+// WithInterval sets the default of metrics.interval (built-in: 60s; zero or negative
+// is unset).
 func WithInterval(d time.Duration) Option {
 	return func(m *manager) {
 		m.defaults.interval = d

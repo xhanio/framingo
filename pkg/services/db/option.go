@@ -47,9 +47,9 @@ func (m *manager) setDefaults() {
 	}
 }
 
-// resolve is the pool of a start, read under db.connection.* (or <name>.connection.*):
-// the defaults, each key config sets overriding one, a zero falling back to its
-// default (design/config.md).
+// resolve is a start's pool, read under db.connection.* (or <name>.connection.*): the
+// defaults, overridden by each key the config sets; a zero falls back to its default,
+// but for MaxIdleTime, where zero (never idle out) is a real choice (design/config.md).
 func (m *manager) resolve(config confutil.Config) connectionConfig {
 	c := m.defaults
 	root := nameutil.ConfigRoot(m.name)
@@ -58,7 +58,6 @@ func (m *manager) resolve(config confutil.Config) connectionConfig {
 	c.MaxLifetime = config.GetDurationOr(c.MaxLifetime, "%s.connection.max_lifetime", root)
 	c.MaxIdleTime = config.GetDurationOr(c.MaxIdleTime, "%s.connection.max_idle_time", root)
 	c.ExecTimeout = config.GetDurationOr(c.ExecTimeout, "%s.connection.exec_timeout", root)
-	// a zero MaxIdleTime is a real choice, never idle out, and stays
 	if c.MaxOpen == 0 {
 		c.MaxOpen = m.defaults.MaxOpen
 	}
@@ -75,7 +74,7 @@ func (m *manager) resolve(config confutil.Config) connectionConfig {
 }
 
 // Construction options: fixed for the instance's life, set at New (design/config.md).
-// The data source, type and migration among them: a change needs a new process.
+// Changing the data source, the type or the migration needs a new process.
 
 func WithLogger(logger log.Logger) Option {
 	return func(m *manager) {
@@ -122,8 +121,7 @@ func WithPlugins(plugins ...gorm.Plugin) Option {
 // where the config sets the key, the config wins (design/config.md).
 
 // WithConnection sets the defaults of db.connection.max_open, max_idle, max_lifetime,
-// max_idle_time and exec_timeout, themselves 10, 5, 5m, never and 30s, a zero being
-// unset.
+// max_idle_time and exec_timeout (built-in: 10, 5, 5m, never, 30s; zero is unset).
 func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, maxIdleTime time.Duration, execTimeout time.Duration) Option {
 	return func(m *manager) {
 		m.defaults = connectionConfig{

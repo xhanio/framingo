@@ -22,7 +22,8 @@ type Daemon interface {
 	Stop(ctx context.Context) error
 }
 
-// Init runs on first startup and every restart: load dynamic config here.
+// Init runs at the first start and every restart: resolve the reloadable settings here
+// (design/config.md).
 type Initializable interface {
 	Init(ctx context.Context) error
 }

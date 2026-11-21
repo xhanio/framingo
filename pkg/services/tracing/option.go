@@ -28,8 +28,8 @@ func (m *manager) setDefaults() {
 	}
 }
 
-// settings are what Init re-reads at every start, under the config root (tracing by
-// default, or the WithName name).
+// settings are the reloadable ones, re-read by every Init under the config root
+// (tracing, or the WithName name).
 type settings struct {
 	enabled        bool
 	exporterName   string
@@ -37,15 +37,14 @@ type settings struct {
 	sampleRatio    float64
 }
 
-// resolve is the settings of a start: the defaults, each key config sets overriding
-// one, a value that is not one falling back to its default (design/config.md).
+// resolve is a start's settings: the defaults, overridden by each key the config
+// sets; an invalid value falls back to its default (design/config.md).
 func (m *manager) resolve(config confutil.Config) settings {
 	s := m.defaults
 	root := nameutil.ConfigRoot(m.name)
 	s.enabled = config.GetBoolOr(s.enabled, "%s.enabled", root)
-	// a block belongs to the exporter in effect: one the config names takes the
-	// config's block alone, never the default exporter's; the default one takes
-	// the config's block where it sets one
+	// the block belongs to the exporter in effect: one the config names comes with
+	// the config's block alone, the default one takes the config's block if set
 	if config.IsSet("%s.exporter", root) {
 		s.exporterName = config.GetString("%s.exporter", root)
 		s.exporterConfig = config.GetStringMap("%s.config", root)
@@ -77,16 +76,16 @@ func WithName(name string) Option {
 // Reloadable options: each sets the default of a key Init re-reads at every start;
 // where the config sets the key, the config wins (design/config.md).
 
-// WithEnabled sets the default of tracing.enabled, itself off.
+// WithEnabled sets the default of tracing.enabled (built-in: off).
 func WithEnabled(enabled bool) Option {
 	return func(m *manager) {
 		m.defaults.enabled = enabled
 	}
 }
 
-// WithExporter sets the default of tracing.exporter and tracing.config, itself none; a
-// tracing.config alone configures this exporter, a tracing.exporter brings its own
-// block. It does not enable tracing.
+// WithExporter sets the default of tracing.exporter and tracing.config (built-in:
+// none). A tracing.config alone configures this exporter; a tracing.exporter brings
+// its own block. It does not enable tracing.
 func WithExporter(name string, config map[string]any) Option {
 	return func(m *manager) {
 		m.defaults.exporterName = name
@@ -94,8 +93,8 @@ func WithExporter(name string, config map[string]any) Option {
 	}
 }
 
-// WithSampleRatio sets the default of tracing.sample_ratio, itself 1.0, zero being
-// unset; a remote parent's decision still wins.
+// WithSampleRatio sets the default of tracing.sample_ratio (built-in: 1.0; zero is
+// unset). A remote parent's sampling decision still wins.
 func WithSampleRatio(ratio float64) Option {
 	return func(m *manager) {
 		m.defaults.sampleRatio = ratio

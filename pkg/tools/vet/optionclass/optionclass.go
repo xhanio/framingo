@@ -1,11 +1,12 @@
-// Package optionclass reports an option in an option.go that says nothing of its
-// class: construction, fixed at New, or reloadable, the default of a key Init
-// re-reads at every start (design/config.md).
+// Package optionclass reports an option in an option.go with no class comment above
+// it: construction, fixed at New, or reloadable, the default of a key every Init
+// re-reads (design/config.md).
 package optionclass
 
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"path/filepath"
 	"strings"
 
@@ -21,7 +22,7 @@ const (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "optionclass",
-	Doc:  "reports an option in an option.go under no Construction options or Reloadable options comment",
+	Doc:  "reports an option in an option.go — an exported func returning an …Option — under no Construction options or Reloadable options comment",
 	Run:  run,
 }
 
@@ -34,7 +35,7 @@ func run(pass *analysis.Pass) (any, error) {
 		headers := classHeaders(file)
 		for _, decl := range file.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
-			if !ok || fd.Recv != nil || !fd.Name.IsExported() || !strings.HasPrefix(fd.Name.Name, "With") {
+			if !ok || fd.Recv != nil || !fd.Name.IsExported() || !isOption(pass, fd) {
 				continue
 			}
 			if !under(headers, fd.Pos()) {
@@ -46,7 +47,18 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// classHeaders are where the file's class comments stand.
+// isOption: fd returns one value of a type named …Option — Option, ServerOption — so
+// FullDisplay and NoStdout count as WithName does.
+func isOption(pass *analysis.Pass, fd *ast.FuncDecl) bool {
+	results := fd.Type.Results
+	if results == nil || results.NumFields() != 1 {
+		return false
+	}
+	named, ok := pass.TypesInfo.TypeOf(results.List[0].Type).(*types.Named)
+	return ok && strings.HasSuffix(named.Obj().Name(), "Option")
+}
+
+// classHeaders are the positions of the file's class comments.
 func classHeaders(file *ast.File) []token.Pos {
 	var at []token.Pos
 	for _, group := range file.Comments {
@@ -59,7 +71,7 @@ func classHeaders(file *ast.File) []token.Pos {
 	return at
 }
 
-// under: a class comment stands before pos, the nearest above an option being its class.
+// under reports whether a class comment stands before pos.
 func under(headers []token.Pos, pos token.Pos) bool {
 	for _, h := range headers {
 		if h < pos {

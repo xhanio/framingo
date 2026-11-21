@@ -1,6 +1,8 @@
 package user
 
 import (
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
@@ -19,6 +21,9 @@ func (m *manager) setDefaults() {
 	}
 	if m.name == "" {
 		m.name = nameutil.Name(m)
+	}
+	if m.passwordCost == 0 {
+		m.passwordCost = bcrypt.DefaultCost
 	}
 }
 

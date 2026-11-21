@@ -12,7 +12,7 @@ reference implementation — every snippet below is lifted from it.
 services/example/
 ├── model.go     # Manager (model.Example + lifecycle) and Repository (its repo.* contracts)
 ├── manager.go   # unexported struct, New()/newManager(), Name(), Dependencies()
-├── option.go    # Option, applyOptions(), setDefaults(), WithLogger, With<Dynamic>…
+├── option.go    # Option, applyOptions(), setDefaults(), settings + resolve(), the construction and reloadable options
 ├── business.go  # the business methods — model.Example's contract
 ├── lifecycle.go # Init/Start/Stop/Info
 └── metric.go    # the instruments struct, built in Init (when the service records metrics)

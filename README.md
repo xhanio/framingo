@@ -608,7 +608,7 @@ pprof:
   port: 6060              # optional
 ```
 
-Apart from `db.connection.*`, `tracing.*` and `metrics.*` — which those services' `Init` reads straight from the context `Config` under the instance's root (`db`, `tracing`, `metrics`, or its `WithName`), so a restart picks up changes without a rebuild and a second instance gets its own settings — this layout is a convention, not a schema. Your wiring code maps keys onto constructor options, so rename freely as long as `Init(ctx)` stays the place dynamic values are read.
+Apart from `db.connection.*`, `tracing.*` and `metrics.*` — reloadable settings those services' `Init` reads from the context `Config` under the instance's root (`db`, `tracing`, `metrics`, or its `WithName`), each over the default its option set, so a restart picks up changes without a rebuild and a second instance gets its own settings — this layout is a convention, not a schema. Your wiring maps the construction keys onto constructor options, so rename freely as long as `Init(ctx)` stays the place reloadable values are read ([design/config.md](plugins/framingo/skills/framingo/design/config.md)).
 
 Override at runtime:
 
@@ -659,7 +659,7 @@ WantedBy=multi-user.target
    - One `Manager` interface per service in a dedicated package
    - Use an **unexported struct** and **exported interface + factory** — strict convention throughout the framework
    - Declare dependencies explicitly via `Dependencies()`; the supervisor handles ordering
-   - Read dynamic config in `Init(ctx)` via `confutil.FromContext(ctx)` under the service's config root, so restarts pick it up and a second instance reads its own keys
+   - Read reloadable settings in `Init(ctx)` via `confutil.FromContext(ctx)` under the service's config root, each over the default its option set (`GetIntOr`, …), so restarts pick them up and a second instance reads its own keys; mark each option construction or reloadable in `option.go`
 
 3. **Error Handling**
    - Always use `github.com/xhanio/errors` — never `fmt.Errorf` or stdlib `errors`

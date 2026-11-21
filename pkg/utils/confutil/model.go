@@ -26,8 +26,8 @@ type Config interface {
 	GetUint64(format string, args ...any) uint64
 	IsSet(format string, args ...any) bool
 
-	// The Or getters read the key where the config sets it, def where it does not: a
-	// reloadable setting over its default (design/config.md).
+	// The Or getters return the key's value where the config sets it, and def where it
+	// does not: a reloadable setting read over its default (design/config.md).
 	GetOr(def any, format string, args ...any) any
 	GetBoolOr(def bool, format string, args ...any) bool
 	GetDurationOr(def time.Duration, format string, args ...any) time.Duration

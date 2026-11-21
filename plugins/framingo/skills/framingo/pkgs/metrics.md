@@ -52,9 +52,9 @@ m := metrics.New(metrics.WithLogger(logger)) // all further config via metrics.*
 
 Lifecycle facts that matter:
 
-- **`Init` runs on every restart** and re-reads the `metrics.*` keys
-  through the same `applyOptions` + `setDefaults` pair the constructor
-  uses — config is the authority; an absent key lands on the default. On
+- **`Init` runs on every restart** and re-reads the `metrics.*` keys, each
+  over the default its option set — the config wins where it sets a key, the
+  default stands where it does not. On
   the happy path the replacement exporter is built first and swapped in
   atomically, so a probe landing mid-restart still sees a live exporter.
   Nothing is flushed here — provider and reader stay, so whatever
@@ -198,7 +198,7 @@ contrib runtime package.
 ## Gotchas
 
 - Metrics are off unless `metrics.enabled` (or `<name>.enabled` for a
-  `WithName`d instance) says so — wiring an exporter
+  `WithName`d instance), or a `WithEnabled(true)` default, says so — wiring an exporter
   alone records into an SDK nothing exports. Enabled with no exporter
   named anywhere fails Init.
 - The otlp `endpoint` is `host:port` with **no scheme**; otlp exporters

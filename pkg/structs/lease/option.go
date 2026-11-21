@@ -16,6 +16,8 @@ func (l *lease) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func Once() LeaseOption {
 	return func(l *lease) {
 		l.once = true
@@ -27,8 +29,6 @@ func UseWallTime() LeaseOption {
 		l.wall = true
 	}
 }
-
-// Construction options: fixed for the instance's life, set at New (design/config.md).
 
 func WithLogger(logger log.Logger) LeaseOption {
 	return func(l *lease) {

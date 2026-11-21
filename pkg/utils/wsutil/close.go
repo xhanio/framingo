@@ -10,8 +10,8 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// maxReason is as much of a reason as a close frame carries: coder/websocket drops a
-// longer one whole, closing with an internal error and no reason.
+// maxReason is as long as a close frame's reason may be: coder/websocket drops a longer
+// one whole, closing with an internal error and no reason.
 const maxReason = 123
 
 // closeError is a close a handler asks for: its status and reason, and what caused it.
@@ -30,22 +30,21 @@ func (e *closeError) Error() string {
 
 func (e *closeError) Unwrap() error { return e.cause }
 
-// CloseWith is the error a handler returns for its connection to be closed with status
-// and reason: a refusal, a displacement, a "try again later". Close sends them and
-// reports no failure; the reason, sent to the peer, says no more than it should.
+// CloseWith is the error a handler returns to have its connection closed with status
+// and reason — a refusal, a displacement, a "try again later". Close sends them and
+// reports no failure. The peer reads the reason: keep out of it what it should not.
 func CloseWith(status websocket.StatusCode, reason string) error {
 	return &closeError{status: status, reason: reason}
 }
 
-// CloseWithCause is CloseWith keeping what caused it: the peer gets the reason alone,
-// the error says both, for the logs, and errors.Is finds the cause. A handshake whose
-// frame fails the handler's own check is refused with one, as ReadFirst refuses its own.
+// CloseWithCause is CloseWith keeping its cause: the peer gets the reason alone, the
+// error's message says both for the logs, and errors.Is finds the cause.
 func CloseWithCause(status websocket.StatusCode, reason string, cause error) error {
 	return &closeError{status: status, reason: reason, cause: cause}
 }
 
-// sentError is an err whose close was sent already: Close sends nothing more, and
-// reports what it would have reported had it sent it.
+// sentError marks a close already sent: Close sends nothing more, and reports what it
+// would have reported.
 type sentError struct {
 	err error
 }
@@ -103,8 +102,8 @@ func closeAs(conn *websocket.Conn, err error) error {
 	return failure(err)
 }
 
-// failure is what a close for err reports: nothing for a CloseWith, the handler asked
-// for it, and err for any other.
+// failure is what Close reports for err: nil for a CloseWith, which the handler asked
+// for, and err otherwise.
 func failure(err error) error {
 	var ce *closeError
 	if errors.As(err, &ce) {
@@ -113,9 +112,9 @@ func failure(err error) error {
 	return err
 }
 
-// PeerGone reports whether err means the peer stopped talking, hanging up or sending a
-// close frame on its way out: what ReadFirst returns as is, a handler telling it from a
-// refused handshake to log the two apart.
+// PeerGone reports whether err means the peer left, hanging up or sending a close
+// frame. ReadFirst returns such an error as is; a handler tells it from a refused
+// handshake by PeerGone, to log the two apart.
 func PeerGone(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) ||
 		websocket.CloseStatus(err) != -1

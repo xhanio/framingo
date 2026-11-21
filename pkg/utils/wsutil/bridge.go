@@ -15,21 +15,21 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
-// ErrSubscriptionDropped ends a session whose messenger's channel closed under it — the
-// bus evicted a subscriber that stopped draining, or pubsub stopped: the connection
-// would stay open and hear nothing, so the client is told to try again later.
+// ErrSubscriptionDropped ends a session whose messenger's channel closed — the bus
+// evicted a subscriber that stopped draining, or pubsub stopped — telling the client
+// to try again later instead of leaving it on a connection that hears nothing.
 var ErrSubscriptionDropped = CloseWith(websocket.StatusTryAgainLater, "subscription dropped")
 
-// Bridge joins conn and messenger in a session, both ways, as JSON, until it ends, and
-// returns how it ended, for the handler to return: nil when the connection went, or the
-// close the session sent — a dropped subscription, a WithDone, an inbound error. It
-// closes the messenger; conn stays the server's to close.
+// Bridge relays JSON both ways between conn and messenger until the session ends, and
+// returns what the handler returns: nil if the connection went first, else the close
+// the session sent — a dropped subscription, a WithDone, an inbound error. It closes
+// the messenger; conn stays the server's to close.
 func Bridge(conn *websocket.Conn, messenger model.Messenger, opts ...Option) error {
 	return newSession(conn, messenger, opts...).run()
 }
 
-// session is one connection bridged to one messenger: its two loops, its ping, and the
-// ends it watches for.
+// session is one connection bridged to one messenger: its read and write loops, its
+// ping, and the ends it watches for.
 type session struct {
 	conn      *websocket.Conn
 	messenger model.Messenger
@@ -87,11 +87,10 @@ func (s *session) run() error {
 	return s.reason
 }
 
-// end ends the session, the first call alone. With a reason it sends that close first:
-// canceling the context a read waits on tears the connection down with no close frame,
-// and the peer would learn nothing of why. Bridge returns the reason marked sent, so the
-// server's Close does not close the connection again, and reports what is a failure.
-// With nil the connection is gone already, and the loops only stop.
+// end ends the session, once. Given a reason it sends that close before stopping the
+// loops, since canceling a read's context tears the connection down with no close
+// frame; the reason is returned marked sent, so the server's Close does not send it
+// again. Given nil, the connection is gone already and the loops just stop.
 func (s *session) end(reason error) {
 	s.once.Do(func() {
 		s.over.Store(true)
@@ -103,7 +102,7 @@ func (s *session) end(reason error) {
 	})
 }
 
-// ending: end has begun, so a failure is the session ending, not news.
+// ending reports whether end has begun: a failure from then on is the session ending.
 func (s *session) ending() bool {
 	return s.over.Load()
 }
@@ -193,8 +192,8 @@ func (s *session) watch(d done) {
 	}
 }
 
-// relay is the default inbound: a frame that parses as a PubsubMessage is sent on the
-// bus as its kind and payload; one that does not is skipped.
+// relay is the default inbound: it sends a frame that parses as a PubsubMessage on the
+// bus, as its kind and payload, and skips one that does not.
 func (s *session) relay(ctx context.Context, data []byte) error {
 	var msg entity.PubsubMessage
 	if err := json.Unmarshal(data, &msg); err != nil {

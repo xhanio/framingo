@@ -75,9 +75,10 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [design/service-wiring.md](design/service-wiring.md) | Platform first, nil-tolerant `Dependencies`, one instance per name, the api server last by ordering, restarts invisible to dependents, a dependent `Reconcile`s what it registered with a dependency stopped or started alone |
 | [design/lifecycle.md](design/lifecycle.md) | What a start waits for: each `Start` bounded, a service started once its `Init` succeeded and its dependencies run. What a stop may leave: the taker always awaited; other work left, cut, or waited for per resource, by what it holds |
 | [design/config.md](design/config.md) | A setting is construction, fixed at `New`, or reloadable, its option the default of a key `Init` re-reads, the config winning where it sets the key; config read in `Init` from the context, a restart as the reload; a reload published whole; the file re-read on SIGHUP alone |
-| [design/websockets.md](design/websockets.md) | `wsutil.Bridge`, `wsutil.Close`, the server closing its connections on stop |
+| [design/websockets.md](design/websockets.md) | `wsutil.Bridge` as a session utility, ending one that lost its subscription, shaped by options and `ReadFirst`; `wsutil.Close` by the handler's result, a `CloseWith` its own; the server closing its connections on stop |
 | [design/certificates.md](design/certificates.md) | CSRs keep the requester's key; a server CA and an agent CA; CA keys in the database alone; downloads encoded as the caller asks; TLS verifies each side against the CAs it is given |
 | [design/checks.md](design/checks.md) | Which decisions a machine checks, and by what: the lint config's import boundaries and forbidden calls, `framingo vet`'s analyzers, the router, docs and template tests; how an exception carries its reason; `framingo verify` |
+| [design/comments.md](design/comments.md) | What a comment says — what the code cannot: a caller's contract, why, an option's key and built-in default — a design note named instead of its reasoning repeated, no history |
 | [design/migrations.md](design/migrations.md) | Migrate on start locally, once per release in prod (`exampleapp migrate`), env-overridable config |
 
 ## Starting a New Backend
@@ -188,7 +189,7 @@ reason. What each check holds: [design/checks.md](design/checks.md).
 | Service interfaces | `pkg/types/model` | `Supervisor`, `Database` (+ `DatabaseDebugger`), `Pubsub`, `MessageBus`, `Messenger`, `Plan`, `Task`, `Tracer`, `Meter` | [pkgs/types.md](pkgs/types.md) |
 | Logging | `pkg/utils/log` | `log.Logger` | [pkgs/utils.md](pkgs/utils.md) |
 | Errors | `github.com/xhanio/errors` | `errors.Newf`, `errors.Wrap`, category sentinels | [pkgs/errors.md](pkgs/errors.md) |
-| Config | `pkg/utils/confutil` | `confutil.Config` via `confutil.FromContext(ctx)`; getters take format-string keys (`GetInt("%s.max_open", nameutil.ConfigRoot(m.name))`), a reloadable setting read over its default (`GetIntOr(s.maxOpen, "%s.max_open", root)`) | [pkgs/supervisor.md](pkgs/supervisor.md), [pkgs/config.md](pkgs/config.md) |
+| Config | `pkg/utils/confutil` | `confutil.Config` via `confutil.FromContext(ctx)`; getters take format-string keys (`GetInt("%s.max_open", nameutil.ConfigRoot(m.name))`), a reloadable setting read over its default (`GetIntOr(c.MaxOpen, "%s.connection.max_open", root)`) | [pkgs/supervisor.md](pkgs/supervisor.md), [pkgs/config.md](pkgs/config.md) |
 | Health probes | `pkg/types/common` | `Liveness`/`Readiness` — `Alive(ctx)`/`Ready(ctx)`; served at `/healthz` + `/readyz` by the example's health router | [pkgs/supervisor.md](pkgs/supervisor.md), [app/services.md](app/services.md) |
 
 ## Architecture

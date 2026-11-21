@@ -9,20 +9,19 @@ import (
 	"github.com/xhanio/errors"
 )
 
-// ReadFirst reads the connection's first frame, JSON, into a T: the handshake a client
-// begins with, a registration say, waited for no longer than timeout.
+// ReadFirst decodes the connection's first frame, JSON, into a T — a handshake such as a
+// registration — waiting no longer than timeout.
 //
-// A peer gone before it sent one returns what the read said, for Close to release the
-// connection quietly; none in time, or one that does not decode, returns a
+// If the peer leaves first, it returns the read's error as is, for Close to release the
+// connection quietly. If no frame comes in time, or the frame does not decode, it returns
 // CloseWith(StatusPolicyViolation, reason), reason naming the handshake. PeerGone tells
-// the two apart. What the frame must hold is the caller's to check, returning a
-// CloseWithCause(StatusPolicyViolation, reason, why) as well.
+// the two apart. Checking what the frame holds is the caller's, refusing one with
+// CloseWithCause(StatusPolicyViolation, reason, why).
 //
-// The read waits on a goroutine of its own, not on a context with the timeout:
-// coder/websocket tears the connection down when a read's context ends, and the peer
-// would see a drop instead of the reason. On a timeout that read stays parked until the
-// server closes the connection, once the handler returns. The frame is decoded here, not
-// by wsjson, which closes the connection itself on a bad one.
+// The read runs on a goroutine of its own rather than under a context with the timeout,
+// since coder/websocket tears the connection down when a read's context ends; after a
+// timeout it stays parked until the server closes the connection. The frame is decoded
+// here, not by wsjson, which closes the connection itself on a bad one.
 func ReadFirst[T any](ctx context.Context, conn *websocket.Conn, timeout time.Duration, reason string) (T, error) {
 	var first T
 	type read struct {

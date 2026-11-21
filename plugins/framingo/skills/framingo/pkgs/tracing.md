@@ -37,10 +37,10 @@ Lifecycle facts that matter:
 - **`Init` runs on every restart** and re-reads the `tracing.*` keys
   (`confutil.FromContext`; under `<name>.*` instead for a `WithName`d
   instance), so enabling, disabling, re-pointing, or
-  re-sampling tracing is a config edit + service restart. Config is the
-  authority: the reload runs through the same `applyOptions` + `setDefaults`
-  pair the constructor uses, so an absent key reads zero and lands on the
-  default rather than preserving whatever construction set. The previous
+  re-sampling tracing is a config edit + service restart. Each key is
+  resolved over the default its option set: where the config sets it the
+  config wins, where it does not the default stands
+  ([design/config.md](../design/config.md)). The previous
   pipeline is flushed (bounded by 5s) and replaced; `Provider()` stays the
   same, and follows it.
 - **Disabled means noop, not nil.** `Provider()` always returns a working
@@ -102,7 +102,7 @@ registry name and the kv block its factory strict-decodes, nil config =
 exporter defaults; the block belongs to the exporter in effect, so a config
 naming another exporter takes only its own block, and a config block alone
 configures the exporter the code chose) and `WithSampleRatio`
-(`tracing.sample_ratio`, 1.0, wrapped in `ParentBased` so remote parents
+(`tracing.sample_ratio`, 1.0, zero being unset, wrapped in `ParentBased` so remote parents
 keep their sampling decision). An app that enables tracing in code with
 `WithEnabled(true)` keeps it on until a config says `tracing.enabled:
 false`; the wiring passes none of them when the config file is the one

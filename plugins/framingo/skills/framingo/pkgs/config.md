@@ -22,7 +22,8 @@ log:
     max_backups: 3            # number of rotated files to keep
     max_age: 7                # days to retain old log files
 
-# Database — used by db.New() options + dynamic config in db.Manager.Init().
+# Database — type/source/migration are construction keys the wiring passes to
+# db.New(); connection.* is reloadable, read by db.Manager.Init() over its defaults.
 # `db` is the instance's config root (nameutil.ConfigRoot of its name); a
 # second instance built with db.WithName("clickhouse") reads under `clickhouse:`
 db:
