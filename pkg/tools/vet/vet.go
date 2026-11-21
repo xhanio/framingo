@@ -10,13 +10,19 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/unitchecker"
 
+	"github.com/xhanio/framingo/pkg/tools/vet/confinit"
 	"github.com/xhanio/framingo/pkg/tools/vet/depslist"
+	"github.com/xhanio/framingo/pkg/tools/vet/gormfield"
+	"github.com/xhanio/framingo/pkg/tools/vet/platformfirst"
 	"github.com/xhanio/framingo/pkg/tools/vet/startctx"
 )
 
 func Analyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
+		confinit.Analyzer,
 		depslist.Analyzer,
+		gormfield.Analyzer,
+		platformfirst.Analyzer,
 		startctx.Analyzer,
 	}
 }

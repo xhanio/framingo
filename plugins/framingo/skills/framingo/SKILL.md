@@ -156,7 +156,9 @@ It formats, builds, vets, lints and tests (with `-race`) each module, runs
 every step even after one fails, and ends with `verified` or the list of
 what failed, exiting non-zero. Its `framingo vet` step — also a command of
 its own, `framingo vet ./...` — runs the framework's analyzers: a `Start`
-keeping its ctx, a held service missing from `Dependencies`. A lint or vet
+keeping its ctx, a held service missing from `Dependencies`, a service's
+`New` not taking the platform first, a `*gorm.DB` kept in a field, config
+read outside `Init`. A lint or vet
 failure names the design note it enforces — `(design/narrow-contracts.md)`
 — so read that note before changing the code or opting out; a `//nolint`,
 or a `//framingo:ignore <rule> <reason>` for an analyzer, carries its

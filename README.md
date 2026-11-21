@@ -253,7 +253,7 @@ The module's root package is a command, versioned with the framework:
 `pkg/tools/`.
 
 - **[verify](pkg/tools/verify/)** — `framingo verify [dir...]`: gofmt, build, vet, the analyzers below, golangci-lint and the tests with `-race` for each module, every step run, one verdict at the end
-- **[vet](pkg/tools/vet/)** — `framingo vet [packages]`: the framework's analyzers, run through `go vet`, one package per rule — `startctx` (a `Start` that keeps its context) and `depslist` (a held service missing from `Dependencies`); `//framingo:ignore <rule> <reason>` opts a line out
+- **[vet](pkg/tools/vet/)** — `framingo vet [packages]`: the framework's analyzers, run through `go vet`, one package per rule — `startctx` (a `Start` that keeps its context), `depslist` (a held service missing from `Dependencies`), `platformfirst` (an app service's `New` not taking the platform first), `gormfield` (a `*gorm.DB` kept in a struct field outside db) and `confinit` (`confutil.FromContext` outside `Init`); `//framingo:ignore <rule> <reason>` opts a line out
 
 ### Data Structures (`pkg/structs/`)
 

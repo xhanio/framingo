@@ -21,6 +21,9 @@ Go source takes a test: `router.yaml` against its handlers.
 | errcheck | a file's own `Close` is checked: a write the OS deferred fails there | — |
 | `framingo vet`: `startctx` | a `Start` keeps neither its ctx nor one derived from it — in a field, or in a goroutine it starts — unless cut with `context.WithoutCancel` | [lifecycle.md](lifecycle.md) |
 | `framingo vet`: `depslist` | a field holding a service is listed in the type's `Dependencies` | [service-wiring.md](service-wiring.md) |
+| `framingo vet`: `platformfirst` | an app service's `New` takes the platform first | [service-wiring.md](service-wiring.md) |
+| `framingo vet`: `gormfield` | no `*gorm.DB` is kept in a struct field outside the db service | [service-wiring.md](service-wiring.md) |
+| `framingo vet`: `confinit` | `confutil.FromContext` is called in `Init` alone | [config.md](config.md) |
 | `server.CheckRouter`, in each router's test | every `func:` in `router.yaml` is a discovered handler whose signature fits its method; no route twice | [who-decides.md](who-decides.md) |
 | the example's `apitest.CheckRouter` | a declared `permission:` is one `rbac` defines | [who-decides.md](who-decides.md) |
 
@@ -71,6 +74,6 @@ the same results without it.
 
 ## Not yet
 
-More analyzers — the platform first in every constructor, a `*gorm.DB` kept
-in a field, config read outside `Init` — and the docs' snippets against the
-code. The repository's `ROADMAP.md` plans both.
+The analyzers as a golangci-lint plugin, so an editor shows what
+`framingo vet` does, and the docs' snippets against the code. The
+repository's `ROADMAP.md` plans both.
