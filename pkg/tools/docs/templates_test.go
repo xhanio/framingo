@@ -87,7 +87,14 @@ func TestTemplatesPassVerify(t *testing.T) {
 		"require github.com/xhanio/framingo v0.0.0\n\nreplace github.com/xhanio/framingo => "+root+"\n")
 	write(t, filepath.Join(dir, "go.sum"), read(t, filepath.Join(root, "go.sum")))
 
-	// from the module cache alone: the framework's own build has filled it
+	// The scaffold's tidy runs from the module cache alone, so the cache must hold what the
+	// framework's own tidy needs, a superset: more than its build fetches, the go.mod of
+	// every version in the graph and the imports of its dependencies' tests. -diff fetches
+	// that much and writes nothing.
+	fill := exec.Command("go", "mod", "tidy", "-diff")
+	fill.Dir = root
+	fill.Env = append(os.Environ(), "GOWORK=off")
+	fill.Run() //nolint:errcheck // whether the framework is tidy is not this test's; a fetch that failed fails the tidy below
 	run(t, dir, "go", "mod", "tidy")
 	bin := filepath.Join(t.TempDir(), "framingo")
 	run(t, root, "go", "build", "-o", bin, ".")
