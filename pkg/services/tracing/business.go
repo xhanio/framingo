@@ -5,10 +5,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Provider must be resolved per use, not cached: a restart retires it and it
-// then silently drops spans.
+// Provider is the same for the manager's life, and may be kept, as may a
+// Tracer from it: each span goes to the pipeline Init last built.
 func (m *manager) Provider() trace.TracerProvider {
-	return m.controller.current()
+	return m.provider
 }
 
 func (m *manager) Propagator() propagation.TextMapPropagator {

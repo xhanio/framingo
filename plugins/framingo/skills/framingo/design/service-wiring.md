@@ -61,6 +61,10 @@ supervisor restarts the failing service alone, never its dependents. So
 whatever a restart's `Init` replaces is swapped under the readers whole:
 `db.Manager`'s pool is one value behind an `atomic.Pointer`, and the
 configuration `Init` reloads is published whole ([config.md](config.md)).
+What a handle hands out to be kept stays the same across its restart, the
+restart swapping what is under it: the metrics service's provider outlives
+its exporter, and the tracing service's provider follows the pipeline its
+`Init` rebuilds, so a library that keeps its `Tracer` survives the restart.
 
 **Why.** A restart runs while requests are in flight. A dependent keeping
 what the handle handed out goes on using a pool the restart closed, and a
@@ -68,7 +72,10 @@ field rewritten under a reader is a data race. Restarting the dependents too
 would drop their work for a fault that was not theirs.
 
 **Cost.** A query that took the old pool just before the swap may find it
-closed and fail once. Tests restart a service under load, under `-race`:
+closed and fail once. The rule is held by review, `gormfield` aside: a check
+for every value a dependent keeps would follow it through helpers and into
+goroutines, and would have to tell a handout that may be kept by the
+handle's promise, not by its type. Tests restart a service under load, under `-race`:
 `TestReInitUnderQueries` for the database, `TestReInitUnderRequests` for the
 example service.
 

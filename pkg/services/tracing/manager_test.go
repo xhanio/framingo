@@ -48,8 +48,10 @@ func enabledCtx() context.Context {
 
 func flushSpans(t *testing.T, m *manager) {
 	t.Helper()
-	tp, ok := m.Provider().(*sdktrace.TracerProvider)
-	require.True(t, ok, "flushSpans needs a live SDK provider")
+	m.controller.mu.RLock()
+	tp := m.controller.sdk
+	m.controller.mu.RUnlock()
+	require.NotNil(t, tp, "flushSpans needs a live SDK provider")
 	require.NoError(t, tp.ForceFlush(context.Background()))
 }
 
@@ -116,26 +118,68 @@ func TestSpanResourceIsBuildIdentity(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestReInitSwapsProvider(t *testing.T) {
+// A restart swaps the pipeline under the provider: a Tracer kept across it
+// follows, through a stop and the Init after it.
+func TestATracerKeptAcrossARestartFollowsIt(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()
 	m := newTestManager(exp)
 	require.NoError(t, m.Init(enabledCtx()))
-	p1 := m.Provider()
+	p := m.Provider()
+	kept := p.Tracer("test")
 
 	require.NoError(t, m.Init(enabledCtx()))
-	p2 := m.Provider()
-	assert.NotSame(t, p1, p2)
 	require.NoError(t, m.Alive(context.Background()))
-
-	_, late := p1.Tracer("test").Start(context.Background(), "late")
-	assert.False(t, late.IsRecording())
-	late.End()
-
-	exp.Reset()
-	_, span := p2.Tracer("test").Start(context.Background(), "fresh")
+	_, span := kept.Start(context.Background(), "after re-init")
+	assert.True(t, span.IsRecording())
+	span.End()
+	_, span = p.Tracer("later").Start(context.Background(), "from the kept provider")
+	assert.True(t, span.IsRecording())
 	span.End()
 	flushSpans(t, m)
-	require.Len(t, exp.GetSpans(), 1)
+	require.Len(t, exp.GetSpans(), 2)
+
+	require.NoError(t, m.Stop(context.Background()))
+	_, span = kept.Start(context.Background(), "while stopped")
+	assert.False(t, span.IsRecording())
+	span.End()
+
+	exp.Reset()
+	require.NoError(t, m.Init(enabledCtx()))
+	_, span = kept.Start(context.Background(), "after restart")
+	assert.True(t, span.IsRecording())
+	span.End()
+	flushSpans(t, m)
+	spans := exp.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "after restart", spans[0].Name)
+}
+
+// A kept Tracer starts spans while Init swaps the pipeline under it.
+func TestAKeptTracerUnderReInits(t *testing.T) {
+	m := newTestManager(tracetest.NewInMemoryExporter())
+	require.NoError(t, m.Init(enabledCtx()))
+	kept := m.Provider().Tracer("test")
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				_, span := kept.Start(context.Background(), "op")
+				span.End()
+			}
+		})
+	}
+	for range 20 {
+		require.NoError(t, m.Init(enabledCtx()))
+	}
+	close(done)
+	wg.Wait()
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 func TestExporterConfigFromViper(t *testing.T) {

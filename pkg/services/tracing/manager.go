@@ -5,9 +5,11 @@ import (
 
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/framingo/pkg/utils/traceutil"
 )
 
 type manager struct {
@@ -29,6 +31,9 @@ type manager struct {
 	// mu guards enabled, exporterName, exporterConfig and sampleRatio.
 	mu         sync.RWMutex
 	controller *controller
+
+	// what Provider hands out, never swapped: it follows the controller
+	provider trace.TracerProvider
 }
 
 var _ Manager = (*manager)(nil)
@@ -38,8 +43,10 @@ func New(opts ...Option) Manager {
 }
 
 func newManager(opts ...Option) *manager {
+	c := newController()
 	m := &manager{
-		controller: newController(),
+		controller: c,
+		provider:   traceutil.Follow(c.current),
 		propagator: propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}),
 	}
 	m.applyOptions(opts...)

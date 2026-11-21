@@ -45,8 +45,7 @@ func (m *middleware) Dependencies() []common.Service {
 	return []common.Service{m.tracer}
 }
 
-// Provider() is resolved per request so a tracing-service restart needs no rebuild;
-// the error status comes from ErrorBody since echo commits the response after the chain returns.
+// The error status comes from ErrorBody since echo commits the response after the chain returns.
 func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
 	if !enabled {
 		return nil, nil

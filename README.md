@@ -295,7 +295,7 @@ The module's root package is a command, versioned with the framework:
 | **[syncutil](pkg/utils/syncutil/)** | `WaitGroup` whose `Wait(ctx)` gives up once the context ends; `Loop`, the goroutine a start runs to take new work, which `Stop` ends and waits for |
 | **[testutil](pkg/utils/testutil/)** | Test helpers: `SetupDB` (in-memory SQLite, needs cgo), and `Tracer`/`Meter` doubles with in-memory recorders |
 | **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
-| **[traceutil](pkg/utils/traceutil/)** | `model.Tracer` as plain OpenTelemetry: `Start`/`Fail` for spans, `LiveProvider` for libraries that cache their tracer |
+| **[traceutil](pkg/utils/traceutil/)** | `model.Tracer` as plain OpenTelemetry: `Start`/`Fail` for spans, `Follow`/`LiveProvider` for a provider that follows a swapped pipeline |
 | **[wsutil](pkg/utils/wsutil/)** | WebSocket helpers: `Bridge` joins a connection to a bus Messenger both ways, with server-side pings tunable via `WithPing`; `Close` ends a connection with the status its handler's result calls for |
 
 ## Building Your First Application

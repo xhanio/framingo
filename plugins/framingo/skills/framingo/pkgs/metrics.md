@@ -30,10 +30,11 @@ state is exported, never what is recording. This identity is
 `model.Meter`'s documented promise, and the package's
 `TestInstrumentSurvivesRestart` pins it.
 
-The consequence for callers is the exact inverse of tracing's rule:
-tracing says *never* cache the provider; metrics says resolve
-`Provider()` once, build instruments once, cache them, and never rebuild
-on restart. That inversion is why the two handles are separate interfaces.
+The consequence for callers: resolve `Provider()` once, build instruments
+once, cache them, and never rebuild on restart. Tracing makes the same
+promise its own way — its provider is the same for the service's life, each
+span resolving the pipeline the last `Init` built
+([tracing.md](tracing.md)).
 
 ## The Service
 

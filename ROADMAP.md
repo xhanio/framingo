@@ -42,6 +42,24 @@ would not know them, and a user's sessions end only when an event says so.
 
 ## Events: what the bus may lose
 
+- **A restart the bus survives.** Neither half holds today; the kafka and
+  redis tests skip without a broker, so this needs one to verify.
+  - *The kafka driver cannot restart.* Its reader and writer are built in
+    `NewKafka` and closed by `Stop`, so after a restart its consume loop
+    spins on `io.EOF`, logging each, and every `Publish` fails with
+    `io.ErrClosedPipe` — a SIGHUP reload is enough. Built at `Start` and
+    closed at `Stop` instead, the instance's group kept, it resumes from the
+    offset it committed and loses nothing published while it restarted.
+  - *A stop ends the subscriptions.* Every driver's `Stop` closes its
+    subscribers' channels, and the messagebus never subscribes again: pubsub
+    restarted alone — by `RestartService`, since it has no `Alive` the
+    monitor would restart it by — leaves the messagebus delivering nothing,
+    its health green. Two ways, to weigh: a subscription is its
+    subscriber's, ended by `Unsubscribe` or eviction alone and a stop ending
+    only the transport, the tests that pin `Stop` closing the channels
+    inverted; or the messagebus subscribing again when its channel closes
+    while it runs, which every consumer of pubsub would then repeat, and
+    which brings an evicted subscriber back.
 - **Delivery, said per driver.** `pubsub.md` says an in-process bus is no
   guarantee; it does not say, driver by driver, when a message is lost and
   what a consumer must do about it. Known so far, of the kafka driver: an

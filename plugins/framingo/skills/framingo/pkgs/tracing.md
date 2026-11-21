@@ -245,8 +245,9 @@ It wraps `gorm.io/plugin/opentelemetry/tracing`, kept in its own subpackage
 because that package imports the ClickHouse/MySQL/PostgreSQL dialectors
 unconditionally — importing it from `pkg/services/db` would link all three
 into every binary and undo the driver registry. Framingo hands it
-`traceutil.LiveProvider(t)` so `Provider()` is re-resolved per span (a tracing
-restart takes effect without rebuilding the connection) and forces
+`traceutil.LiveProvider(t)`, which re-resolves `Provider()` per span — needed
+only for a `model.Tracer` that replaces its provider, since the tracing
+service's follows its own restarts — and forces
 `WithoutMetrics()` (that path reaches for the global `MeterProvider`, and
 upstream offers no way to redirect it). That is the only forced default —
 upstream `tracing.Option` values are applied after it, so every other knob
@@ -258,13 +259,18 @@ and the PII are.
 ### Wiring other instrumentation — `pkg/utils/traceutil`
 
 Any library that takes a `trace.TracerProvider` reads `Tracer(...)` once and
-holds it, so passing `t.Provider()` directly pins its spans to the provider
-live at wiring time — a restart retires that one and it drops spans silently.
-`traceutil.LiveProvider(t)` re-resolves per span:
+holds it. The tracing service's `Provider()` is built for that: it is the same
+for the service's life, and a `Tracer` from it resolves, on every span, the
+pipeline the last `Init` built — `traceutil.Follow` over the service's own
+pipeline. So passing it directly survives a tracing restart:
 
 ```go
-otelgrpc.NewServerHandler(otelgrpc.WithTracerProvider(traceutil.LiveProvider(m.tracing)))
+otelgrpc.NewServerHandler(otelgrpc.WithTracerProvider(m.tracing.Provider()))
 ```
+
+`traceutil.LiveProvider(t)` gives the same for any other `model.Tracer`, one
+that replaces its provider — a test's `testutil.Tracer`, which swaps it to play
+a restart.
 
 It depends only on `model.Tracer` and the otel trace API, so a component with
 its own `model.Tracer` implementation does not pull in the tracing service.
@@ -333,9 +339,9 @@ tracing stays out of the app's platform bundle: no business service takes the
 handle — the trace middleware owns extraction and the server span, and
 business spans nest under it through the context. A service that genuinely
 needs the handle (custom propagation, span links across requests) still
-takes `model.Tracer` as a constructor arg and resolves `Provider()` per use
-— never cache the `trace.TracerProvider` in a field: a tracing restart swaps
-providers, and a retired provider silently drops spans.
+takes `model.Tracer` as a constructor arg; it may keep `Provider()`, or a
+`Tracer` from it, in a field, since a tracing restart swaps the pipeline under
+it, never the provider itself.
 
 ## Gotchas
 

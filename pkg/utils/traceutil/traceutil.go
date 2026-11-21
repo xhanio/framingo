@@ -16,32 +16,39 @@ var (
 	_ trace.Tracer         = liveTracer{}
 )
 
-// LiveProvider re-resolves the provider on every span, so libraries that cache their tracer at
-// construction survive a tracing restart (a retired provider silently drops spans).
-// Each Start costs a lock and map lookup; measure before using on a per-request path.
+// Follow is a provider that resolves current on every span, so a Tracer kept
+// from it follows whatever current returns then: how the tracing service's
+// Provider stays the same across a restart that swaps its pipeline. Each Start
+// costs current and the provider's own Tracer lookup.
+func Follow(current func() trace.TracerProvider) trace.TracerProvider {
+	return liveProvider{current: current}
+}
+
+// LiveProvider follows t's Provider, for a model.Tracer that replaces it; the
+// tracing service's own Provider follows its restarts already.
 func LiveProvider(t model.Tracer) trace.TracerProvider {
-	return liveProvider{tracer: t}
+	return Follow(t.Provider)
 }
 
 // delegates at both levels: callers cache the Tracer as well as the provider
 type liveProvider struct {
 	embedded.TracerProvider
-	tracer model.Tracer
+	current func() trace.TracerProvider
 }
 
 func (p liveProvider) Tracer(name string, opts ...trace.TracerOption) trace.Tracer {
-	return liveTracer{tracer: p.tracer, name: name, opts: opts}
+	return liveTracer{current: p.current, name: name, opts: opts}
 }
 
 type liveTracer struct {
 	embedded.Tracer
-	tracer model.Tracer
-	name   string
-	opts   []trace.TracerOption
+	current func() trace.TracerProvider
+	name    string
+	opts    []trace.TracerOption
 }
 
 func (t liveTracer) Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return t.tracer.Provider().Tracer(t.name, t.opts...).Start(ctx, name, opts...)
+	return t.current().Tracer(t.name, t.opts...).Start(ctx, name, opts...)
 }
 
 // Start uses the provider bound to ctx's span; without a recording span it yields a noop span.

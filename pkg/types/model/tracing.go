@@ -11,7 +11,9 @@ import (
 type Tracer interface {
 	common.Service
 
-	// Provider is never nil (noop when off); resolve it per use, a restart replaces it.
+	// Provider is never nil (noop when off), and the tracing service's is the
+	// same for its life: a restart swaps the pipeline under it, so it and a
+	// Tracer from it may be kept.
 	Provider() trace.TracerProvider
 
 	Propagator() propagation.TextMapPropagator
