@@ -18,11 +18,11 @@ Only otel *API* types appear in `model`; the SDK stays behind
 
 ## The Stable Provider
 
-The one deep difference from tracing. A tracing restart swaps the whole
-provider and callers re-resolve per span; metrics callers hold
-*instruments* (`meter.Int64Counter(...)`), create them once, and cache
-them — and an instrument minted from a retired provider records into
-nothing, silently. So the metrics manager builds one SDK provider +
+Tracing keeps its provider the same by resolving, span by span, the
+pipeline behind it; metrics cannot, since callers hold *instruments*
+(`meter.Int64Counter(...)`), create them once, and cache them — and an
+instrument minted from a retired provider records into nothing, silently.
+So the metrics manager builds one SDK provider +
 `ManualReader` pair at construction and **never replaces them**: `Init`
 swaps only the exporter behind the shared reader. Cached instruments stay
 valid for the life of the process; a restart changes where aggregated

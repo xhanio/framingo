@@ -27,6 +27,10 @@ type manager struct {
 	mu      sync.Mutex
 	modules map[string]common.Named
 	started bool
+
+	// subMu orders the subscriptions of Start, Register and Reconcile, so a
+	// module holds one at most
+	subMu sync.Mutex
 }
 
 func New(bus model.Pubsub, opts ...Option) Manager {

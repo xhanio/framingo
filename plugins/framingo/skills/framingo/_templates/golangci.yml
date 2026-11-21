@@ -4,7 +4,7 @@
 #   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 #
 # The depguard rules are the import boundaries of the layout (app/layout.md);
-# each names the design note that decides it.
+# each boundary rule names the design note that decides it.
 version: "2"
 
 linters:

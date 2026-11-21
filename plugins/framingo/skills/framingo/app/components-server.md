@@ -433,7 +433,8 @@ func (m *manager) Start(ctx context.Context) error {
 	if err := m.services.Start(ctx); err != nil {
 		return err
 	}
-	m.ctx, m.cancel = context.WithCancel(ctx)
+	// until Stop: Start's ctx bounds the start alone
+	m.ctx, m.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	m.listenSignals(m.ctx)
 	return nil
 }
@@ -444,9 +445,9 @@ context; `Info` delegates to `m.services.Info`. Give the supervisor a `WithStopP
 than the platform's own stop timeout, so the shutdown ends there rather than in a SIGKILL —
 the example's 20s sits inside Kubernetes' default 30s termination grace period. Give it a
 `WithStartPolicy` too: a `Start` only binds a listener or launches a loop, the slow work being
-`Init`'s, so one that takes seconds is stuck. The example's 10s fails it with that recorded as
-its start error, long before the liveness probe — whose listener starts last, after every
-`Start` — gives up on the pod.
+`Init`'s, so one that takes seconds is stuck. The example's 10s fails it: the daemon exits
+with that start error, as on any failed start at boot, long before the liveness probe — whose
+listener starts last, after every `Start` — would give up on the pod.
 
 ## `api.go` — Middleware and Router Registration
 

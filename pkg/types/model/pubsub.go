@@ -8,6 +8,8 @@ import (
 )
 
 // Pubsub is a bare channel transport; dispatch belongs on top, see MessageBus.
+// A stop forgets every subscription, closing its channel, so a dependent that
+// subscribes is a common.Reconcilable, and subscribes again.
 type Pubsub interface {
 	common.Service
 

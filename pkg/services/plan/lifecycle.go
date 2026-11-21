@@ -8,6 +8,7 @@ import (
 
 	"github.com/xhanio/errors"
 
+	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
@@ -35,6 +36,40 @@ func (m *manager) Stop(ctx context.Context) error {
 	}
 	if err != nil {
 		return errors.Wrapf(err, "plan manager stopped with runs still going")
+	}
+	return nil
+}
+
+// Reconcile follows the task manager: a stop has dropped every firing not yet
+// started, which end canceled as at the plan manager's own stop, and a start
+// takes every plan's task again.
+func (m *manager) Reconcile(_ context.Context, dep common.Service, state common.DependencyState) error {
+	if dep.Name() != m.tm.Name() {
+		return nil
+	}
+	switch state {
+	case common.DependencyStopped:
+		m.RLock()
+		regs := make([]*registration, 0, len(m.plans))
+		for _, reg := range m.plans {
+			regs = append(regs, reg)
+		}
+		m.RUnlock()
+		for _, reg := range regs {
+			m.endUnstarted(reg)
+		}
+	case common.DependencyRunning:
+		// locked, as Add is: a plan Delete has taken out is not put back
+		m.Lock()
+		defer m.Unlock()
+		var errs []error
+		for _, reg := range m.plans {
+			// a task still there was not forgotten
+			if err := m.tm.Add(reg.plan.Task); err != nil && !errors.Is(err, errors.Conflict) {
+				errs = append(errs, errors.Wrapf(err, "plan %s", reg.plan.ID))
+			}
+		}
+		return errors.Combine(errs...)
 	}
 	return nil
 }

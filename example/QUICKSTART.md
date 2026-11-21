@@ -71,11 +71,11 @@ gopro build binary -e local
 
 | Optional — remove if you don't need it | Where |
 |---|---|
-| RBAC + user/role/org/cert system services | `pkg/services/system/`, `pkg/routers/{auth,user,role,certificate}/`, `pkg/middlewares/{authnuser,authnagent,authz}/`, `pkg/types/{rbac,preset}/` |
+| RBAC + user/role/org/cert system services | `pkg/services/system/{auth,user,role,organization,certificate}/` (keep `platform/`, the bundle every service takes), `pkg/routers/{auth,user,role,certificate}/`, `pkg/middlewares/{authnuser,authnagent,authz}/`, `pkg/types/{rbac,preset}/`, `pkg/types/message/{system,user}.go`; `pkg/types/entity/auth.go`, `pkg/middlewares/feature/` and `pkg/utils/apitest/router.go` import `rbac` and change with it |
 | WebSocket message bus stream | `pkg/routers/messagebus/` and its `messagebusRouter.New` line in `pkg/components/server/example/api.go`, plus the CLI's `stream` (`pkg/components/cmd/cli/messagebus.go`) |
 | Feature-flag middleware | `pkg/middlewares/feature/`, `pkg/types/rbac/feature.go` |
 | Deflate compression middleware | `pkg/middlewares/deflate/` |
-| Demo HelloWorld feature | `pkg/services/example/`, `pkg/routers/example/`, `pkg/types/message/`, plus the `001_create_helloworld_table.*.sql` migration |
+| Demo HelloWorld feature | `pkg/services/example/`, `pkg/routers/example/`, `pkg/types/message/example.go`, plus the `001_create_helloworld_table.*.sql` migration |
 | `examplecli` binary | `build/binary/examplecli/`, `pkg/components/cmd/cli/`, `pkg/components/client/` |
 
 The supervisor's dependency resolution means you can delete a service entirely: as long as nothing else lists it in `Dependencies()`, removing it from `initServices()` and the `Register(...)` calls is enough.
@@ -247,7 +247,7 @@ In prod the daemon never touches the schema: its config sets no
 `db.migration`, and the migrate Job — `exampleapp migrate`, run with the
 release's own image and the migrations it carries — applies it once per
 release, so replicas never race each other over it. The Job's name carries the
-version (`framingo-example-migrate-v0-8-1`), since a Job cannot be changed
+version (`framingo-example-migrate-<version>`, `project.yaml`'s version with its dots as dashes), since a Job cannot be changed
 once created. The probes hit `/healthz` and `/readyz` on the health listener
 (`api.health`, port 8081); `db_host` in the ConfigMap points at a Service
 named `postgres` — point it at your database.
@@ -295,7 +295,7 @@ example/
 │   ├── default/config/exampleapp/migrations/ # shared by every env: 000_create_system_tables, 001_create_helloworld_table
 │   ├── local/                                # docker compose
 │   │   ├── config/exampleapp/
-│   │   │   ├── config.yaml                   # log, db, tracing, metrics, api, example, pprof
+│   │   │   ├── config.yaml                   # supervisor, log, db, tracing, metrics, api, example, pprof
 │   │   │   └── secret.env                    # development credentials, env-var overrides
 │   │   └── docker-compose/template.docker-compose.yaml   # postgres + the daemon
 │   └── prod/                                 # Kubernetes
@@ -310,7 +310,7 @@ example/
     │   ├── client/example/                   # HTTP client SDK used by examplecli
     │   ├── cmd/
     │   │   ├── app/                          # daemon Cobra commands (root, daemon, migrate, version)
-    │   │   └── cli/                          # CLI commands (auth, cert, example, messagebus)
+    │   │   └── cli/                          # CLI commands (auth, cert, example, messagebus, common: version)
     │   └── server/example/                   # supervisor wiring (model, manager, lifecycle, config, service, api, signal, migrate)
     ├── services/
     │   ├── example/                          # demo HelloWorld business service

@@ -24,6 +24,9 @@ type Readiness interface { Ready(ctx context.Context) error }          // readin
 // the caller owns the deadline and shutdown signal. Implementations may layer
 // a tighter timeout on top, never a looser one.
 type Debuggable interface { Info(w io.Writer, debug bool) }            // debug output
+type Reconcilable interface {                                          // what it registered with a dependency
+    Reconcile(ctx context.Context, dep Service, state DependencyState) error
+}
 ```
 
 ### The `Daemon` contract
@@ -123,7 +126,7 @@ mgr.Init(ctx)
 mgr.Start(ctx)
 ```
 
-**A name stands for one instance.** The dependency graph, the stats and the by-name operations all key on `Name()`, so `Register` refuses another instance under a name already taken — registered before, or earlier in the same call, or brought in as a dependency — with a `Conflict`; it is a wiring mistake, so fail startup on it. Meeting the same instance again (registered directly and as someone's dependency) is fine. Two instances of one service type need distinct names: `WithName` on the framework services. A nil service is skipped, and so is a nil entry in any `Dependencies()` list — registration, the init wait and the health sweep all pass over it — so a service can list an optional dependency the app did not wire. `Register` is wiring-time (it is not locked against the monitor): call it, then `TopoSort`, before `Init`.
+**A name stands for one instance.** The dependency graph, the stats and the by-name operations all key on `Name()`, so `Register` refuses another instance under a name already taken — registered before, or earlier in the same call, or brought in as a dependency — with a `Conflict`; it is a wiring mistake, so fail startup on it. Meeting the same instance again (registered directly and as someone's dependency) is fine. Two instances of one service type need distinct names: `WithName` on the framework services. A nil service is skipped, and so is a nil entry in any `Dependencies()` list — registration, the init wait, the start gate, the health sweep and the reconciles all pass over it — so a service can list an optional dependency the app did not wire. `Register` is wiring-time (it is not locked against the monitor): call it, then `TopoSort`, before `Init`.
 
 Full signature set:
 
@@ -135,7 +138,7 @@ type Manager interface {          // = model.Supervisor + health + Initializable
     TopoSort() error
     Services() []common.Service
     Stats() ([]*entity.SupervisorStats, error)    // point-in-time copies, topological order: dependencies above dependents;
-                                                  // the error combines each stat's Healthcheck() (stopped, init or start error)
+                                                  // the error combines each stat's Healthcheck() (stopped, init, start or reconcile error)
 
     Init(ctx context.Context) error
     Start(ctx context.Context) error
@@ -164,7 +167,8 @@ The manager:
 ## Starting
 
 A service is started once its own `Init` succeeded and every dependency it
-lists is running — initialized, started, not stopped
+lists is running — initialized, started, not stopped, and neither its start
+nor a `Reconcile` since has failed
 ([design/lifecycle.md](../design/lifecycle.md#a-service-starts-once-what-it-depends-on-runs)):
 
 - **A failed `Init`** is not started; its init error is the record, so the
@@ -181,6 +185,42 @@ lists is running — initialized, started, not stopped
   stops what did start. Whether the process goes on is the caller's call — the
   example exits on a failed start at boot, and on a SIGHUP reload starts what it
   can after a failed `Init`, as at boot, as the supervisor's own `Restart` does.
+
+## Reconciling with a dependency
+
+A dependency's state lasts no longer than its run: the task manager forgets
+the tasks added to it when it stops, pubsub its subscriptions. A dependent
+that registers with a dependency implements `common.Reconcilable`, and puts
+back what it holds when told
+([design/service-wiring.md](../design/service-wiring.md#a-restart-is-invisible-to-the-dependents)):
+
+| The supervisor | tells each dependent that runs on |
+|---|---|
+| restarts the dependency, once its stop is done | `DependencyStopped` |
+| ... once its `Init` and `Start` succeeded | `DependencyRunning` |
+| ... once its `Init` or `Start` failed | `DependencyFailed` |
+| `StopService` | `DependencyStopped` |
+| `StartService` | `DependencyRunning`, or `DependencyFailed` |
+
+- **Direct dependents alone, running ones alone**, in dependency order,
+  under the lock the restart holds, each call bounded by `WithStartPolicy`.
+  A dependent that is not running registers everything when it starts.
+- **Never at the whole graph's start, stop or restart**: the dependents stop
+  and start with it.
+- **A state, not a moment.** A stop is told once it is done; `Reconcile`
+  relies on nothing but the state it is given, and a call that finds nothing
+  to do changes nothing. A state it does not act on returns nil.
+- **A failed `Reconcile` fails the dependent**: its `ReconcileErr`, in its
+  stats and its health, keeps its own dependents from starting, and the
+  monitor restarts it, whose `Init` and `Start` register everything. It is
+  cleared when the dependent starts again.
+- `Reconcile` registers and nothing slower, and never calls the supervisor,
+  whose lock it runs under.
+
+The plan manager and the messagebus implement it: on `DependencyRunning`
+the plan manager adds every plan's task to the task manager again, and on
+`DependencyStopped` ends canceled the firings the stop dropped; the
+messagebus subscribes every module again.
 
 ## Waiting at Init
 
@@ -236,12 +276,15 @@ How the monitor consumes them:
 - **Each sweep probes every service exactly once.** A shared dependency is
   checked once and its result reused by every dependent, with failures
   still rolling up into each dependent's healthcheck error.
-- **Only liveness failure triggers restart**; readiness is reported. The
-  probe context is the monitor's own — cancellation at shutdown reaches a
-  ping in flight.
+- **A failure of the service's own triggers restart**: a failed liveness
+  probe, or a failed `Init`, `Start` or `Reconcile` in its stats; readiness
+  is reported, never restarted, and a dependency's failure only rolls up.
+  The probe context is the monitor's own — cancellation at shutdown reaches
+  a ping in flight.
 - **`WithMonitorPolicy`'s maxRetries sets the escalation regime**:
-  `n > 0` restarts up to n times, then the supervisor gives up — and its
-  own `Alive()` goes red; `0` disables in-process restarts, so a liveness
+  `n > 0` restarts up to n times, then the supervisor gives up — and, when
+  it is liveness that failed, its own `Alive()` goes red (a service whose
+  `Init` or `Start` keeps failing shows in `Ready` and `Stats`); `0` disables in-process restarts, so a liveness
   failure escalates immediately (the platform is the recovery path);
   `-1` retries forever and never escalates.
 

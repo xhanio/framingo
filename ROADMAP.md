@@ -11,8 +11,9 @@ design note brought up to date.
 The lint config holds the import boundaries and the forbidden calls,
 `server.CheckRouter` a router's config against its handlers, `framingo vet`
 five rules that need types — a `Start`'s context, a service's `Dependencies`
-among them — the repository's tests its docs' links, marked snippets and
-version surfaces, and `framingo verify` gives one verdict on a change
+among them — the repository's tests its docs' links, marked snippets,
+version surfaces and the skill's templates, and `framingo verify` gives one
+verdict on a change
 ([design/checks.md](plugins/framingo/skills/framingo/design/checks.md)).
 What is left are candidates:
 
@@ -42,24 +43,13 @@ would not know them, and a user's sessions end only when an event says so.
 
 ## Events: what the bus may lose
 
-- **A restart the bus survives.** Neither half holds today; the kafka and
-  redis tests skip without a broker, so this needs one to verify.
-  - *The kafka driver cannot restart.* Its reader and writer are built in
-    `NewKafka` and closed by `Stop`, so after a restart its consume loop
-    spins on `io.EOF`, logging each, and every `Publish` fails with
-    `io.ErrClosedPipe` — a SIGHUP reload is enough. Built at `Start` and
-    closed at `Stop` instead, the instance's group kept, it resumes from the
-    offset it committed and loses nothing published while it restarted.
-  - *A stop ends the subscriptions.* Every driver's `Stop` closes its
-    subscribers' channels, and the messagebus never subscribes again: pubsub
-    restarted alone — by `RestartService`, since it has no `Alive` the
-    monitor would restart it by — leaves the messagebus delivering nothing,
-    its health green. Two ways, to weigh: a subscription is its
-    subscriber's, ended by `Unsubscribe` or eviction alone and a stop ending
-    only the transport, the tests that pin `Stop` closing the channels
-    inverted; or the messagebus subscribing again when its channel closes
-    while it runs, which every consumer of pubsub would then repeat, and
-    which brings an evicted subscriber back.
+- **The kafka driver cannot restart.** Its reader and writer are built in
+  `NewKafka` and closed by `Stop`, so after a restart its consume loop spins
+  on `io.EOF`, logging each, and every `Publish` fails with
+  `io.ErrClosedPipe` — a SIGHUP reload is enough. Built at `Start` and
+  closed at `Stop` instead, the instance's group kept, it resumes from the
+  offset it committed and loses nothing published while it restarted. The
+  kafka and redis tests skip without a broker, so this needs one to verify.
 - **Delivery, said per driver.** `pubsub.md` says an in-process bus is no
   guarantee; it does not say, driver by driver, when a message is lost and
   what a consumer must do about it. Known so far, of the kafka driver: an

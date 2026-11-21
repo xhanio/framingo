@@ -27,7 +27,9 @@ func (m *manager) Start(ctx context.Context) error {
 	m.mu.Unlock()
 
 	for _, mod := range modules {
-		m.subscribe(ctx, mod)
+		if err := m.subscribe(ctx, mod); err != nil {
+			m.log.Error(err)
+		}
 	}
 	return nil
 }
@@ -57,6 +59,29 @@ func (m *manager) Stop(ctx context.Context) error {
 		return errors.Wrapf(err, "%s stopped with handlers still going", m.name)
 	}
 	return nil
+}
+
+// Reconcile follows pubsub: a start has forgotten every subscription, so each
+// module subscribes again. Its listener ended when the stop closed its channel.
+func (m *manager) Reconcile(_ context.Context, dep common.Service, state common.DependencyState) error {
+	if dep.Name() != m.bus.Name() || state != common.DependencyRunning {
+		return nil
+	}
+	m.mu.Lock()
+	started, ctx := m.started, m.ctx
+	modules := make([]common.Named, 0, len(m.modules))
+	for _, mod := range m.modules {
+		modules = append(modules, mod)
+	}
+	m.mu.Unlock()
+	if !started {
+		return nil
+	}
+	var errs []error
+	for _, mod := range modules {
+		errs = append(errs, m.subscribe(ctx, mod))
+	}
+	return errors.Combine(errs...)
 }
 
 func (m *manager) Info(w io.Writer, debug bool) {

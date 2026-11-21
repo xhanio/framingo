@@ -3,6 +3,8 @@ package messagebus
 import (
 	"context"
 
+	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
@@ -21,7 +23,9 @@ func (m *manager) Register(module common.Named) {
 	m.mu.Unlock()
 
 	if started {
-		m.subscribe(ctx, module)
+		if err := m.subscribe(ctx, module); err != nil {
+			m.log.Error(err)
+		}
 	}
 }
 
@@ -43,21 +47,28 @@ func (m *manager) SendRawMessage(ctx context.Context, from common.Named, kind st
 	}
 }
 
-func (m *manager) subscribe(ctx context.Context, svc common.Named) {
+// subscribe replaces svc's subscription, if it has one: its listener ends with
+// the channel it reads.
+func (m *manager) subscribe(ctx context.Context, svc common.Named) error {
 	_, isMH := svc.(common.MessageHandler)
 	_, isRMH := svc.(common.RawMessageHandler)
 	if !isMH && !isRMH {
-		return
+		return nil
+	}
+	m.subMu.Lock()
+	defer m.subMu.Unlock()
+	if err := m.bus.Unsubscribe(svc.Name(), m.topic); err != nil {
+		return errors.Wrapf(err, "failed to unsubscribe %s", svc.Name())
 	}
 	ch, err := m.bus.Subscribe(svc.Name(), m.topic)
 	if err != nil {
-		m.log.Errorf("failed to subscribe %s: %v", svc.Name(), err)
-		return
+		return errors.Wrapf(err, "failed to subscribe %s", svc.Name())
 	}
 	if ch == nil {
-		return
+		return nil
 	}
 	m.wg.Go(func() { m.listen(ctx, svc, ch) })
+	return nil
 }
 
 func (m *manager) listen(ctx context.Context, svc common.Named, ch <-chan entity.PubsubMessage) {

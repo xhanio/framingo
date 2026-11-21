@@ -7,6 +7,8 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
+// Task holds runtime state alone: a stop forgets every task added, so a
+// dependent that adds tasks is a common.Reconcilable, and adds them again.
 type Task interface {
 	common.Service
 	// Add is all-or-nothing: no Job is InvalidArgument, a taken ID a Conflict.

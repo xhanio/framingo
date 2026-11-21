@@ -9,4 +9,5 @@ type Manager interface {
 	model.Plan
 	common.Debuggable
 	common.Daemon
+	common.Reconcilable
 }

@@ -29,7 +29,8 @@ context instead.
 
 **Decision.** The supervisor starts a service only when its own `Init`
 succeeded and every dependency it lists is running — initialized, started,
-not stopped. A dependency that failed to start gates its dependents, through
+not stopped, and neither its start nor a `Reconcile` since has failed. A
+dependency that failed to start gates its dependents, through
 one with no `Start` of its own, with "dependency X is not running", as a
 failed `Init` fails its dependents fast; a service that does not depend on
 it starts. What a pass left unstarted is the monitor's to restart, in

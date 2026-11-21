@@ -47,6 +47,7 @@ type SupervisorStats struct {
 	Stopped           bool
 	StoppedAt         time.Time
 	StopErr           error
+	ReconcileErr      error // the first failed Reconcile since the service last started
 	HealthcheckedAt   time.Time
 	HealthcheckErr    error
 	LivenessErr       error
@@ -77,6 +78,9 @@ func (s *SupervisorStats) Healthcheck() error {
 	}
 	if s.StartErr != nil {
 		errs = append(errs, errors.Wrapf(s.StartErr, "service %s", s.Name))
+	}
+	if s.ReconcileErr != nil {
+		errs = append(errs, errors.Wrapf(s.ReconcileErr, "service %s", s.Name))
 	}
 	return errors.Combine(errs...)
 }

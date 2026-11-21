@@ -32,7 +32,7 @@ against the code they point at and copy (`pkg/tools/docs`).
 | the example's `apitest.CheckRouter` | a declared `permission:` is one `rbac` defines | [who-decides.md](who-decides.md) |
 | `docs.Links`, in `pkg/tools/docs`'s own test of the repository | a relative markdown link reaches a file, its anchor a heading | — |
 | `docs.Snippets`, in the same test | a Go snippet marked `<!-- source: path -->` shows that file's functions and types as they are, comments aside | — |
-| `TestTemplatesPassVerify`, in the same test | an app laid out as the skill's Route B copies `_templates/` passes `framingo verify` | — |
+| `TestTemplatesPassVerify`, beside them in `pkg/tools/docs`; skipped with `-short` or without golangci-lint | an app laid out as the skill's Route B copies `_templates/` passes `framingo verify` | — |
 | `TestVersionSurfacesAgree` | the plugin's version in its two places, the framework version it documents in five | — |
 
 The boundary rules bind non-test files: a service's test builds the real
@@ -71,7 +71,7 @@ agent to run it after any change. The command is the framework module's own
 root package — `go install github.com/xhanio/framingo@latest` — so it is
 versioned with the framework and its rules, by the one tag.
 
-**Why.** Five commands are four chances to skip one, and a coding agent
+**Why.** Six commands are five chances to skip one, and a coding agent
 needs a single answer to "is this change sound" that it cannot talk itself
 past. A command, not a script copied into each app: a copy stays at the
 version it was copied at, and a shell script runs on no Windows. It only

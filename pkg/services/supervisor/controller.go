@@ -144,27 +144,72 @@ func (c *controller) start(ctx context.Context, service common.Service) (bool, e
 		stat.StartErr = err
 		stat.StartDuration = time.Since(startedAt)
 		stat.Ready = err == nil
+		if err == nil {
+			stat.ReconcileErr = nil // a start registers everything again
+		}
 	})
 	return true, err
 }
 
-// depsRunning is the first dependency not running: not initialized, not
-// started, failed to start, or stopped.
+// depsRunning is the first dependency not running.
 func (c *controller) depsRunning(service common.Service) error {
 	for _, dep := range service.Dependencies() {
 		if dep == nil {
 			continue // an optional dependency the app did not wire: nothing to wait for
 		}
-		stat := c.stats.snapshot(dep.Name())
-		if stat == nil {
-			continue
-		}
-		_, daemon := dep.(common.Daemon)
-		if !stat.Initialized || stat.StartErr != nil || stat.Stopped || daemon && !stat.Started {
+		if !c.running(dep) {
 			return errors.Unavailable.Newf("dependency %s is not running", dep.Name())
 		}
 	}
 	return nil
+}
+
+// running: initialized, started, not stopped, and neither its start nor a
+// Reconcile since has failed. A service the supervisor does not track counts.
+func (c *controller) running(service common.Service) bool {
+	stat := c.stats.snapshot(service.Name())
+	if stat == nil {
+		return true
+	}
+	_, daemon := service.(common.Daemon)
+	return stat.Initialized && stat.StartErr == nil && stat.ReconcileErr == nil && !stat.Stopped && (!daemon || stat.Started)
+}
+
+// reconcile tells each running dependent of dep that is Reconcilable what dep
+// has become, in dependency order; a dependent that fails is failed, for the
+// monitor to restart.
+func (c *controller) reconcile(ctx context.Context, dep common.Service, state common.DependencyState) {
+	for _, service := range c.services {
+		svc, ok := service.(common.Reconcilable)
+		if !ok || service.Name() == dep.Name() || !dependsOn(service, dep) || !c.running(service) {
+			continue
+		}
+		name := service.Name()
+		rctx, cancel := c.startContext(ctx)
+		err := svc.Reconcile(rctx, dep, state)
+		cancel()
+		if err == nil {
+			continue
+		}
+		err = errors.Wrapf(err, "failed to reconcile with %s %s", dep.Name(), state)
+		c.log.Errorf("service %s %s", name, err)
+		c.stats.update(name, func(stat *entity.SupervisorStats) {
+			if stat.ReconcileErr == nil {
+				stat.ReconcileErr = err
+			}
+			stat.Ready = false
+		})
+	}
+}
+
+// dependsOn by name, as the graph keys: one instance per name
+func dependsOn(service, dep common.Service) bool {
+	for _, d := range service.Dependencies() {
+		if d != nil && d.Name() == dep.Name() {
+			return true
+		}
+	}
+	return false
 }
 
 // initialized reports whether service's last Init succeeded; one that failed
@@ -208,15 +253,29 @@ func (c *controller) Start(ctx context.Context, service common.Service) error {
 	if !c.initialized(service) {
 		return errors.Conflict.Newf("service %s is not initialized", service.Name())
 	}
-	_, err := c.start(ctx, service)
+	ok, err := c.start(ctx, service)
+	if ok {
+		c.reconcile(ctx, service, started(err))
+	}
 	return err
 }
 
 func (c *controller) Stop(ctx context.Context, service common.Service) error {
 	c.op.Lock()
 	defer c.op.Unlock()
-	_, err := c.stop(ctx, service)
+	ok, err := c.stop(ctx, service)
+	if ok {
+		c.reconcile(ctx, service, common.DependencyStopped)
+	}
 	return err
+}
+
+// started is the state a start's err leaves its service in.
+func started(err error) common.DependencyState {
+	if err != nil {
+		return common.DependencyFailed
+	}
+	return common.DependencyRunning
 }
 
 // Restart cycles the service regardless of state, resurrecting even a stopped one.
@@ -259,6 +318,8 @@ func (c *controller) restart(ctx context.Context, service common.Service) error 
 			stat.Stopped = false
 		})
 	}
+	// dependents hear the stop even of a service with no Stop: its Init replaces what it holds
+	c.reconcile(ctx, service, common.DependencyStopped)
 	// record the outcome in the healthcheck verdict now, not at the next sweep
 	restarted := func(err error) {
 		c.stats.update(name, func(stat *entity.SupervisorStats) {
@@ -269,13 +330,16 @@ func (c *controller) restart(ctx context.Context, service common.Service) error 
 	}
 	if _, err := c.init(ctx, service); err != nil {
 		restarted(err)
+		c.reconcile(ctx, service, common.DependencyFailed)
 		return err
 	}
 	if _, err := c.start(ctx, service); err != nil {
 		restarted(err)
+		c.reconcile(ctx, service, common.DependencyFailed)
 		return err
 	}
 	restarted(nil)
+	c.reconcile(ctx, service, common.DependencyRunning)
 	c.log.Infof("service %s restarted successfully", name)
 	return nil
 }

@@ -24,8 +24,8 @@ Only otel *API* types appear in `model` (precedent: `model.Database` exposes
 type Manager interface {
 	model.Tracer
 	common.Liveness        // wiring only — see below
-	common.Initializable   // builds/rebuilds the provider from tracing.* keys
-	common.Daemon          // Start is a no-op; Stop flushes and retires the provider
+	common.Initializable   // builds/rebuilds the pipeline from tracing.* keys
+	common.Daemon          // Start is a no-op; Stop flushes and retires the pipeline
 	common.Debuggable
 }
 
@@ -41,18 +41,19 @@ Lifecycle facts that matter:
   authority: the reload runs through the same `applyOptions` + `setDefaults`
   pair the constructor uses, so an absent key reads zero and lands on the
   default rather than preserving whatever construction set. The previous
-  provider is flushed (bounded by 5s) and swapped for the new one.
+  pipeline is flushed (bounded by 5s) and replaced; `Provider()` stays the
+  same, and follows it.
 - **Disabled means noop, not nil.** `Provider()` always returns a working
   handle; with `tracing.enabled: false` (the default) it is a noop provider
   and spans cost nothing. Callers never nil-check.
 - **`Stop` is the flush.** The batch processor exports on its own clock;
-  `Stop(ctx)` shuts the provider down synchronously (until `ctx` ends, 5s at most) so buffered
+  `Stop(ctx)` shuts the pipeline's SDK provider down synchronously (until `ctx` ends, 5s at most) so buffered
   spans reach the exporter. Register telemetry at the **end** of the infra
   tier's `Register` call: the topo sort pops dependency-less services in
   reverse registration order, so the services listed last init first and,
   with stop reversed, flush last — after the draining api server's final
   requests.
-- **`Alive` guards wiring only** (enabled but no provider built — a restart
+- **`Alive` guards wiring only** (enabled but no pipeline built — a restart
   rebuilds it, and a deliberate stop does not fail it). There is deliberately
   **no `Ready`**: tracing is auxiliary, and the monitor rolls a dependency's
   probes into every dependent's healthcheck — a dead collector must never
@@ -131,7 +132,7 @@ captures whatever it needs and may ignore the config bytes; `tracing.
 exporter: mine` (or `WithExporter("mine", nil)`) then picks it. The tracing
 package's own tests inject a `tracetest.NewInMemoryExporter()` by assigning
 the concrete manager's unexported field directly and drain deterministically
-via the provider's `ForceFlush` before asserting.
+via the pipeline's SDK provider's `ForceFlush` before asserting.
 
 ## Config
 
@@ -289,8 +290,9 @@ Reach for it only when the real service cannot do the job — usually it can:
   register an in-memory exporter and run the real service. `Init` builds the
   provider with `WithBatcher`, so call `Stop(context.Background())` — which flushes
   synchronously — before reading the exporter.
-- **Testing a provider swap?** That is the case that wants a double, since the
-  service only swaps its provider through `Init`.
+- **Testing a provider swap?** That is the case that wants a double
+  (`testutil.Tracer.Swap`), since the service never swaps its provider: its
+  `Init` replaces the pipeline behind it.
 
 **Only context-carrying queries nest.** The plugin starts its span from
 `tx.Statement.Context`, so what matters is whether a context reached the

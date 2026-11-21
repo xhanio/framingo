@@ -82,9 +82,9 @@ In another terminal:
 
 ```bash
 # Log in first — the helloworld endpoint is protected by authnuser middleware
-./bin/examplecli -e http://localhost:8080 login            # default admin / admin
+./bin/examplecli -e http://localhost:8080/api/v1 login     # -e is the API base, prefix included; default admin / admin
 
-./bin/examplecli -e http://localhost:8080 helloworld "Hello"
+./bin/examplecli -e http://localhost:8080/api/v1 helloworld "Hello"
 # {"id":1,"message":"Hello","created_at":"...","updated_at":"..."}   (the greeting only goes to the server log)
 ```
 
@@ -162,7 +162,7 @@ Production-ready service implementations:
   - Calls `Init(ctx)` and `Start(ctx)` in dependency order, `Stop(ctx)` in reverse; a service starts once its `Init` succeeded and its dependencies run, the rest left to the monitor
   - Monitors `Liveness`/`Readiness` probes and auto-restarts services that fail liveness, once `WithMonitorPolicy` gives it an interval (monitoring is off by default)
   - A name stands for one instance: `Register` returns a `Conflict` for another instance under a name already taken (give each its own `WithName`)
-  - Per-service runtime control (`InitService`, `StartService`, `StopService`, `RestartService`)
+  - Per-service runtime control (`InitService`, `StartService`, `StopService`, `RestartService`); a `Reconcilable` dependent is told what a dependency stopped or started alone has become, and puts back what it registered there
   - Whole-graph `Restart(ctx)`, `Stats()` per service, and a `Debuggable.Info` dump
   - Tunable by policy: `WithMonitorPolicy(interval, maxRetries, restartDelay)` for liveness restarts, `WithInitPolicy(maxRetries, delay, maxDelay)` to retry init turns until dependencies are ready, `WithStartPolicy(timeout)` to bound each `Start`, `WithStopPolicy(timeout)` to bound shutdown
 
@@ -230,7 +230,7 @@ Framework-shipped `api.Middleware`s:
 Interface contracts and shared types:
 
 - **[common](pkg/types/common/)** — Service lifecycle and utility interfaces
-  - Lifecycle ([`service.go`](pkg/types/common/service.go)): `Service`, `Initializable`, `Daemon`, `Liveness`, `Readiness`, `Debuggable`
+  - Lifecycle ([`service.go`](pkg/types/common/service.go)): `Service`, `Initializable`, `Daemon`, `Liveness`, `Readiness`, `Debuggable`, `Reconcilable` (with `DependencyState`)
   - Utility ([`common.go`](pkg/types/common/common.go), [`pair.go`](pkg/types/common/pair.go)): `Named`, `Unique`, `Weighted`, `Pair`/`Pairs`
   - Messaging ([`message.go`](pkg/types/common/message.go)): `Message`, `MessageSender`, `RawMessageSender`, `MessageHandler`, `RawMessageHandler`
   - Context keys ([`context.go`](pkg/types/common/context.go)): `_config`, `_logger`, `_db`, `_tx`, `_credential`, `_session`, `_namespace`, `_trace`, `_api_request_info`, `_api_response_info`, `_api_error`
@@ -253,8 +253,8 @@ The module's root package is a command, versioned with the framework:
 `pkg/tools/`.
 
 - **[verify](pkg/tools/verify/)** — `framingo verify [dir...]`: gofmt, build, vet, the analyzers below, golangci-lint and the tests with `-race` for each module, every step run, one verdict at the end
-- **[docs](pkg/tools/docs/)** — `docs.Links` and `docs.Snippets`: a markdown link reaches its file and heading, and a Go snippet marked `<!-- source: path -->` says what that file says; the package's test runs both on this repository
-- **[vet](pkg/tools/vet/)** — `framingo vet [packages]`: the framework's analyzers, run through `go vet`, one package per rule — `startctx` (a `Start` that keeps its context), `depslist` (a held service missing from `Dependencies`), `platformfirst` (an app service's `New` not taking the platform first), `gormfield` (a `*gorm.DB` kept in a struct field outside db) and `confinit` (`confutil.FromContext` outside `Init`); `//framingo:ignore <rule> <reason>` opts a line out
+- **[docs](pkg/tools/docs/)** — `docs.Links` and `docs.Snippets`: a markdown link reaches its file and heading, and a Go snippet marked `<!-- source: path -->` says what that file says; the package's tests run both on this repository, check its version surfaces agree, and run `framingo verify` on an app laid out from the skill's templates
+- **[vet](pkg/tools/vet/)** — `framingo vet [packages]`: the framework's analyzers, run through `go vet`, one package per rule — `startctx` (a `Start` that keeps its context), `depslist` (a held service missing from `Dependencies`, or a condition in it), `platformfirst` (an app service's `New` not taking the platform first), `gormfield` (a `*gorm.DB` kept in a struct field outside db) and `confinit` (`confutil.FromContext` outside `Init`); `//framingo:ignore <rule> <reason>` opts a line out
 
 ### Data Structures (`pkg/structs/`)
 
@@ -300,339 +300,10 @@ The module's root package is a command, versioned with the framework:
 
 ## Building Your First Application
 
-### Step 1: Project Setup
-
-```bash
-mkdir -p myapp/{cmd/myapp,pkg/{services,routers,middlewares,types/{api,entity,orm},components/{cmd,server},utils}}
-cd myapp
-
-go mod init github.com/yourorg/myapp
-go get github.com/xhanio/framingo
-
-# Resulting layout:
-# myapp/
-# ├── cmd/myapp/                # binary entry point
-# ├── pkg/
-# │   ├── components/
-# │   │   ├── cmd/              # Cobra commands
-# │   │   └── server/           # supervisor + wiring
-# │   ├── services/             # business logic
-# │   ├── routers/              # HTTP routes (router.go + router.yaml)
-# │   ├── middlewares/          # api.Middleware implementations
-# │   ├── types/{api,entity,orm}/
-# │   └── utils/
-# └── config.yaml
-```
-
-### Step 2: Define a Service
-
-```go
-// pkg/services/hello/model.go
-package hello
-
-import (
-    "context"
-
-    "github.com/xhanio/framingo/pkg/types/common"
-)
-
-type Manager interface {
-    common.Service
-    common.Initializable
-    common.Daemon
-    SayHello(ctx context.Context, name string) (string, error)
-}
-```
-
-```go
-// pkg/services/hello/manager.go
-package hello
-
-import (
-    "context"
-    "fmt"
-
-    "github.com/xhanio/framingo/pkg/types/common"
-    "github.com/xhanio/framingo/pkg/utils/log"
-    "github.com/xhanio/framingo/pkg/utils/nameutil"
-)
-
-type manager struct {
-    name string
-    log  log.Logger
-}
-
-type Option func(*manager)
-
-func WithLogger(logger log.Logger) Option {
-    return func(m *manager) { m.log = logger }
-}
-
-func New(opts ...Option) Manager {
-    m := &manager{log: log.Default}
-    for _, opt := range opts {
-        opt(m)
-    }
-    m.name = nameutil.Name(m) // derived from the package path
-    m.log = m.log.By(m)
-    return m
-}
-
-func (m *manager) Name() string { return m.name }
-
-func (m *manager) Dependencies() []common.Service { return nil }
-func (m *manager) Init(ctx context.Context) error { return nil }
-func (m *manager) Start(ctx context.Context) error { return nil }
-func (m *manager) Stop(ctx context.Context) error  { return nil }
-
-func (m *manager) SayHello(ctx context.Context, name string) (string, error) {
-    m.log.Infof("saying hello to %s", name)
-    return fmt.Sprintf("Hello, %s!", name), nil
-}
-```
-
-### Step 3: Create an HTTP Router
-
-**Recommended handler signature**: `func(c api.Context) error`, where `api.Context` is a project-defined interface that embeds `echo.Context` (see [`example/pkg/types/api/api.go`](example/pkg/types/api/api.go) for the canonical wrapper). This signature gives you a single context value that satisfies both `echo.Context` and `context.Context`, plus a natural home for project-wide helpers (credential, session, trace-id, custom binders) without touching every call site later.
-
-You can still register raw `echo.HandlerFunc` if you prefer; the framework accepts both. But for new projects, prefer `api.Context` so the door is open for future extension.
-
-The example project splits each router into two files — `router.go` for wiring (config, dependencies, `Handlers()`) and `handler.go` for the handler method bodies. Within the package, files share the same `import` aliases by convention: the framework `api` package is aliased as `fapi`, and the project's `api.Context` wrapper is imported unaliased as `api`.
-
-```go
-// pkg/routers/hello/router.go
-package hello
-
-import (
-    _ "embed"
-
-    fapi "github.com/xhanio/framingo/pkg/types/api"
-    "github.com/xhanio/framingo/pkg/types/common"
-    "github.com/xhanio/framingo/pkg/utils/log"
-
-    "github.com/yourorg/myapp/pkg/services/hello"
-    "github.com/yourorg/myapp/pkg/types/api"
-)
-
-//go:embed router.yaml
-var config []byte
-
-type router struct {
-    log      log.Logger
-    helloSvc hello.Manager
-}
-
-// New returns the interface; newRouter returns the concrete type, the form
-// package tests construct.
-func New(svc hello.Manager, log log.Logger) fapi.Router {
-    return newRouter(svc, log)
-}
-
-func newRouter(svc hello.Manager, log log.Logger) *router {
-    return &router{helloSvc: svc, log: log}
-}
-
-func (r *router) Name() string                    { return "hello-router" }
-func (r *router) Dependencies() []common.Service  { return []common.Service{r.helloSvc} }
-func (r *router) Config() []byte                  { return config }
-
-// DiscoverHandlers reflects over r's methods and wraps any
-// `func(api.Context) error` into an echo.HandlerFunc automatically.
-// The debug log makes route registration visible during startup.
-func (r *router) Handlers() map[string]any {
-    handlers := api.DiscoverHandlers(r)
-    r.log.Debugf("router %s parsed %d handler(s)", r.Name(), len(handlers))
-    return handlers
-}
-```
-
-```go
-// pkg/routers/hello/handler.go
-package hello
-
-import (
-    "net/http"
-
-    "github.com/yourorg/myapp/pkg/types/api"
-)
-
-func (r *router) Hello(c api.Context) error {
-    name := c.QueryParam("name")
-    if name == "" {
-        name = "World"
-    }
-    msg, err := r.helloSvc.SayHello(c, name) // c is also a context.Context
-    if err != nil {
-        return err
-    }
-    return c.JSON(http.StatusOK, map[string]string{"message": msg})
-}
-```
-
-```yaml
-# pkg/routers/hello/router.yaml
-server: http
-prefix: /hello
-handlers:
-  - method: GET
-    path: /
-    func: Hello
-```
-
-### Step 4: Wire It Together
-
-```go
-// pkg/components/server/myapp/manager.go
-package myapp
-
-import (
-    "context"
-
-    "github.com/spf13/viper"
-
-    "github.com/xhanio/framingo/pkg/services/api/server"
-    "github.com/xhanio/framingo/pkg/services/supervisor"
-    "github.com/xhanio/framingo/pkg/types/common"
-    "github.com/xhanio/framingo/pkg/utils/confutil"
-    "github.com/xhanio/framingo/pkg/utils/log"
-
-    helloRouter "github.com/yourorg/myapp/pkg/routers/hello"
-    "github.com/yourorg/myapp/pkg/services/hello"
-)
-
-type Manager interface {
-    common.Daemon
-    Init(ctx context.Context) error
-}
-
-type manager struct {
-    config   *viper.Viper
-    log      log.Logger
-    services supervisor.Manager
-    api      server.Manager
-    helloSvc hello.Manager
-}
-
-func New(config *viper.Viper) Manager {
-    return &manager{config: config}
-}
-
-func (m *manager) Init(ctx context.Context) error {
-    m.log = log.New(log.WithLevel(m.config.GetInt("log.level")))
-    m.services = supervisor.New(confutil.New(m.config), supervisor.WithLogger(m.log))
-
-    m.api = server.New(server.WithLogger(m.log))
-    if httpConfig := m.config.Sub("api.http"); httpConfig != nil {
-        // WithEndpoint takes a uint port — use GetUint, not GetInt
-        if err := m.api.Add("http",
-            server.WithEndpoint(
-                httpConfig.GetString("host"),
-                httpConfig.GetUint("port"),
-                httpConfig.GetString("prefix"),
-            ),
-        ); err != nil {
-            return err
-        }
-    }
-
-    m.helloSvc = hello.New(hello.WithLogger(m.log))
-    if err := m.services.Register(m.helloSvc); err != nil {
-        return err
-    }
-
-    if err := m.services.TopoSort(); err != nil {
-        return err
-    }
-
-    // registered after the sort, the api server starts last by ordering,
-    // not by depending on the services behind its routes
-    if err := m.services.Register(m.api); err != nil {
-        return err
-    }
-
-    if err := m.services.Init(ctx); err != nil {
-        return err
-    }
-
-    return m.api.RegisterRouters(helloRouter.New(m.helloSvc, m.log))
-}
-
-func (m *manager) Start(ctx context.Context) error { return m.services.Start(ctx) }
-func (m *manager) Stop(ctx context.Context) error  { return m.services.Stop(ctx) }
-```
-
-```go
-// cmd/myapp/main.go
-package main
-
-import (
-    "context"
-    "fmt"
-    "os"
-    "os/signal"
-    "strings"
-    "syscall"
-    "time"
-
-    "github.com/spf13/cobra"
-    "github.com/spf13/viper"
-
-    "github.com/yourorg/myapp/pkg/components/server/myapp"
-)
-
-func main() {
-    var configFile string
-
-    rootCmd := &cobra.Command{Use: "myapp"}
-
-    daemonCmd := &cobra.Command{
-        Use: "daemon",
-        RunE: func(cmd *cobra.Command, args []string) error {
-            config := viper.New()
-            config.SetConfigFile(configFile)
-            config.SetEnvPrefix("MYAPP")
-            // api.http.port is looked up as MYAPP_API_HTTP_PORT
-            config.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-            config.AutomaticEnv()
-            if err := config.ReadInConfig(); err != nil {
-                return fmt.Errorf("read config: %w", err)
-            }
-
-            mgr := myapp.New(config)
-            if err := mgr.Init(cmd.Context()); err != nil {
-                return err
-            }
-            if err := mgr.Start(cmd.Context()); err != nil {
-                return err
-            }
-            // Start returns once everything is up: serve until a signal, then stop
-            ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-            defer cancel()
-            <-ctx.Done()
-            stopCtx, done := context.WithTimeout(context.Background(), 30*time.Second)
-            defer done()
-            return mgr.Stop(stopCtx)
-        },
-    }
-    daemonCmd.Flags().StringVarP(&configFile, "config", "c", "config.yaml", "config file path")
-
-    rootCmd.AddCommand(daemonCmd)
-    if err := rootCmd.Execute(); err != nil {
-        fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-        os.Exit(1)
-    }
-}
-```
-
-### Step 5: Run and Test
-
-```bash
-go build -o myapp cmd/myapp/main.go
-./myapp daemon -c config.yaml
-
-curl 'http://localhost:8080/api/v1/hello?name=Framingo'
-# {"message":"Hello, Framingo!"}
-```
+Start from the example, not from scratch: [example/QUICKSTART.md](example/QUICKSTART.md)
+forks it into your own module, renames it, and says what to keep and what to
+rip out. It builds, runs and passes `framingo verify` as it stands, so every
+step from there is a change you can check.
 
 ## Documentation
 
@@ -735,6 +406,7 @@ type Daemon        interface { Start(ctx context.Context) error; Stop(ctx contex
 type Liveness      interface { Alive(ctx context.Context) error }      // failure triggers auto-restart (with monitoring on)
 type Readiness     interface { Ready(ctx context.Context) error }      // failure reported, never restarted; WithInitPolicy waits on it
 type Debuggable    interface { Info(w io.Writer, debug bool) }
+type Reconcilable  interface { Reconcile(ctx context.Context, dep Service, state DependencyState) error } // a dependency stopped or started alone: put back what was registered with it
 ```
 
 Compose only the interfaces a service needs. The supervisor inspects each registered service at runtime to determine which lifecycle hooks to invoke. The supervisor's [skill reference](plugins/framingo/skills/framingo/pkgs/supervisor.md) covers probes, escalation and the init/stop policies in depth.
@@ -875,8 +547,8 @@ Framingo uses an **instance-based** Viper (not the global singleton). The wiring
 
 Priority (high → low), as viper resolves it:
 
-1. Command-line flags — only if your wiring binds them (`BindPFlags`); neither the tutorial nor the example does
-2. Environment variables — with `AutomaticEnv`, an env prefix, and a `.` → `_` key replacer (see Step 4)
+1. Command-line flags — only if your wiring binds them (`BindPFlags`); the example does not
+2. Environment variables — with `AutomaticEnv`, an env prefix from the product name, and a `.` → `_` key replacer, as the example's `newConfig` sets them up ([components-server.md](plugins/framingo/skills/framingo/app/components-server.md))
 3. YAML configuration file
 4. Default values
 
@@ -941,28 +613,20 @@ Apart from `db.connection.*`, `tracing.*` and `metrics.*` — which those servic
 Override at runtime:
 
 ```bash
-export MYAPP_API_HTTP_PORT=9090
-./myapp daemon -c config.yaml
+export FRAMINGO_EXAMPLE_API_HTTP_PORT=9090   # the prefix follows the product name
+./bin/exampleapp daemon -c env/local/config/exampleapp/config.yaml
 ```
 
 ## Production Deployment
 
 ### Docker
 
-```dockerfile
-FROM golang:1.25 AS builder
-WORKDIR /app
-COPY . .
-RUN CGO_ENABLED=0 go build -o app cmd/app/main.go
-
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates tzdata
-COPY --from=builder /app/app /usr/local/bin/
-COPY config.yaml /etc/app/
-CMD ["app", "daemon", "-c", "/etc/app/config.yaml"]
-```
-
-That assumes a pure-Go binary. If you blank-import the SQLite driver you need `CGO_ENABLED=1`, and the glibc-linked result won't run on Alpine — build and ship on the same libc, as the example does with `ubuntu:22.04` in [example/build/image/exampleapp/Dockerfile](example/build/image/exampleapp/Dockerfile).
+The example builds its image with GoPro — `gopro build image -e <env>` — from
+[example/build/image/exampleapp/Dockerfile](example/build/image/exampleapp/Dockerfile),
+around a binary `gopro build binary` built with the version and build info
+injected. It ships on `ubuntu:22.04`: a binary that blank-imports the SQLite
+driver needs `CGO_ENABLED=1`, and the glibc-linked result would not run on
+Alpine, so build and ship on the same libc.
 
 ### Kubernetes
 
@@ -977,6 +641,8 @@ Description=My Framingo App
 [Service]
 ExecStart=/usr/local/bin/myapp daemon -c /etc/myapp/config.yaml
 Restart=on-failure
+# the SIGTERM to the daemon alone: a plan's commands are its to stop (pkgs/plan.md)
+KillMode=mixed
 
 [Install]
 WantedBy=multi-user.target
@@ -1005,7 +671,7 @@ WantedBy=multi-user.target
    - Never reach for `viper.GetXxx` globals; take the instance from context
 
 5. **Testing**
-   - Mock collaborators through the `Manager` interface
+   - Fake collaborators through the narrow interface the service holds — a `model.*` peer, a `repo.*` contract — never its `Manager`
    - Use `testutil` to spin up an isolated DB for integration tests, and its `Tracer`/`Meter` doubles to assert spans and metrics
    - Test ORM ↔ entity conversions explicitly
 
