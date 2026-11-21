@@ -34,6 +34,25 @@ whoever trips a rule why it is there, not only that it is.
 path into the template; and a rule keyed on the layout's directories checks
 only code laid out that way.
 
+## One command gives the verdict
+
+**Decision.** `framingo verify` formats, builds, vets, lints and tests each
+module it is given, runs every step even after one fails, and ends with
+`verified` or the list of what failed, exiting non-zero. The skill tells an
+agent to run it after any change. The command is the framework module's own
+root package — `go install github.com/xhanio/framingo@latest` — so it is
+versioned with the framework and its rules, by the one tag.
+
+**Why.** Five commands are four chances to skip one, and a coding agent
+needs a single answer to "is this change sound" that it cannot talk itself
+past. A command, not a script copied into each app: a copy stays at the
+version it was copied at, and a shell script runs on no Windows. It only
+runs standard tools — gofmt, go, golangci-lint — so an editor and CI read
+the same results without it.
+
+**Cost.** The module's `go.mod` may carry no `replace` or `exclude`, which
+`go install` refuses; and the framework takes cobra as a dependency.
+
 ## Not yet
 
 What needs types rather than import paths — `Start` keeping its context,

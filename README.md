@@ -245,6 +245,15 @@ Interface contracts and shared types:
 
 - **[info](pkg/types/info/)** — Build metadata (application name/version, product name/model/version, project root/name/path, git tag/branch/commit, build version/type/date/time) injected at link time
 
+### Tools (`pkg/tools/`) and the `framingo` command
+
+The module's root package is a command, versioned with the framework:
+`go install github.com/xhanio/framingo@latest`. Its subcommands live in
+[pkg/components/cmd/framingo](pkg/components/cmd/framingo/), what they run in
+`pkg/tools/`.
+
+- **[verify](pkg/tools/verify/)** — `framingo verify [dir...]`: gofmt, build, vet, golangci-lint and the tests with `-race` for each module, every step run, one verdict at the end
+
 ### Data Structures (`pkg/structs/`)
 
 - **[buffer](pkg/structs/buffer/)** — Generic object pool and pooled read/write/seek buffer

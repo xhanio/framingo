@@ -124,8 +124,10 @@ cp <skill>/_templates/{router.go,handler.go,router.yaml} pkg/routers/order/
 cp <skill>/_templates/types-model-order.go    pkg/types/model/order.go
 cp <skill>/_templates/services-order-model.go pkg/services/order/model.go
 
-# The lint config that keeps the layout's import boundaries (see design/checks.md)
+# The lint config that keeps the layout's import boundaries, and the
+# command that verifies a change (see "Verifying a Change" below)
 cp <skill>/_templates/golangci.yml .golangci.yml
+go install github.com/xhanio/framingo@latest
 ```
 
 All five `types/` subdirs are part of the layout ([app/layout.md](app/layout.md)); `model/` in particular is **not optional** — the router template imports `myapp/pkg/types/model`.
@@ -135,6 +137,27 @@ All five `types/` subdirs are part of the layout ([app/layout.md](app/layout.md)
 Then: write services ([app/services.md](app/services.md)), wire them in `pkg/components/server/` ([app/components-server.md](app/components-server.md)), and register routers with the API server ([app/routers.md](app/routers.md), [pkgs/api.md](pkgs/api.md)).
 
 Either route, the reference map above is the per-concept guide for the work inside the new project.
+
+## Verifying a Change
+
+After any change, before calling it done, run the one command that checks
+everything a machine can check:
+
+```bash
+framingo verify            # in an app; in the framingo repo: framingo verify . example
+```
+
+Install it once, at the framework version the project uses:
+`go install github.com/xhanio/framingo@latest`. It needs golangci-lint v2 on
+the PATH, built with the Go that builds the code
+(`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`).
+
+It formats, builds, vets, lints and tests (with `-race`) each module, runs
+every step even after one fails, and ends with `verified` or the list of
+what failed, exiting non-zero. A lint failure names the design note it
+enforces — `(design/narrow-contracts.md)` — so read that note before
+changing the code or reaching for `//nolint`; a `//nolint` carries its
+reason. What each check holds: [design/checks.md](design/checks.md).
 
 ## Quick Reference
 

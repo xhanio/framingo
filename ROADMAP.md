@@ -8,21 +8,28 @@ design note brought up to date.
 
 ## Checks
 
-The lint config holds the import boundaries and the forbidden calls, and
-`server.CheckRouter` a router's config against its handlers
+The lint config holds the import boundaries and the forbidden calls,
+`server.CheckRouter` a router's config against its handlers, and
+`framingo verify` gives one verdict on a change
 ([design/checks.md](plugins/framingo/skills/framingo/design/checks.md)).
 Next, in order:
 
-- **Analyzers, in `tools/vet/`.** A module of its own, so the framework
-  takes no `golang.org/x/tools`; run as `go vet -vettool` and as a
-  golangci-lint plugin, for apps as for the framework. First `startctx` (a
+- **Analyzers, in `pkg/tools/`.** Run by `framingo verify` and `framingo
+  vet`, and loadable as `go vet -vettool` and as a golangci-lint plugin, for
+  apps as for the framework. First `startctx` (a
   `Start` keeping its context, or deriving from it without `WithoutCancel`)
   and `depslist` (a held `common.Service` missing from `Dependencies`); then
   `platformfirst`, `gormfield` (a `*gorm.DB` kept in a field outside db) and
-  `confinit` (`confutil.FromContext` outside `Init`).
+  `confinit` (`confutil.FromContext` outside `Init`). A candidate after them:
+  the keys a service reads in `Init` against the keys its config file sets,
+  since a misspelled key lands silently on the default.
 - **The docs and a release, verified.** A doc's snippet against the function
   it copies, every markdown link and anchor, the four version surfaces
   agreeing — what a doc review and a release check by hand today.
+- **Candidates, not designed:** the architecture as a graph a tool can query
+  — packages, routes, the supervisor's dependencies — and what a change to
+  one contract reaches; a set of tasks to measure how well a coding agent
+  works in the framework.
 
 ## Sessions in a shared store
 
