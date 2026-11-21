@@ -27,6 +27,7 @@ type mockService struct {
 	readyErr    error
 	initFn      func() error                    // takes precedence over initErr when set
 	readyFn     func() error                    // takes precedence over readyErr when set
+	startFn     func(ctx context.Context) error // takes precedence over startErr when set
 	stopFn      func(ctx context.Context) error // takes precedence over stopErr when set
 	initCalled  int
 	startCalled int
@@ -52,6 +53,9 @@ func (s *mockService) Init(ctx context.Context) error {
 
 func (s *mockService) Start(ctx context.Context) error {
 	s.startCalled++
+	if s.startFn != nil {
+		return s.startFn(ctx)
+	}
 	return s.startErr
 }
 
@@ -370,7 +374,7 @@ func TestPerServiceLifecycle(t *testing.T) {
 	})
 
 	t.Run("StartService", func(t *testing.T) {
-		require.NoError(t, m.StartService("svc"))
+		require.NoError(t, m.StartService(context.Background(), "svc"))
 		assert.Equal(t, 1, svc.startCalled)
 	})
 
@@ -390,7 +394,7 @@ func TestPerServiceLifecycle(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		assert.Error(t, m.InitService(context.Background(), "nope"))
-		assert.Error(t, m.StartService("nope"))
+		assert.Error(t, m.StartService(context.Background(), "nope"))
 		assert.Error(t, m.StopService(context.Background(), "nope"))
 		assert.Error(t, m.RestartService(context.Background(), "nope"))
 	})
@@ -402,7 +406,7 @@ func TestFailedRestartRecordsHealthcheckErr(t *testing.T) {
 	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
-	require.NoError(t, m.StartService("svc"))
+	require.NoError(t, m.StartService(context.Background(), "svc"))
 
 	svc.initErr = fmt.Errorf("re-init boom")
 	require.Error(t, m.RestartService(context.Background(), "svc"))

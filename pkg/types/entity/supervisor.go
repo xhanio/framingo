@@ -24,6 +24,12 @@ type SupervisorMonitorPolicy struct {
 	RestartDelay time.Duration
 }
 
+// SupervisorStartPolicy: Timeout bounds each service's Start, at the first
+// start and at each restart; 0 defers to the caller's ctx.
+type SupervisorStartPolicy struct {
+	Timeout time.Duration
+}
+
 // SupervisorStopPolicy: Timeout bounds each full stop and each restart's stop,
 // then forces the rest; 0 defers to the caller's ctx.
 type SupervisorStopPolicy struct {

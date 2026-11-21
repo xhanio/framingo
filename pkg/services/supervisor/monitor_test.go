@@ -83,7 +83,7 @@ func TestMonitorRestartSkipsStoppedService(t *testing.T) {
 	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
-	require.NoError(t, m.StartService("svc"))
+	require.NoError(t, m.StartService(context.Background(), "svc"))
 	require.NoError(t, m.StopService(context.Background(), "svc"))
 
 	require.NoError(t, m.c.RestartIfRunning(context.Background(), svc))
@@ -102,7 +102,7 @@ func TestManualOpsSerializeWithRestart(t *testing.T) {
 	require.NoError(t, m.Register(svc))
 	require.NoError(t, m.TopoSort())
 	require.NoError(t, m.Init(context.Background()))
-	require.NoError(t, m.StartService("svc"))
+	require.NoError(t, m.StartService(context.Background(), "svc"))
 
 	m.c.op.Lock()
 	done := make(chan struct{})

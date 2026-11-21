@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/xhanio/errors"
+
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
@@ -18,11 +20,10 @@ func (m *manager) Start(ctx context.Context) error {
 		m.log.Warnf("%s already started", m.Name())
 		return nil
 	}
-	if err := m.c.startAll(); err != nil {
-		return err
-	}
+	err := m.c.startAll(ctx)
+	// whatever failed: Stop then stops what did start, and the monitor restarts the rest
 	m.loop.Start(ctx, m.watch)
-	return nil
+	return err
 }
 
 // watch runs the health monitor, when the policy sets one, until Stop.
@@ -50,10 +51,9 @@ func (m *manager) Restart(ctx context.Context) error {
 	if err := m.Stop(ctx); err != nil {
 		m.log.Errorf("failed to stop %s for restart: %s", m.Name(), err)
 	}
-	if err := m.Init(ctx); err != nil {
-		return err
-	}
-	if err := m.Start(ctx); err != nil {
+	// a failed Init still starts what it can, as at the first start
+	initErr := m.Init(ctx)
+	if err := errors.Combine(initErr, m.Start(ctx)); err != nil {
 		return err
 	}
 	m.log.Infof("%s restarted", m.Name())

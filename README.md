@@ -159,12 +159,12 @@ Production-ready service implementations:
 
 - **[supervisor](pkg/services/supervisor/)** — Service lifecycle orchestration
   - Topologically sorts registered services by `Dependencies()`, skipping a nil entry (an optional dependency left out)
-  - Calls `Init(ctx)` and `Start(ctx)` in dependency order, `Stop(ctx)` in reverse
+  - Calls `Init(ctx)` and `Start(ctx)` in dependency order, `Stop(ctx)` in reverse; a service starts once its `Init` succeeded and its dependencies run, the rest left to the monitor
   - Monitors `Liveness`/`Readiness` probes and auto-restarts services that fail liveness, once `WithMonitorPolicy` gives it an interval (monitoring is off by default)
   - A name stands for one instance: `Register` returns a `Conflict` for another instance under a name already taken (give each its own `WithName`)
   - Per-service runtime control (`InitService`, `StartService`, `StopService`, `RestartService`)
   - Whole-graph `Restart(ctx)`, `Stats()` per service, and a `Debuggable.Info` dump
-  - Tunable by policy: `WithMonitorPolicy(interval, maxRetries, restartDelay)` for liveness restarts, `WithInitPolicy(maxRetries, delay, maxDelay)` to retry init turns until dependencies are ready, `WithStopPolicy(timeout)` to bound shutdown
+  - Tunable by policy: `WithMonitorPolicy(interval, maxRetries, restartDelay)` for liveness restarts, `WithInitPolicy(maxRetries, delay, maxDelay)` to retry init turns until dependencies are ready, `WithStartPolicy(timeout)` to bound each `Start`, `WithStopPolicy(timeout)` to bound shutdown
 
 - **[api/server](pkg/services/api/server/)** — HTTP API server
   - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithMiddlewares(...), WithMiddlewareConfigs(...))`

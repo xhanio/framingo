@@ -33,7 +33,8 @@ run `Stop`, `Init` and `Start` on the same service.
 
 - `Start` on a started service does nothing.
 - What a start runs lives until `Stop`: `Start`'s `ctx` bounds the start alone and is never
-  kept, its values aside. The start's own context comes from
+  kept, its values aside. Whatever `Start` waits on, it waits on `ctx`: the supervisor's
+  start deadline reaches it only that way. The start's own context comes from
   `context.WithCancel(context.WithoutCancel(ctx))`, as `syncutil.Loop` makes it, and only
   `Stop` cancels it. `Stop`'s `ctx` bounds the stop the same way.
 - `Stop(ctx)` takes no new work, cancels the work going on, and waits for all of it to end,
@@ -55,6 +56,9 @@ on what the work holds: [design/lifecycle.md](../design/lifecycle.md).
 
 The bound is the caller's, carried by the context:
 
+- `WithStartPolicy(timeout)` gives each service's `Start`, at the first start and at each
+  restart, a deadline. Past it, that `Start`'s context ends, and a `Start` that honors it
+  fails like any other.
 - `WithStopPolicy(timeout)` gives the supervisor's whole shutdown, and the stop of each
   restart, a deadline. Past it, each service still to stop gets an ended context.
 - A signal handler that hears the signal again cancels the context of the stop going on,
@@ -142,7 +146,7 @@ type Manager interface {          // = model.Supervisor + health + Initializable
     Ready(ctx context.Context) error              // health: the roll-up, nil iff every registered service is ready
 
     InitService(ctx context.Context, name string) error
-    StartService(name string) error
+    StartService(ctx context.Context, name string) error  // Conflict while its Init has not succeeded
     StopService(ctx context.Context, name string) error
     RestartService(ctx context.Context, name string) error
     Restart(ctx context.Context) error             // whole graph
@@ -152,10 +156,31 @@ type Manager interface {          // = model.Supervisor + health + Initializable
 The manager:
 - Resolves dependencies via topological sort
 - Calls `Init(ctx)` on `Initializable` services in dependency order — optionally waiting for dependencies, see [Waiting at Init](#waiting-at-init) below
-- Calls `Start` on `Daemon` services in the same order, each with `context.Background()`: the `ctx` given to the supervisor's own `Start` bounds only its monitor, never a service's run
+- Calls `Start` on `Daemon` services in the same order, with the `ctx` given to its own `Start`, each bounded by `WithStartPolicy` — see [Starting](#starting) below
 - Stops them in reverse topological order, dependents before their dependencies
 - Monitors `Liveness` and `Readiness` probes — see [Health Probes & Escalation](#health-probes--escalation) below
-- Monitoring and restarts tune via `WithMonitorPolicy(interval, maxRetries, restartDelay)` — sweep cadence (0, the default, disables monitoring), in-process restarts per service, pause before each restart; `WithStopPolicy(timeout)` bounds the whole shutdown and the stop of each restart, forcing what is left once it passes (0, the default, leaves the bound to the context `Stop` gets); `WithName` and `WithLogger` as on every service
+- Monitoring and restarts tune via `WithMonitorPolicy(interval, maxRetries, restartDelay)` — sweep cadence (0, the default, disables monitoring), in-process restarts per service, pause before each restart; `WithStartPolicy(timeout)` bounds each service's `Start`, at the first start and at each restart (0, the default, leaves it to the context); `WithStopPolicy(timeout)` bounds the whole shutdown and the stop of each restart, forcing what is left once it passes (0, the default, leaves the bound to the context `Stop` gets); `WithName` and `WithLogger` as on every service
+
+## Starting
+
+A service is started once its own `Init` succeeded and every dependency it
+lists is running — initialized, started, not stopped
+([design/lifecycle.md](../design/lifecycle.md#a-service-starts-once-what-it-depends-on-runs)):
+
+- **A failed `Init`** is not started; its init error is the record, so the
+  supervisor's `Start` does not report it again.
+- **A dependency that failed to start** gates its dependents, with "dependency X
+  is not running" as their start error, through a dependency with no `Start` of
+  its own; `Start` returns those errors with the failed start's. A service that
+  does not depend on it starts.
+- **The monitor** restarts what was left, in dependency order, once the
+  dependency runs. A restart, the monitor's or `RestartService`, leaves a service as
+  it is while a dependency is not running and returns an `Unavailable`; the
+  attempt is not counted against `maxRetries`.
+- **A failed `Start` still starts the supervisor**: its monitor runs, and `Stop`
+  stops what did start. Whether the process goes on is the caller's call — the
+  example exits on a failed start at boot, and on a SIGHUP reload starts what it
+  can after a failed `Init`, as at boot, as the supervisor's own `Restart` does.
 
 ## Waiting at Init
 

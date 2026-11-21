@@ -37,6 +37,18 @@ func WithName(name string) Option {
 	}
 }
 
+// WithStartPolicy bounds each service's Start, at the first start and at each
+// restart; past timeout that Start's context ends, and a Start that honors it
+// fails. 0 leaves it to the context the supervisor's Start, or the restart,
+// was given.
+func WithStartPolicy(timeout time.Duration) Option {
+	return func(m *manager) {
+		m.c.startPolicy = entity.SupervisorStartPolicy{
+			Timeout: timeout,
+		}
+	}
+}
+
 // WithStopPolicy bounds shutdown and each restart's stop; past timeout remaining
 // stops are forced. 0 leaves it to Stop's context.
 func WithStopPolicy(timeout time.Duration) Option {

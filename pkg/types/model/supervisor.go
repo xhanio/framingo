@@ -17,7 +17,7 @@ type Supervisor interface {
 	Stats() ([]*entity.SupervisorStats, error)
 	// Migrate() error
 	InitService(ctx context.Context, name string) error
-	StartService(name string) error
+	StartService(ctx context.Context, name string) error
 	StopService(ctx context.Context, name string) error
 	RestartService(ctx context.Context, name string) error
 	Restart(ctx context.Context) error

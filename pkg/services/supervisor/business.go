@@ -64,12 +64,12 @@ func (m *manager) InitService(ctx context.Context, name string) error {
 	return m.c.Init(ctx, service)
 }
 
-func (m *manager) StartService(name string) error {
+func (m *manager) StartService(ctx context.Context, name string) error {
 	service := m.c.find(name)
 	if service == nil {
 		return errors.NotFound.Newf("service %s not found", name)
 	}
-	return m.c.Start(service)
+	return m.c.Start(ctx, service)
 }
 
 func (m *manager) StopService(ctx context.Context, name string) error {

@@ -94,6 +94,9 @@ func (m *manager) initServices() error {
 	// services see the viper only as the read-side Config the supervisor carries into Init
 	m.services = supervisor.New(confutil.New(m.config),
 		supervisor.WithLogger(m.log),
+		// a Start that takes seconds is stuck: failing it here records why,
+		// within the liveness probe's budget for Init and every Start
+		supervisor.WithStartPolicy(10*time.Second),
 		// within the platform's stop timeout, so shutdown ends here, not in a SIGKILL
 		supervisor.WithStopPolicy(20*time.Second),
 		// probes feed /healthz and /readyz: without a sweep they would report

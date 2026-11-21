@@ -16,10 +16,11 @@ import (
 )
 
 type controller struct {
-	log        log.Logger
-	config     confutil.Config
-	initPolicy entity.SupervisorInitPolicy
-	stopPolicy entity.SupervisorStopPolicy
+	log         log.Logger
+	config      confutil.Config
+	initPolicy  entity.SupervisorInitPolicy
+	startPolicy entity.SupervisorStartPolicy
+	stopPolicy  entity.SupervisorStopPolicy
 
 	graph    graph.Graph[common.Service]
 	services []common.Service
@@ -109,12 +110,28 @@ func (c *controller) init(ctx context.Context, service common.Service) (bool, er
 	return true, err
 }
 
-func (c *controller) start(service common.Service) (bool, error) {
+// start starts service once every dependency is running; one that is not
+// gates it, recorded as its start error, and nothing runs.
+func (c *controller) start(ctx context.Context, service common.Service) (bool, error) {
+	name := service.Name()
+	if err := c.depsRunning(service); err != nil {
+		c.stats.update(name, func(stat *entity.SupervisorStats) {
+			stat.Started = false
+			stat.Stopped = false // meant to run: the monitor restarts it once its dependencies are
+			stat.StartErr = err
+			stat.Ready = false
+		})
+		return true, err
+	}
 	svc, ok := service.(common.Daemon)
 	if !ok {
+		c.stats.update(name, func(stat *entity.SupervisorStats) {
+			stat.StartErr = nil
+		})
 		return false, nil
 	}
-	name := service.Name()
+	ctx, cancel := c.startContext(ctx)
+	defer cancel()
 	c.log.Debugf("starting %s", name)
 	startedAt := time.Now()
 	c.stats.update(name, func(stat *entity.SupervisorStats) {
@@ -122,13 +139,39 @@ func (c *controller) start(service common.Service) (bool, error) {
 		stat.Stopped = false
 		stat.StartedAt = startedAt
 	})
-	err := svc.Start(context.Background())
+	err := svc.Start(ctx)
 	c.stats.update(name, func(stat *entity.SupervisorStats) {
 		stat.StartErr = err
 		stat.StartDuration = time.Since(startedAt)
 		stat.Ready = err == nil
 	})
 	return true, err
+}
+
+// depsRunning is the first dependency not running: not initialized, not
+// started, failed to start, or stopped.
+func (c *controller) depsRunning(service common.Service) error {
+	for _, dep := range service.Dependencies() {
+		if dep == nil {
+			continue // an optional dependency the app did not wire: nothing to wait for
+		}
+		stat := c.stats.snapshot(dep.Name())
+		if stat == nil {
+			continue
+		}
+		_, daemon := dep.(common.Daemon)
+		if !stat.Initialized || stat.StartErr != nil || stat.Stopped || daemon && !stat.Started {
+			return errors.Unavailable.Newf("dependency %s is not running", dep.Name())
+		}
+	}
+	return nil
+}
+
+// initialized reports whether service's last Init succeeded; one that failed
+// says so in its stats, and is not started.
+func (c *controller) initialized(service common.Service) bool {
+	stat := c.stats.snapshot(service.Name())
+	return stat == nil || stat.Initialized
 }
 
 func (c *controller) stop(ctx context.Context, service common.Service) (bool, error) {
@@ -159,10 +202,13 @@ func (c *controller) Init(ctx context.Context, service common.Service) error {
 	return err
 }
 
-func (c *controller) Start(service common.Service) error {
+func (c *controller) Start(ctx context.Context, service common.Service) error {
 	c.op.Lock()
 	defer c.op.Unlock()
-	_, err := c.start(service)
+	if !c.initialized(service) {
+		return errors.Conflict.Newf("service %s is not initialized", service.Name())
+	}
+	_, err := c.start(ctx, service)
 	return err
 }
 
@@ -192,8 +238,13 @@ func (c *controller) RestartIfRunning(ctx context.Context, service common.Servic
 	return c.restart(ctx, service)
 }
 
+// restart leaves service as it is while a dependency is not running: the
+// restart could not hold, and is not counted against it.
 func (c *controller) restart(ctx context.Context, service common.Service) error {
 	name := service.Name()
+	if err := c.depsRunning(service); err != nil {
+		return errors.Wrapf(err, "service %s not restarted", name)
+	}
 	if stat := c.stats.snapshot(name); stat != nil {
 		c.log.Infof("restarting service %s (attempt %d)", name, stat.Restarts+1)
 	}
@@ -220,7 +271,7 @@ func (c *controller) restart(ctx context.Context, service common.Service) error 
 		restarted(err)
 		return err
 	}
-	if _, err := c.start(service); err != nil {
+	if _, err := c.start(ctx, service); err != nil {
 		restarted(err)
 		return err
 	}
@@ -327,12 +378,22 @@ func (c *controller) depsInitReady(ctx context.Context, service common.Service) 
 	return nil, false
 }
 
-func (c *controller) startAll() error {
+// startAll starts, in dependency order, each service whose Init succeeded and
+// whose dependencies are running, as initAll fails a dependent fast; the
+// rest are left to the monitor's restarts.
+func (c *controller) startAll(ctx context.Context) error {
 	c.log.Info("starting services...")
 	var errs []error
 	var total, failed int
 	for _, service := range c.services {
-		ok, err := c.start(service)
+		if !c.initialized(service) {
+			// its init error is the record; not stopped, so the monitor restarts it
+			c.stats.update(service.Name(), func(stat *entity.SupervisorStats) {
+				stat.Stopped = false
+			})
+			continue
+		}
+		ok, err := c.start(ctx, service)
 		if ok {
 			if err != nil {
 				failed++
@@ -349,6 +410,14 @@ func (c *controller) StopAll(ctx context.Context) error {
 	c.op.Lock()
 	defer c.op.Unlock()
 	return c.stopAll(ctx)
+}
+
+// startContext: the start policy's timeout bounds each service's Start.
+func (c *controller) startContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if c.startPolicy.Timeout > 0 {
+		return context.WithTimeout(ctx, c.startPolicy.Timeout)
+	}
+	return context.WithCancel(ctx)
 }
 
 // stopContext: past the stop policy's timeout, remaining stops get an ended context, forcing them.
