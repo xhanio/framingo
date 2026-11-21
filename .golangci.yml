@@ -20,13 +20,10 @@ linters:
             - pkg: github.com/xhanio/framingo/example/pkg/services
               desc: a router holds a types/model interface, never a service package (design/narrow-contracts.md)
         services:
-          list-mode: lax
           files: ["**/pkg/services/**", "!$test"]
-          allow:
-            - github.com/xhanio/framingo/example/pkg/services/system/platform
           deny:
             - pkg: github.com/xhanio/framingo/example/pkg/services
-              desc: services do not import each other, the platform aside (design/narrow-contracts.md)
+              desc: services do not import each other, they hold types/model interfaces (design/narrow-contracts.md)
         orm:
           files: ["!**/pkg/services/repository/**", "!**/pkg/types/orm/**", "!$test"]
           deny:

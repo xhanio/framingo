@@ -768,11 +768,11 @@ Required dependencies become constructor arguments; optional config flows throug
 ```go
 // New returns the interface; newManager returns the concrete type for
 // package tests.
-func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
+func New(platform model.Platform, repo Repository, opts ...Option) Manager {
     return newManager(platform, repo, opts...)
 }
 
-func newManager(platform platform.Platform, repo Repository, opts ...Option) *manager {
+func newManager(platform model.Platform, repo Repository, opts ...Option) *manager {
     m := &manager{
         repository: repo,
         mb:         platform.MessageBus(), // a common.RawMessageSender; never nil

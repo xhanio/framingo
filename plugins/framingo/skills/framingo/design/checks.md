@@ -12,7 +12,7 @@ built on the layout.
 | Check | Holds | Decided in |
 |---|---|---|
 | depguard `routers` | a router imports no service package | [narrow-contracts.md](narrow-contracts.md) |
-| depguard `services` | services do not import each other, the platform aside | [narrow-contracts.md](narrow-contracts.md) |
+| depguard `services` | services do not import each other: each holds `types/model` interfaces, `model.Platform` among them | [narrow-contracts.md](narrow-contracts.md) |
 | depguard `orm` | `types/orm` is imported by the repository alone | [data-access.md](data-access.md) |
 | depguard `errors`, forbidigo `fmt.Errorf` | errors come from `xhanio/errors`, which categorizes and wraps | — |
 | forbidigo `otel.Get*`/`Set*` | no otel globals: a handle is passed | — |

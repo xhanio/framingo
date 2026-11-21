@@ -1,20 +1,22 @@
 package platform
 
 import (
-	"github.com/xhanio/framingo/pkg/types/model"
+	fmodel "github.com/xhanio/framingo/pkg/types/model"
+
+	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
 type manager struct {
-	db         model.Database
-	meter      model.Meter
-	pubsub     model.Pubsub
-	messagebus model.MessageBus
+	db         fmodel.Database
+	meter      fmodel.Meter
+	pubsub     fmodel.Pubsub
+	messagebus fmodel.MessageBus
 }
 
-var _ Platform = (*manager)(nil)
+var _ model.Platform = (*manager)(nil)
 
-// New takes every handle; none may be nil.
-func New(db model.Database, meter model.Meter, pubsub model.Pubsub, messagebus model.MessageBus) Platform {
+// New bundles the handles into the model.Platform services take; none may be nil.
+func New(db fmodel.Database, meter fmodel.Meter, pubsub fmodel.Pubsub, messagebus fmodel.MessageBus) model.Platform {
 	return &manager{
 		db:         db,
 		meter:      meter,
@@ -23,18 +25,18 @@ func New(db model.Database, meter model.Meter, pubsub model.Pubsub, messagebus m
 	}
 }
 
-func (m *manager) DB() model.Database {
+func (m *manager) DB() fmodel.Database {
 	return m.db
 }
 
-func (m *manager) Meter() model.Meter {
+func (m *manager) Meter() fmodel.Meter {
 	return m.meter
 }
 
-func (m *manager) PubSub() model.Pubsub {
+func (m *manager) PubSub() fmodel.Pubsub {
 	return m.pubsub
 }
 
-func (m *manager) MessageBus() model.MessageBus {
+func (m *manager) MessageBus() fmodel.MessageBus {
 	return m.messagebus
 }

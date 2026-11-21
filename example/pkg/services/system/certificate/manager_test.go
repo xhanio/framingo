@@ -20,11 +20,12 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/types/entity"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 	"github.com/xhanio/framingo/example/pkg/types/orm"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
 
-func setup(t *testing.T) (*manager, platform.Platform) {
+func setup(t *testing.T) (*manager, model.Platform) {
 	t.Helper()
 	db, err := testutil.SetupDB()
 	require.NoError(t, err)

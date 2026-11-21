@@ -21,9 +21,9 @@ import (
 	"github.com/xhanio/framingo/example/pkg/services/system/auth"
 	"github.com/xhanio/framingo/example/pkg/services/system/certificate"
 	"github.com/xhanio/framingo/example/pkg/services/system/organization"
-	"github.com/xhanio/framingo/example/pkg/services/system/platform"
 	"github.com/xhanio/framingo/example/pkg/services/system/role"
 	"github.com/xhanio/framingo/example/pkg/services/system/user"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
 type manager struct {
@@ -38,7 +38,7 @@ type manager struct {
 	pubsub     pubsub.Manager
 	messagebus messagebus.Manager
 
-	platform platform.Platform
+	platform model.Platform
 
 	repository repository.Repository
 

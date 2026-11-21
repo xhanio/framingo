@@ -4,7 +4,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
-	"github.com/xhanio/framingo/example/pkg/services/system/platform"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
 type manager struct {
@@ -17,11 +17,11 @@ type manager struct {
 
 // New publishes account changes on the platform's messagebus, which auth ends
 // sessions on.
-func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
+func New(platform model.Platform, repo Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
 
-func newManager(platform platform.Platform, repo Repository, opts ...Option) *manager {
+func newManager(platform model.Platform, repo Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 		sender:     platform.MessageBus(),

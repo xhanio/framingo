@@ -7,7 +7,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/certutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
-	"github.com/xhanio/framingo/example/pkg/services/system/platform"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
 type manager struct {
@@ -21,11 +21,11 @@ type manager struct {
 	agentCA  certutil.CABundle
 }
 
-func New(platform platform.Platform, repo Repository, opts ...Option) Manager {
+func New(platform model.Platform, repo Repository, opts ...Option) Manager {
 	return newManager(platform, repo, opts...)
 }
 
-func newManager(_ platform.Platform, repo Repository, opts ...Option) *manager {
+func newManager(_ model.Platform, repo Repository, opts ...Option) *manager {
 	m := &manager{
 		repository: repo,
 	}

@@ -5,24 +5,24 @@ import (
 	"database/sql"
 
 	"github.com/xhanio/framingo/pkg/types/common"
-	"github.com/xhanio/framingo/pkg/types/model"
+	fmodel "github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/log"
 
-	"github.com/xhanio/framingo/example/pkg/services/system/platform"
+	"github.com/xhanio/framingo/example/pkg/types/model"
 )
 
 // no lifecycle: the database's probes already cover health
 type manager struct {
 	name string
 	log  log.Logger
-	db   model.Database
+	db   fmodel.Database
 }
 
-func New(platform platform.Platform, opts ...Option) Repository {
+func New(platform model.Platform, opts ...Option) Repository {
 	return newManager(platform, opts...)
 }
 
-func newManager(platform platform.Platform, opts ...Option) *manager {
+func newManager(platform model.Platform, opts ...Option) *manager {
 	m := &manager{db: platform.DB()}
 	m.applyOptions(opts...)
 	m.setDefaults()

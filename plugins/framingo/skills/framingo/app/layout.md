@@ -68,7 +68,7 @@ pkg/
 ├── services/
 │   ├── repository/              # data access — implements every types/repo interface
 │   ├── system/                  #   auth/ certificate/ organization/ role/ user/, and
-│   │                            #   platform/ (the plumbing bundle, not a service)
+│   │                            #   platform/ (builds the model.Platform bundle, not a service)
 │   └── example/                 # business tier
 ├── routers/                     # auth/ certificate/ example/ health/ messagebus/ role/ user/
 │   └── example/                 #   router.go, router.yaml, handler.go, router_test.go
