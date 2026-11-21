@@ -16,10 +16,9 @@ gives one verdict on a change
 ([design/checks.md](plugins/framingo/skills/framingo/design/checks.md)).
 Next, in order:
 
-- **The analyzers as a golangci-lint plugin**, so an editor shows what
-  `framingo vet` does. A candidate analyzer after that:
-  the keys a service reads in `Init` against the keys its config file sets,
-  since a misspelled key lands silently on the default.
+- **A candidate analyzer:** the keys a service reads in `Init` against the
+  keys its config file sets, since a misspelled key lands silently on the
+  default.
 - **The docs and a release, verified.** A doc's snippet against the function
   it copies, every markdown link and anchor, the four version surfaces
   agreeing — what a doc review and a release check by hand today.

@@ -74,6 +74,7 @@ the same results without it.
 
 ## Not yet
 
-The analyzers as a golangci-lint plugin, so an editor shows what
-`framingo vet` does, and the docs' snippets against the code. The
-repository's `ROADMAP.md` plans both.
+The docs' snippets against the code, which the repository's `ROADMAP.md`
+plans. The analyzers are not offered as a golangci-lint plugin: a v2 plugin
+means a golangci-lint rebuilt with it, for every developer and for CI, to
+show in an editor what `framingo vet` already says.
