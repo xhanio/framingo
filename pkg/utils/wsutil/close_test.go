@@ -120,3 +120,18 @@ func TestClose_ALongReasonIsCut(t *testing.T) {
 	assert.NotEmpty(t, frame.Reason)
 	assert.True(t, strings.HasPrefix(long, frame.Reason), "cut at a rune's start")
 }
+
+// A CloseWithCause sends the reason alone and keeps the cause in the error, for the
+// logs and errors.Is.
+func TestClose_CloseWithCauseSendsTheReasonAndKeepsTheCause(t *testing.T) {
+	why := errors.Newf("no session id")
+	err := CloseWithCause(websocket.StatusPolicyViolation, "registration required", why)
+	assert.ErrorIs(t, err, why)
+	assert.Equal(t, "registration required: no session id", err.Error())
+
+	returned, readErr := closeAfter(t, context.Background(), err, true)
+	assert.NoError(t, returned, "a close the handler asked for is not a failure")
+	frame := closeFrame(t, readErr)
+	assert.Equal(t, websocket.StatusPolicyViolation, frame.Code)
+	assert.Equal(t, "registration required", frame.Reason, "the peer gets no more than the reason")
+}

@@ -138,6 +138,60 @@ pong missing for 10s — `wsutil.WithPing(interval, timeout)` tunes both, an
 interval of 0 turns pings off. The example's `messagebus` router serves this
 as a `method: WS` route ([api.md](api.md#websocket-handlers)).
 
+A session of its own shapes the bridge with four options:
+
+- `WithFilter(keep)` writes only the messages `keep` returns true for — the
+  session's own, matched against what its handshake said;
+- `WithFrame(frame)` writes what `frame` makes of a message, its payload
+  alone say, instead of the envelope;
+- `WithInbound(handle)` takes each frame the client sends instead of relaying
+  it to the bus — an ack, say; an error it returns ends the session with that
+  close;
+- `WithDone(ch, err)` ends the session once `ch` closes, closing with `err`:
+  `CloseWith(websocket.StatusNormalClosure, "displaced")` for a session a
+  newer one claimed, so its client stops reconnecting.
+
+A handshake the client must begin with is `wsutil.ReadFirst[T](ctx, conn,
+timeout, reason)`: the first frame decoded into a `T`, or, none in time or
+one unreadable, a `CloseWith(StatusPolicyViolation, reason)` to return; a
+peer gone before it spoke is released with nothing sent, and
+`wsutil.PeerGone(err)` tells the two apart for the logs. What the frame must
+hold is the handler's to check, refusing with
+`wsutil.CloseWithCause(status, reason, why)`: the peer gets the reason, the
+error keeps why:
+
+```go
+reg, err := wsutil.ReadFirst[Registration](c, conn, 5*time.Second, "registration required")
+if err != nil {
+    if !wsutil.PeerGone(err) {
+        log.Warnf("stream refused: %s", err) // the cause too; the peer got the reason
+    }
+    return err
+}
+if reg.SessionID == "" {
+    return wsutil.CloseWithCause(websocket.StatusPolicyViolation, "registration required",
+        errors.Newf("registration without a session id"))
+}
+lease := registry.Claim(reg.SessionID) // the app's: a newer claim evicts this one
+defer lease.Release()
+messenger, err := mb.NewMessenger("stream:" + reg.SessionID + ":" + uuid.NewString())
+if err != nil {
+    return errors.Wrap(err)
+}
+return wsutil.Bridge(conn, messenger,
+    wsutil.WithFilter(func(m entity.PubsubMessage) bool {
+        ev, ok := m.Payload.(*Event)
+        return ok && ev.TargetSessionID == reg.SessionID
+    }),
+    wsutil.WithFrame(func(m entity.PubsubMessage) any { return m.Payload }),
+    wsutil.WithDone(lease.Evicted(), wsutil.CloseWith(websocket.StatusNormalClosure, "displaced")),
+)
+```
+
+Which session holds a key is the app's — a registry where a newer claim
+evicts the older, closing its `Evicted()` channel — since what it holds
+beside, and who watches it, is the app's too.
+
 ## Message Interfaces
 
 Defined in `pkg/types/common` (not in `pubsub`/`messagebus`):

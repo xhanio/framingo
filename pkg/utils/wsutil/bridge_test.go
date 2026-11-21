@@ -231,6 +231,8 @@ func TestBridge_DroppedSubscriptionEndsTheSession(t *testing.T) {
 		t.Fatal("Bridge did not return")
 	}
 	assert.ErrorIs(t, env.err, ErrSubscriptionDropped)
+	// a nil conn panics if Close closes it: the session's close is not sent twice
+	assert.NoError(t, Close(context.Background(), nil, env.err), "a close the session sent is not sent again, nor a failure")
 }
 
 // The client's own close ends the session with nothing to report.

@@ -296,7 +296,7 @@ The module's root package is a command, versioned with the framework:
 | **[testutil](pkg/utils/testutil/)** | Test helpers: `SetupDB` (in-memory SQLite, needs cgo), and `Tracer`/`Meter` doubles with in-memory recorders |
 | **[timeutil](pkg/utils/timeutil/)** | Timestamp comparison helpers |
 | **[traceutil](pkg/utils/traceutil/)** | `model.Tracer` as plain OpenTelemetry: `Start`/`Fail` for spans, `Follow`/`LiveProvider` for a provider that follows a swapped pipeline |
-| **[wsutil](pkg/utils/wsutil/)** | WebSocket helpers: `Bridge` joins a connection to a bus Messenger both ways, with server-side pings tunable via `WithPing`; `Close` ends a connection with the status its handler's result calls for |
+| **[wsutil](pkg/utils/wsutil/)** | WebSocket helpers: `Bridge` joins a connection to a bus Messenger both ways, with server-side pings tunable via `WithPing`, a session's own messages, frames, inbound and end via `WithFilter`/`WithFrame`/`WithInbound`/`WithDone`; `ReadFirst` reads a handshake's first frame, `PeerGone` telling a peer gone from a refusal; `Close` ends a connection with the status its handler's result calls for, a `CloseWith(status, reason)` or `CloseWithCause(status, reason, cause)` its own |
 
 ## Building Your First Application
 

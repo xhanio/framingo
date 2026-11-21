@@ -4,9 +4,9 @@
 
 **Decision.** `wsutil.Bridge(conn, messenger, opts...)` joins a WebSocket
 connection to a bus `Messenger` both ways until the connection closes. It
-lives in `pkg/utils/wsutil`, not on `model.MessageBus`. A `bridge` is one
-connection's session — its two ends, its keepalive (`WithPing`), its
-context — and the pumps hang on it.
+lives in `pkg/utils/wsutil`, not on `model.MessageBus`. Each connection it
+bridges is a `session` — its two loops, read and write, its ping, and the
+ends it watches for — and `end` is the one way out of it.
 
 **Why.** It needs a `Messenger` and nothing of the bus, so the bus no
 longer imports `coder/websocket`, and the ping settings belong to the bridge
@@ -20,9 +20,30 @@ the bus evicted a subscriber that stopped draining, or pubsub stopped — the
 bridge ends the session with `StatusTryAgainLater`, "subscription dropped",
 and returns `ErrSubscriptionDropped`. A write that fails ends it too.
 
-**Why.** Before, the outbound pump returned alone: the connection stayed
+**Why.** Before, the write loop returned alone: the connection stayed
 open and heard nothing, and a client that sees an open connection has no
 reason to reconnect.
+
+## A session is shaped by options, not written again
+
+**Decision.** A session of its own — one handshake, its messages alone,
+frames of its own shape, an end of its own — is the bridge with options:
+`WithFilter`, `WithFrame`, `WithInbound`, `WithDone`. A handshake is
+`ReadFirst`, a peer gone told from a refusal by `PeerGone`, and a frame
+that fails the handler's own check refused with `CloseWithCause`, as
+`ReadFirst` refuses its own: the peer gets the reason, the logs the cause. Which session holds a key, and what displacing one means, stays
+with the app.
+
+**Why.** Each WebSocket an app wrote itself carried its own ping, its own
+two loops, its own teardown, and closed the connection itself to send a
+status: zen's stream, its conversation feed and its presence feed did, the
+same three loops three times. What differed was a filter, a frame, what
+the client's frames meant, and an end. A registry of sessions holds what
+the app knows of each and who watches it, which no framework type would.
+
+**Cost.** `ReadFirst` reads on a goroutine of its own, since a read's
+context ending tears the connection down: on a timeout that read stays
+parked until the server closes the connection, once the handler returns.
 
 ## Close by what the handler returned
 
@@ -36,7 +57,9 @@ reason is cut to the 123 bytes a close frame carries.
 
 The connection is the server's: a handler returns, it does not close. The
 one exception is the bridge ending a session itself — a dropped
-subscription — which sends that close before it returns it.
+subscription, a `WithDone`, an inbound error — which sends that close before
+it returns it, marked sent: `Close` then sends nothing more, and reports
+only what is a failure, once.
 
 **Why.** A handler that closes the connection itself bypasses the one
 place closes are decided, and before `CloseWith` it had to, to send any
