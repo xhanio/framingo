@@ -92,7 +92,8 @@ func (m *manager) Start(ctx context.Context) error {
 	if err := m.services.Start(ctx); err != nil {
 		return err
 	}
-	m.ctx, m.cancel = context.WithCancel(ctx)
+	// until Stop: Start's ctx bounds the start alone
+	m.ctx, m.cancel = context.WithCancel(context.WithoutCancel(ctx))
 	m.listenSignals(m.ctx)
 	return nil
 }
