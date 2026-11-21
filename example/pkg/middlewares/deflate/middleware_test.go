@@ -56,8 +56,11 @@ func TestDecompressionIsBounded(t *testing.T) {
 	const limit = 64 << 10
 	mw := funcOf(t, New(WithMaxDecompressed(limit)))
 
-	bomb := deflateOf(t, 50<<20)
-	t.Logf("compressed %d bytes -> 50 MiB inflated (%.0fx)", len(bomb), float64(50<<20)/float64(len(bomb)))
+	// 64 times the limit proves the bound as well as 800 times did, at a twelfth of the
+	// time: building the bomb is what takes it, compressing under -race
+	const inflated = 4 << 20
+	bomb := deflateOf(t, inflated)
+	t.Logf("compressed %d bytes -> %d MiB inflated (%.0fx)", len(bomb), inflated>>20, float64(inflated)/float64(len(bomb)))
 
 	read, err := serve(t, mw, bomb)
 	if err == nil {

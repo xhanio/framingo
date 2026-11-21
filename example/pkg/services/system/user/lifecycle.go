@@ -16,7 +16,7 @@ func (m *manager) Init(ctx context.Context) error {
 	} else if !errors.Is(err, errors.NotFound) {
 		return errors.Wrap(err)
 	}
-	hash, err := hashPassword(preset.AdminPassword)
+	hash, err := m.hashPassword(preset.AdminPassword)
 	if err != nil {
 		return errors.Wrap(err)
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/model"
 	"github.com/xhanio/framingo/pkg/utils/testutil"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/xhanio/framingo/example/pkg/services/repository"
 	"github.com/xhanio/framingo/example/pkg/services/system/platform"
@@ -68,6 +69,7 @@ func setup(t *testing.T, mb model.MessageBus) *manager {
 	))
 	r := repository.New(platform.New(db, nil, nil, nil))
 	m := newManager(platform.New(db, nil, nil, mb), r)
+	m.passwordCost = bcrypt.MinCost
 	require.NoError(t, m.Init(context.Background()))
 	return m
 }

@@ -29,7 +29,7 @@ func (m *manager) Create(ctx context.Context, opts entity.UserCreateOptions) (*e
 	if opts.OrganizationID == 0 {
 		opts.OrganizationID = preset.DefaultOrganizationID
 	}
-	hash, err := hashPassword(opts.Password)
+	hash, err := m.hashPassword(opts.Password)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
@@ -125,7 +125,7 @@ func (m *manager) ResetPassword(ctx context.Context, userID int32, opts entity.U
 	if opts.Password == "" {
 		return errors.InvalidArgument.Newf("Invalid Arguments: Password cannot be empty")
 	}
-	hash, err := hashPassword(opts.Password)
+	hash, err := m.hashPassword(opts.Password)
 	if err != nil {
 		return errors.Wrap(err)
 	}
@@ -145,7 +145,7 @@ func (m *manager) ChangePassword(ctx context.Context, userID int32, opts entity.
 		return errors.InvalidArgument.Newf("Invalid Arguments: Old password cannot be empty")
 	}
 	// hashed before the transaction so bcrypt's time is not spent holding it
-	hash, err := hashPassword(opts.Password)
+	hash, err := m.hashPassword(opts.Password)
 	if err != nil {
 		return errors.Wrap(err)
 	}
@@ -199,19 +199,19 @@ func (m *manager) Authenticate(ctx context.Context, organization, username, pass
 	organizationID, err := m.organizationID(ctx, organization)
 	if err != nil {
 		// timing decoy, result discarded
-		_ = checkPassword(dummyHash(), password)
+		_ = checkPassword(m.dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	user, err := m.repository.GetUserByName(ctx, organizationID, username)
 	if err != nil {
 		// timing decoy, result discarded
-		_ = checkPassword(dummyHash(), password)
+		_ = checkPassword(m.dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	hash, err := m.repository.GetUserPasswordHash(ctx, user.ID)
 	if err != nil {
 		// timing decoy, result discarded
-		_ = checkPassword(dummyHash(), password)
+		_ = checkPassword(m.dummyHash(), password)
 		return nil, errors.Unauthorized.Newf(authFailed, username)
 	}
 	if !checkPassword(hash, password) {
