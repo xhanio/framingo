@@ -25,6 +25,7 @@ type controller struct {
 	graph    graph.Graph[common.Service]
 	services []common.Service
 	stats    *statsStore
+	booted   bool // the first Init pass has run: a later one makes one pass
 
 	// op serializes restarts, manual ops and shutdown; exported methods take it,
 	// unexported ones run under a caller's lock or before the monitor starts.
@@ -359,22 +360,33 @@ func (c *controller) initAll(ctx context.Context) error {
 		}
 	}
 	c.log.Infof("%d services initialized, %d failed", total, failed)
+	c.booted = true
 	return errors.Combine(errs...)
+}
+
+// policy is the init policy of this pass: the boot's waits, and a later pass
+// — a reload, a whole restart, of a process that was serving — makes one.
+func (c *controller) policy() entity.SupervisorInitPolicy {
+	if c.booted {
+		return entity.SupervisorInitPolicy{}
+	}
+	return c.initPolicy
 }
 
 // initTurn retries transient blockages per the init policy; a dependency that
 // failed its own turn fails this one fast. ok reports whether Init itself ran.
 func (c *controller) initTurn(ctx context.Context, service common.Service) (bool, error) {
 	name := service.Name()
+	policy := c.policy()
 	// retry-go attempts: 0 -> 1, n -> n+1, -1 -> unlimited (bounded by ctx)
 	attempts := uint(1)
 	switch {
-	case c.initPolicy.MaxRetries > 0:
-		attempts = uint(c.initPolicy.MaxRetries) + 1
-	case c.initPolicy.MaxRetries < 0:
+	case policy.MaxRetries > 0:
+		attempts = uint(policy.MaxRetries) + 1
+	case policy.MaxRetries < 0:
 		attempts = 0
 	}
-	delay := c.initPolicy.Delay
+	delay := policy.Delay
 	if delay <= 0 {
 		delay = time.Second
 	}
@@ -387,8 +399,8 @@ func (c *controller) initTurn(ctx context.Context, service common.Service) (bool
 			c.log.Warnf("init of %s blocked, retrying: %s", name, err)
 		}),
 	}
-	if c.initPolicy.MaxDelay > delay {
-		opts = append(opts, retry.DelayType(retry.BackOffDelay), retry.MaxDelay(c.initPolicy.MaxDelay))
+	if policy.MaxDelay > delay {
+		opts = append(opts, retry.DelayType(retry.BackOffDelay), retry.MaxDelay(policy.MaxDelay))
 	} else {
 		opts = append(opts, retry.DelayType(retry.FixedDelay))
 	}
@@ -396,7 +408,7 @@ func (c *controller) initTurn(ctx context.Context, service common.Service) (bool
 	var blocked error
 	err := retry.Do(func() error {
 		var transient bool
-		if blocked, transient = c.depsInitReady(ctx, service); blocked != nil {
+		if blocked, transient = c.depsInitReady(ctx, service, policy); blocked != nil {
 			if !transient {
 				return retry.Unrecoverable(blocked)
 			}
@@ -421,7 +433,7 @@ func (c *controller) initTurn(ctx context.Context, service common.Service) (bool
 
 // depsInitReady: a failing Ready probe is transient, a dependency's failed init
 // turn is not; without an init policy it never probes.
-func (c *controller) depsInitReady(ctx context.Context, service common.Service) (blocked error, transient bool) {
+func (c *controller) depsInitReady(ctx context.Context, service common.Service, policy entity.SupervisorInitPolicy) (blocked error, transient bool) {
 	for _, dep := range service.Dependencies() {
 		if dep == nil {
 			continue // an optional dependency the app did not wire: nothing to wait for
@@ -430,7 +442,7 @@ func (c *controller) depsInitReady(ctx context.Context, service common.Service) 
 			c.log.Debugf("%s dependency %s is not initialized", service.Name(), dep.Name())
 			return errors.Newf("dependencies not ready"), false
 		}
-		if c.initPolicy.MaxRetries == 0 {
+		if policy.MaxRetries == 0 {
 			continue
 		}
 		if readiness, ok := dep.(common.Readiness); ok {

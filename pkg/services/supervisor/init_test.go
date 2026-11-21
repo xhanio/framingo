@@ -120,3 +120,35 @@ func TestInitWaitHonorsCancel(t *testing.T) {
 	require.Error(t, err)
 	assert.Less(t, time.Since(start), time.Second, "cancellation must end the wait promptly")
 }
+
+// The policy is the boot's. A later Init — a reload's, of a process that was
+// serving — makes one pass: a config that fails is the change, which no wait
+// fixes, so it returns and what can start starts.
+func TestALaterInitMakesOnePass(t *testing.T) {
+	cfg := newMockService("cfg")
+	cfg.initFn = failNTimes(2)
+	other := newMockService("other")
+	m := newTestManager(WithInitPolicy(-1, time.Millisecond, time.Millisecond))
+	require.NoError(t, m.Register(cfg, other))
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()), "the boot waits")
+	assert.Equal(t, 3, cfg.initCalled)
+	require.NoError(t, m.Start(context.Background()))
+
+	// what the example's SIGHUP reload does, the file now broken
+	require.NoError(t, m.Stop(context.Background()))
+	cfg.initFn = func() error { return fmt.Errorf("bad tasks.yaml") }
+	done := make(chan error, 1)
+	go func() { done <- m.Init(context.Background()) }()
+	select {
+	case err := <-done:
+		require.Error(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the reload's Init waited on a config that fails every time")
+	}
+	assert.Equal(t, 4, cfg.initCalled, "one try")
+	require.NoError(t, m.Start(context.Background()), "an Init failure is not reported again")
+	assert.Equal(t, 1, cfg.startCalled, "the broken one started at boot alone")
+	assert.Equal(t, 2, other.startCalled, "what can start starts")
+	require.NoError(t, m.Stop(context.Background()))
+}

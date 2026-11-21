@@ -164,7 +164,7 @@ Production-ready service implementations:
   - A name stands for one instance: `Register` returns a `Conflict` for another instance under a name already taken (give each its own `WithName`)
   - Per-service runtime control (`InitService`, `StartService`, `StopService`, `RestartService`); a `Reconcilable` dependent is told what a dependency stopped or started alone has become, and puts back what it registered there
   - Whole-graph `Restart(ctx)`, `Stats()` per service, and a `Debuggable.Info` dump
-  - Tunable by policy: `WithMonitorPolicy(interval, maxRetries, restartDelay)` for liveness restarts, `WithInitPolicy(maxRetries, delay, maxDelay)` to retry init turns until dependencies are ready, `WithStartPolicy(timeout)` to bound each `Start`, `WithStopPolicy(timeout)` to bound shutdown
+  - Tunable by policy: `WithMonitorPolicy(interval, maxRetries, restartDelay)` for liveness restarts, `WithInitPolicy(maxRetries, delay, maxDelay)` to retry the boot's init turns until dependencies are ready (a later `Init`, a reload's, makes one pass), `WithStartPolicy(timeout)` to bound each `Start`, `WithStopPolicy(timeout)` to bound shutdown
 
 - **[api/server](pkg/services/api/server/)** — HTTP API server
   - Multi-server support: `Add(name, WithEndpoint(...), WithTLS(...), WithMiddlewares(...), WithMiddlewareConfigs(...))`

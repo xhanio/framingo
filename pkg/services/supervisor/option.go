@@ -71,9 +71,10 @@ func WithMonitorPolicy(interval time.Duration, maxRetries int, restartDelay time
 	}
 }
 
-// WithInitPolicy retries init turns (dependency readiness and own Init):
-// maxRetries 0 single pass, -1 until ctx ends; backoff doubles from delay
-// (default 1s) up to maxDelay, fixed when maxDelay <= delay.
+// WithInitPolicy retries the first Init's turns (dependency readiness and own
+// Init): maxRetries 0 single pass, -1 until ctx ends; backoff doubles from
+// delay (default 1s) up to maxDelay, fixed when maxDelay <= delay. A later
+// Init, a reload's or a whole Restart's, makes one pass.
 func WithInitPolicy(maxRetries int, delay, maxDelay time.Duration) Option {
 	return func(m *manager) {
 		m.c.initPolicy = entity.SupervisorInitPolicy{

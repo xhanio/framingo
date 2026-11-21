@@ -8,8 +8,8 @@ import (
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
-// SupervisorInitPolicy: MaxRetries 0 is one pass, -1 retries until ctx ends;
-// Delay doubles up to MaxDelay.
+// SupervisorInitPolicy is the first Init's: MaxRetries 0 is one pass, -1
+// retries until ctx ends; Delay doubles up to MaxDelay. A later Init makes one pass.
 type SupervisorInitPolicy struct {
 	MaxRetries int
 	Delay      time.Duration
