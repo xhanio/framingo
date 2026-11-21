@@ -60,6 +60,37 @@ type excused struct {
 func (m *excused) Name() string            { return "excused" }
 func (m *excused) Dependencies() []Service { return nil }
 
+// a filter in Dependencies: the supervisor skips a nil entry itself
+type filters struct {
+	repo     Service
+	optional Service
+	bus      Service
+}
+
+func (m *filters) Name() string { return "filters" }
+func (m *filters) Dependencies() []Service {
+	deps := []Service{m.repo}
+	if m.optional != nil { // want `Dependencies filters what it lists`
+		deps = append(deps, m.optional)
+	}
+	if _, ok := m.bus.(Sender); ok { // want `Dependencies filters what it lists` `Dependencies filters what it lists`
+		deps = append(deps, m.bus)
+	}
+	return deps
+}
+
+// a directive with its reason keeps a condition the list needs
+type guarded struct{ repo Service }
+
+func (m *guarded) Name() string { return "guarded" }
+func (m *guarded) Dependencies() []Service {
+	//framingo:ignore depslist a reason the test gives
+	if m.repo == nil {
+		return nil
+	}
+	return []Service{m.repo}
+}
+
 // not a service's Dependencies: another signature is left alone
 type other struct{ repo Service }
 

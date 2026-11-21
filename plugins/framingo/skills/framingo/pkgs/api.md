@@ -145,8 +145,8 @@ import (
     "github.com/xhanio/framingo/pkg/utils/log"
     "github.com/xhanio/framingo/pkg/utils/nameutil"
 
-    "myapp/pkg/services/user"
-    "myapp/pkg/types/api"
+    "github.com/yourorg/myapp/pkg/services/user"
+    "github.com/yourorg/myapp/pkg/types/api"
 )
 
 var _ fapi.Router = (*router)(nil) // compile-time interface check
@@ -222,7 +222,7 @@ The method name is the map key, so it must match `func:` in `router.yaml` exactl
 package user
 
 import (
-    "myapp/pkg/types/api"
+    "github.com/yourorg/myapp/pkg/types/api"
 )
 
 // Recommended: handlers take the project-defined api.Context (which embeds

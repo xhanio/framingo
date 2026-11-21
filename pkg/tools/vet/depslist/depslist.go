@@ -1,6 +1,7 @@
 // Package depslist reports a service that holds another service in a field
-// and leaves it out of Dependencies: the supervisor orders, gates and
-// monitors by that list, so what is not in it starts in no particular order
+// and leaves it out of Dependencies, and a Dependencies that filters what it
+// lists: the supervisor orders, gates and monitors by that list, so what is
+// not in it starts in no particular order, and it skips a nil entry itself
 // (design/service-wiring.md).
 package depslist
 
@@ -16,7 +17,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "depslist",
-	Doc:  "reports a field holding a service that the type's Dependencies method does not list",
+	Doc:  "reports a field holding a service that the type's Dependencies method does not list, and a condition in Dependencies",
 	Run:  run,
 }
 
@@ -77,6 +78,15 @@ func dependencies(pass *analysis.Pass, fd *ast.FuncDecl) (types.Object, *types.S
 }
 
 func check(pass *analysis.Pass, fd *ast.FuncDecl, recv types.Object, st *types.Struct, service *types.Interface) {
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		switch n.(type) {
+		case *ast.IfStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.TypeAssertExpr:
+			directive.Reportf(pass, n.Pos(), "Dependencies filters what it lists: list what is held as it is, the supervisor skips a nil entry (design/service-wiring.md)")
+		case *ast.FuncLit:
+			return false
+		}
+		return true
+	})
 	listed := map[types.Object]bool{}
 	if recv != nil {
 		ast.Inspect(fd.Body, func(n ast.Node) bool {

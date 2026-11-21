@@ -270,7 +270,8 @@ func TestDependenciesAreTheTaskManagerAndTheSender(t *testing.T) {
 	if !slices.Contains(deps, common.Service(tm)) || !slices.Contains(deps, common.Service(sender)) {
 		t.Fatalf("dependencies = %v", deps)
 	}
-	if deps := newManager(nil, tm).Dependencies(); len(deps) != 1 || deps[0] != common.Service(tm) {
+	// listed as held: the supervisor skips a nil entry
+	if deps := newManager(nil, tm).Dependencies(); len(deps) != 2 || deps[0] != common.Service(tm) || deps[1] != nil {
 		t.Fatalf("dependencies without a sender = %v", deps)
 	}
 }

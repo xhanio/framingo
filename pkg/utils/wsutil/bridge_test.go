@@ -71,7 +71,6 @@ func newWSTestServer(t *testing.T, opts ...Option) *wsTestServer {
 			t.Errorf("accept failed: %v", err)
 			return
 		}
-		//nolint:errcheck // nothing to do with a failure to close here
 		defer conn.CloseNow()
 		close(env.ready)
 		Bridge(conn, env.messenger, opts...)
@@ -93,7 +92,6 @@ func dialWS(t *testing.T, url string) *websocket.Conn {
 func TestBridge_OutboundDeliversMessageToClient(t *testing.T) {
 	env := newWSTestServer(t)
 	conn := dialWS(t, env.wsURL)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready
@@ -111,7 +109,6 @@ func TestBridge_OutboundDeliversMessageToClient(t *testing.T) {
 func TestBridge_InboundSendsClientMessageThroughMessenger(t *testing.T) {
 	env := newWSTestServer(t)
 	conn := dialWS(t, env.wsURL)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready
@@ -150,7 +147,6 @@ func TestBridge_ClientCloseTearsDownSession(t *testing.T) {
 func TestBridge_PingKeepsConnectionAlive(t *testing.T) {
 	env := newWSTestServer(t, WithPing(50*time.Millisecond, 500*time.Millisecond))
 	conn := dialWS(t, env.wsURL)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready
@@ -185,7 +181,6 @@ func TestBridge_PingKeepsConnectionAlive(t *testing.T) {
 func TestBridge_PingTimeoutClosesSession(t *testing.T) {
 	env := newWSTestServer(t, WithPing(50*time.Millisecond, 150*time.Millisecond))
 	conn := dialWS(t, env.wsURL)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready
@@ -201,7 +196,6 @@ func TestBridge_PingTimeoutClosesSession(t *testing.T) {
 func TestBridge_PingDisabledLeavesSessionOpen(t *testing.T) {
 	env := newWSTestServer(t, WithPing(0, 0))
 	conn := dialWS(t, env.wsURL)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	<-env.ready

@@ -42,9 +42,6 @@ func (m *middleware) Name() string {
 
 // Dependencies is for registering with the supervisor directly; the api server ignores it.
 func (m *middleware) Dependencies() []common.Service {
-	if m.tracer == nil {
-		return nil
-	}
 	return []common.Service{m.tracer}
 }
 

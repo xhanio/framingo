@@ -138,8 +138,8 @@ func TestNameAndDependencies(t *testing.T) {
 	require.Len(t, deps, 1)
 	assert.Same(t, st, deps[0])
 
-	// the supervisor panics on nil elements in a non-nil Dependencies slice
-	assert.Nil(t, New(nil).Dependencies())
+	// listed as held: the supervisor skips a nil entry
+	assert.Equal(t, []common.Service{nil}, New(nil).Dependencies())
 }
 
 func TestFuncContract(t *testing.T) {

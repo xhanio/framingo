@@ -51,9 +51,5 @@ func (m *manager) Name() string {
 }
 
 func (m *manager) Dependencies() []common.Service {
-	deps := []common.Service{m.tm}
-	if m.ms != nil {
-		deps = append(deps, m.ms)
-	}
-	return deps
+	return []common.Service{m.tm, m.ms}
 }

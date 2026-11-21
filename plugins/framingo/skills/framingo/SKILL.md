@@ -116,7 +116,7 @@ mkdir -p cmd/myapp \
 cp <skill>/_templates/api-context.go pkg/types/api/api.go
 
 # Canonical router triple — copy per domain, rename the package,
-# replace the `myapp` import paths with your module path.
+# replace github.com/yourorg/myapp with your module path.
 mkdir -p pkg/routers/order pkg/services/order
 cp <skill>/_templates/{router.go,handler.go,router.yaml} pkg/routers/order/
 
@@ -130,7 +130,7 @@ cp <skill>/_templates/golangci.yml .golangci.yml
 go install github.com/xhanio/framingo@latest
 ```
 
-All five `types/` subdirs are part of the layout ([app/layout.md](app/layout.md)); `model/` in particular is **not optional** — the router template imports `myapp/pkg/types/model`.
+All five `types/` subdirs are part of the layout ([app/layout.md](app/layout.md)); `model/` in particular is **not optional** — the router template imports `github.com/yourorg/myapp/pkg/types/model`.
 
 `_templates/api-context.go` is self-contained (no project types). Its trailing comment shows how to add `Credential()`/`Session()` accessors over your own `entity` package once you have one.
 

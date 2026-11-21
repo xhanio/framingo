@@ -43,7 +43,8 @@ The meter is the one handle held and not listed. A dependency gates `Init`
 and rolls its health up, and telemetry never gates a service: recording
 works whatever the collector does, before the metrics service starts as
 after. Being always there and being depended on are two things. The
-`depslist` analyzer holds the rule, and the meter's field carries
+`depslist` analyzer holds the rule — a held service listed, the list not
+filtered — and the meter's field carries
 `//framingo:ignore depslist` with that reason ([checks.md](checks.md)).
 
 **Why.** A filter in every `Dependencies()` (type assertions, `if x != nil`)

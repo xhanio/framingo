@@ -28,7 +28,6 @@ func closeAfter(t *testing.T, ctx context.Context, handlerErr error, read bool) 
 			t.Errorf("accept failed: %v", err)
 			return
 		}
-		//nolint:errcheck // a no-op once Close has closed it
 		defer conn.CloseNow()
 		returned = Close(ctx, conn, handlerErr)
 		<-release
@@ -39,7 +38,6 @@ func closeAfter(t *testing.T, ctx context.Context, handlerErr error, read bool) 
 	defer cancel()
 	conn, _, err := websocket.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 	require.NoError(t, err)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 
 	if read {

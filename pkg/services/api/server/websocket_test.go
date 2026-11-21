@@ -44,7 +44,6 @@ func TestWebSocket_StopClosesConnectionsGoingAway(t *testing.T) {
 		return err
 	}))
 	conn := dialConn(t, base)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 	<-entered
 
@@ -82,7 +81,6 @@ func TestWebSocket_StopGivesUpOnAHandlerThatIgnoresItsConnection(t *testing.T) {
 	}))
 	defer close(release)
 	conn := dialConn(t, base)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 	// reading lets the client answer the server's close frame
 	//nolint:errcheck // the read ends with the close; nothing to check
@@ -118,7 +116,6 @@ func TestWebSocket_RestartServesAgain(t *testing.T) {
 	defer func() { require.NoError(t, m.Stop(context.Background())) }()
 
 	conn := dialConn(t, base)
-	//nolint:errcheck // nothing to do with a failure to close here
 	defer conn.CloseNow()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
