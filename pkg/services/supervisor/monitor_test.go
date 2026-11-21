@@ -10,6 +10,7 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
 func TestSweepProbesSharedDependencyOnce(t *testing.T) {
@@ -160,4 +161,20 @@ func TestMonitorOutlivesTheStartContext(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	require.NoError(t, m.Stop(context.Background()))
 	assert.GreaterOrEqual(t, svc.aliveCalled, 2, "the monitor kept probing after Start's ctx ended")
+}
+
+// A service whose restarts are spent is passed over at once, not after the
+// restart delay: the sweep goes on to the services after it.
+func TestASpentServiceDoesNotHoldTheSweep(t *testing.T) {
+	svc := newMockService("svc")
+	svc.aliveErr = errors.Newf("dead")
+	m := newTestManager(WithMonitorPolicy(0, 1, 2*time.Second))
+	require.NoError(t, m.Register(svc))
+	require.NoError(t, m.TopoSort())
+	m.c.stats.update("svc", func(stat *entity.SupervisorStats) { stat.Restarts = 1 })
+
+	began := time.Now()
+	m.monitor.checkAll(context.Background())
+	assert.Less(t, time.Since(began), time.Second)
+	assert.Equal(t, 0, svc.initCalled, "not restarted")
 }

@@ -792,3 +792,47 @@ func TestNilDependencyIsSkipped(t *testing.T) {
 		assert.True(t, s.Initialized, "%s initialized", s.Name)
 	}
 }
+
+// A restart's stop is recorded as any stop is.
+func TestARestartRecordsItsStop(t *testing.T) {
+	m := newTestManager()
+	svc := newMockService("svc")
+	require.NoError(t, m.Register(svc))
+	require.NoError(t, m.TopoSort())
+	require.NoError(t, m.Init(context.Background()))
+	require.NoError(t, m.Start(context.Background()))
+
+	svc.stopErr = fmt.Errorf("stop boom")
+	require.NoError(t, m.RestartService(context.Background(), "svc"))
+	stat := m.c.stats.snapshot("svc")
+	assert.EqualError(t, stat.StopErr, "stop boom")
+	assert.False(t, stat.Stopped, "stopped for the restart, not for good")
+	svc.stopErr = nil
+	require.NoError(t, m.Stop(context.Background()))
+}
+
+// The whole graph's Init holds the lock a service's own operation takes: a
+// StartService during the boot waits for its Init.
+func TestAnOperationWaitsForTheBoot(t *testing.T) {
+	release := make(chan struct{})
+	svc := newMockService("svc")
+	svc.initFn = func() error { <-release; return nil }
+	m := newTestManager()
+	require.NoError(t, m.Register(svc))
+	require.NoError(t, m.TopoSort())
+	booted := make(chan error, 1)
+	go func() { booted <- m.Init(context.Background()) }()
+	time.Sleep(20 * time.Millisecond)
+
+	started := make(chan error, 1)
+	go func() { started <- m.StartService(context.Background(), "svc") }()
+	select {
+	case err := <-started:
+		t.Fatalf("StartService ran while the boot's Init held the service: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	require.NoError(t, <-booted)
+	require.NoError(t, <-started)
+	require.NoError(t, m.c.Stop(context.Background(), svc))
+}

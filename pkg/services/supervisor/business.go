@@ -57,35 +57,28 @@ func (m *manager) Stats() ([]*entity.SupervisorStats, error) {
 // manual ops serialize with monitor restarts under the controller's operation lock
 
 func (m *manager) InitService(ctx context.Context, name string) error {
-	service := m.c.find(name)
-	if service == nil {
-		return errors.NotFound.Newf("service %s not found", name)
-	}
-	return m.c.Init(ctx, service)
+	return m.byName(name, func(service common.Service) error { return m.c.Init(ctx, service) })
 }
 
 func (m *manager) StartService(ctx context.Context, name string) error {
-	service := m.c.find(name)
-	if service == nil {
-		return errors.NotFound.Newf("service %s not found", name)
-	}
-	return m.c.Start(ctx, service)
+	return m.byName(name, func(service common.Service) error { return m.c.Start(ctx, service) })
 }
 
 func (m *manager) StopService(ctx context.Context, name string) error {
-	service := m.c.find(name)
-	if service == nil {
-		return errors.NotFound.Newf("service %s not found", name)
-	}
-	return m.c.Stop(ctx, service)
+	return m.byName(name, func(service common.Service) error { return m.c.Stop(ctx, service) })
 }
 
 func (m *manager) RestartService(ctx context.Context, name string) error {
+	return m.byName(name, func(service common.Service) error { return m.c.Restart(ctx, service) })
+}
+
+// byName runs op on the service registered under name, NotFound if none is.
+func (m *manager) byName(name string, op func(common.Service) error) error {
 	service := m.c.find(name)
 	if service == nil {
 		return errors.NotFound.Newf("service %s not found", name)
 	}
-	return m.c.Restart(ctx, service)
+	return op(service)
 }
 
 func (m *manager) Migrate() error {

@@ -11,7 +11,7 @@ import (
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	return m.c.initAll(ctx)
+	return m.c.InitAll(ctx)
 }
 
 // Init/Start/Stop/Restart are not concurrency-safe: the caller serializes them.
@@ -20,7 +20,7 @@ func (m *manager) Start(ctx context.Context) error {
 		m.log.Warnf("%s already started", m.Name())
 		return nil
 	}
-	err := m.c.startAll(ctx)
+	err := m.c.StartAll(ctx)
 	// whatever failed: Stop then stops what did start, and the monitor restarts the rest
 	m.loop.Start(ctx, m.watch)
 	return err

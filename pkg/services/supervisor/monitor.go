@@ -31,48 +31,66 @@ func (mon *monitor) run(ctx context.Context) {
 	}
 }
 
+// checkAll probes every service not stopped, and restarts, per the policy,
+// each that fails on its own.
 func (mon *monitor) checkAll(ctx context.Context) {
 	sw := newSweep()
 	for _, service := range mon.c.services {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return
-		default:
 		}
-		stat := mon.c.stats.snapshot(service.Name())
-		if stat == nil || stat.Stopped {
+		if stat := mon.c.stats.snapshot(service.Name()); stat == nil || stat.Stopped {
 			continue
 		}
 		if err := mon.check(ctx, service, sw); err != nil {
 			mon.log.Warnf("healthcheck failed for %s: %s", service.Name(), err)
 		}
-		// re-snapshot: check just wrote the probe results
-		stat = mon.c.stats.snapshot(service.Name())
-		// readiness-only failures don't restart
-		if stat.LivenessErr == nil && stat.Healthcheck() == nil {
-			continue
+		if mon.failing(service) && !mon.restart(ctx, service) {
+			return
 		}
-		if mon.policy.MaxRetries != 0 {
-			if mon.policy.RestartDelay > 0 {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(mon.policy.RestartDelay):
-				}
-			}
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			if mon.policy.MaxRetries >= 0 && stat.Restarts >= mon.policy.MaxRetries {
-				mon.log.Warnf("service %s reached max restart attempts (%d)", service.Name(), mon.policy.MaxRetries)
-				continue
-			}
-			if err := mon.c.RestartIfRunning(ctx, service); err != nil {
-				mon.log.Errorf("failed to restart service %s: %s", service.Name(), err)
-			}
-		}
+	}
+}
+
+// failing: its liveness, or its own Init, Start or Reconcile, has failed, as
+// check just recorded. Readiness alone never is, nor a dependency's failure.
+func (mon *monitor) failing(service common.Service) bool {
+	stat := mon.c.stats.snapshot(service.Name())
+	return stat != nil && (stat.LivenessErr != nil || stat.Healthcheck() != nil)
+}
+
+// restart restarts a failing service per the policy, after its delay: never
+// with maxRetries 0, where the platform is the recovery, and no more once its
+// restarts are spent. It returns false once ctx ends.
+func (mon *monitor) restart(ctx context.Context, service common.Service) bool {
+	if mon.policy.MaxRetries == 0 {
+		return true
+	}
+	stat := mon.c.stats.snapshot(service.Name())
+	if mon.policy.MaxRetries > 0 && stat != nil && stat.Restarts >= mon.policy.MaxRetries {
+		mon.log.Warnf("service %s reached max restart attempts (%d)", service.Name(), mon.policy.MaxRetries)
+		return true
+	}
+	if !sleep(ctx, mon.policy.RestartDelay) {
+		return false
+	}
+	if err := mon.c.RestartIfRunning(ctx, service); err != nil {
+		mon.log.Errorf("failed to restart service %s: %s", service.Name(), err)
+	}
+	return true
+}
+
+// sleep waits d, and reports false if ctx ends first.
+func sleep(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
