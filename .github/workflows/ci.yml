@@ -21,52 +21,24 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          # example/ declares go 1.25.8; the framework only needs 1.24.
+          # example/ declares go 1.25.8, the framework go 1.25.0.
           go-version: stable
           cache-dependency-path: |
             go.sum
             example/go.sum
 
-      - name: gofmt
-        run: |
-          unformatted=$(gofmt -l . | grep -v '^plugins/framingo/skills/framingo/_templates/' || true)
-          if [ -n "$unformatted" ]; then
-            echo "not gofmt-clean:"; echo "$unformatted"; exit 1
-          fi
-
       # Built here, with the Go that builds the code: a released binary cannot
-      # read a newer compiler's export data. One config, .golangci.yml, for
-      # both modules.
+      # read a newer compiler's export data.
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 
-      - name: Lint (framework)
-        run: golangci-lint run --timeout 10m ./...
+      # The command a developer and an agent run: gofmt, build, vet, the
+      # framework's analyzers, golangci-lint and the tests, for both modules;
+      # every step runs, and one verdict ends it. -race is load-bearing: the
+      # auth session tests exist to catch a lock-order inversion and a
+      # shared-credential data race, and neither fails without the detector.
+      - name: Install framingo
+        run: go install .
 
-      - name: Lint (example)
-        working-directory: example
-        run: golangci-lint run --timeout 10m ./...
-
-      - name: Build (framework)
-        run: go build ./...
-
-      - name: Vet (framework)
-        run: go vet ./...
-
-      # -race is load-bearing here: the auth session tests exist to catch a
-      # lock-order inversion and a shared-credential data race, and neither
-      # fails without the detector.
-      - name: Test (framework)
-        run: go test -race -timeout 10m ./...
-
-      - name: Build (example)
-        working-directory: example
-        run: go build ./...
-
-      - name: Vet (example)
-        working-directory: example
-        run: go vet ./...
-
-      - name: Test (example)
-        working-directory: example
-        run: go test -race -timeout 10m ./...
+      - name: Verify
+        run: framingo verify . example
