@@ -3,11 +3,11 @@ package db
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"time"
 
 	"gorm.io/gorm"
 
+	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/types/common"
 )
 
@@ -58,7 +58,7 @@ func (m *manager) Transaction(ctx context.Context, fn func(ctx context.Context) 
 
 	if err := fn(txCtx); err != nil {
 		if rbErr := tx.Rollback().Error; rbErr != nil {
-			return fmt.Errorf("tx rollback failed: %v, original error: %w", rbErr, err)
+			return errors.Wrapf(err, "tx rollback failed: %v", rbErr)
 		}
 		return err
 	}

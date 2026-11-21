@@ -1,8 +1,9 @@
 package buffer
 
 import (
-	"errors"
 	"io"
+
+	"github.com/xhanio/errors"
 )
 
 type pooled[T any] struct {
@@ -27,7 +28,7 @@ func newPooledBuffer[T any](size int, pool PoolG[T]) *pooled[T] {
 
 func (pb *pooled[T]) Write(p []T) (int, error) {
 	if pb.closed {
-		return 0, errors.New("buffer is closed")
+		return 0, errors.Newf("buffer is closed")
 	}
 
 	if len(p) == 0 {
@@ -48,7 +49,7 @@ func (pb *pooled[T]) Write(p []T) (int, error) {
 
 func (pb *pooled[T]) Read(p []T) (int, error) {
 	if pb.closed {
-		return 0, errors.New("buffer is closed")
+		return 0, errors.Newf("buffer is closed")
 	}
 
 	if len(p) == 0 {
@@ -85,7 +86,7 @@ func (pb *pooled[T]) Close() error {
 
 func (pb *pooled[T]) expand(requiredCap int) error {
 	if pb.closed {
-		return errors.New("buffer is closed")
+		return errors.Newf("buffer is closed")
 	}
 
 	newCap := requiredCap * 2
@@ -121,7 +122,7 @@ func (pb *pooled[T]) ResetRead() {
 // Seek clamps past the end; a negative position is an error.
 func (pb *pooled[T]) Seek(offset int64, whence int) (int64, error) {
 	if pb.closed {
-		return 0, errors.New("buffer is closed")
+		return 0, errors.Newf("buffer is closed")
 	}
 	var pos int64
 	switch whence {
@@ -132,10 +133,10 @@ func (pb *pooled[T]) Seek(offset int64, whence int) (int64, error) {
 	case io.SeekEnd:
 		pos = int64(len(pb.data)) + offset
 	default:
-		return 0, errors.New("invalid whence")
+		return 0, errors.Newf("invalid whence")
 	}
 	if pos < 0 {
-		return 0, errors.New("negative position")
+		return 0, errors.Newf("negative position")
 	}
 	if pos > int64(len(pb.data)) {
 		pos = int64(len(pb.data))

@@ -2,10 +2,11 @@ package queue
 
 import (
 	"context"
-	"errors"
 	"io"
 	"sync"
 	"time"
+
+	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/pkg/structs/buffer"
 )
@@ -57,7 +58,7 @@ func (q *buffered[T]) Write(p []T) (int, error) {
 	defer q.Unlock()
 
 	if q.cancel == nil {
-		return 0, errors.New("buffered is closed")
+		return 0, errors.Newf("buffered is closed")
 	}
 
 	n, err := q.writeBuffer.Write(p)
