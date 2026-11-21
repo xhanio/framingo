@@ -39,6 +39,8 @@ func (s *session) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithLogger(logger log.Logger) Option {
 	return func(s *session) {
 		s.log = logger

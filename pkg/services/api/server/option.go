@@ -27,6 +27,8 @@ func (m *manager) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithLogger(logger log.Logger) Option {
 	return func(m *manager) {
 		m.log = logger

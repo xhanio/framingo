@@ -16,10 +16,8 @@ type manager struct {
 	name string
 	log  log.Logger
 
-	enabled        bool
-	exporterName   string
-	exporterConfig map[string]any
-	sampleRatio    float64
+	defaults settings // the built-in defaults as the options set them, fixed at New
+	settings settings // what the last Init resolved from the defaults and the config
 
 	// exporter is the tests' seam bypassing the registry; nil means Init builds
 	// one. Never written after construction, so read unlocked.
@@ -28,7 +26,7 @@ type manager struct {
 	// never swapped, so read unlocked
 	propagator propagation.TextMapPropagator
 
-	// mu guards enabled, exporterName, exporterConfig and sampleRatio.
+	// mu guards settings.
 	mu         sync.RWMutex
 	controller *controller
 
@@ -51,6 +49,7 @@ func newManager(opts ...Option) *manager {
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
+	m.settings = m.defaults // what holds until the first Init
 	m.log = m.log.By(m)
 	return m
 }

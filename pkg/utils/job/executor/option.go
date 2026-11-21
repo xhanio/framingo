@@ -23,6 +23,8 @@ type retryOptions struct {
 	retried uint
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 // WithRetry applies per Start(); retries <= 0 is ignored, and interval doubles after each retry.
 func WithRetry(retries int, interval time.Duration) Option {
 	return func(e *executor) {

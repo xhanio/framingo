@@ -28,6 +28,8 @@ func UseWallTime() LeaseOption {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithLogger(logger log.Logger) LeaseOption {
 	return func(l *lease) {
 		l.log = logger

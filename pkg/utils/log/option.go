@@ -21,6 +21,8 @@ func (l *logger) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithLevel(level int) Option {
 	return func(l *logger) {
 		l.level = zapcore.Level(level)

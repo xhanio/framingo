@@ -4,6 +4,8 @@ import "slices"
 
 type ParamsOption func(*params)
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 // WithOpener sets the section opener (e.g. "?"); without it the whole string is a section.
 func WithOpener(open string) ParamsOption {
 	return func(p *params) {

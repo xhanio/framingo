@@ -18,6 +18,8 @@ func (j *job) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithLabel(key, val string) Option {
 	return func(t *job) {
 		t.labels[key] = val

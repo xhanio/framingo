@@ -18,6 +18,8 @@ func (m *middleware) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 // WithName also renames the middleware configs key that activates it.
 func WithName(name string) Option {
 	return func(m *middleware) {

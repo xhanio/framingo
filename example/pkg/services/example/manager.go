@@ -20,8 +20,9 @@ type manager struct {
 	//framingo:ignore depslist telemetry never gates a service: recording works whatever the collector does
 	meter fmodel.Meter
 
-	mu       sync.RWMutex // guards greeting: Init rewrites it, a restart again
-	greeting string
+	defaults settings     // the built-in defaults as the options set them, fixed at New
+	mu       sync.RWMutex // guards settings: each Init publishes them whole
+	settings settings
 
 	loop syncutil.Loop      // takes new work: Stop waits for it, no deadline
 	wg   syncutil.WaitGroup // work the loop hands off, from any Start: Stop waits until its ctx ends
@@ -41,6 +42,7 @@ func newManager(platform model.Platform, repo Repository, opts ...Option) *manag
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
+	m.settings = m.defaults // what holds until the first Init
 	m.log = m.log.By(m)
 	return m
 }

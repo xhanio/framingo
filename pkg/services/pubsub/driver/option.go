@@ -48,6 +48,8 @@ func (o *options) setDefaults() {
 
 type Option func(*options)
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithOnFull(v OnFull) Option {
 	return func(o *options) { o.onFull = v }
 }

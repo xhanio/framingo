@@ -7,24 +7,11 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/confutil"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	// read under db.connection.*, or <name>.connection.* when named
-	config := confutil.FromContext(ctx)
-	root := nameutil.ConfigRoot(m.name)
-	m.applyOptions(
-		WithConnection(
-			config.GetInt("%s.connection.max_open", root),
-			config.GetInt("%s.connection.max_idle", root),
-			config.GetDuration("%s.connection.max_lifetime", root),
-			config.GetDuration("%s.connection.max_idle_time", root),
-			config.GetDuration("%s.connection.exec_timeout", root),
-		),
-	)
-	m.setDefaults()
+	m.connection = m.resolve(confutil.FromContext(ctx))
 	err := m.connect(m.dbtype, m.source)
 	if err != nil {
 		return errors.Wrap(err)

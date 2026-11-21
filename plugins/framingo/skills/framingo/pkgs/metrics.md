@@ -111,14 +111,20 @@ through the concrete manager's unexported field.
 
 ## Options
 
-`WithLogger`, `WithName` (which also moves the config root — a manager named
-`telemetry` reads `telemetry.*`), plus the `metrics.*`-backed trio re-applied on
-every `Init`: `WithEnabled` (its own switch — choosing an exporter never
-implies it), `WithExporter(name, config)` (registry name + the kv block
-its factory strict-decodes; nil config = exporter defaults), and
-`WithInterval` (zero or negative reads as unset and lands on the 60s
-default — a config key asking for literal zero also lands there, never on a
-spinning loop).
+Construction options: `WithLogger`, `WithName` (which also moves the config
+root — a manager named `telemetry` reads `telemetry.*`).
+
+Reloadable options, each the default of a `metrics.*` key `Init` re-reads at
+every start, the config winning where it sets the key
+([design/config.md](../design/config.md)): `WithEnabled` (`metrics.enabled`,
+its own switch — choosing an exporter never implies it),
+`WithExporter(name, config)` (`metrics.exporter` and `metrics.config`: the
+registry name and the kv block its factory strict-decodes, nil config =
+exporter defaults; the block belongs to the exporter in effect, so a config
+naming another exporter takes only its own block, and a config block alone
+configures the exporter the code chose), and `WithInterval` (`metrics.interval`, 60s;
+zero or negative is unset, an option's and a key's alike, never a spinning
+loop).
 
 The metric resource is the build's application identity and is **not
 configurable** — `service.name`/`service.version` come from

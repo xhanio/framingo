@@ -45,6 +45,21 @@ func TestInitReadsUnderNameRoot(t *testing.T) {
 	assert.Equal(t, 3, mgr.DB().Stats().MaxOpenConnections)
 }
 
+// WithConnection is the pool's baseline: a key the config sets overrides it at every
+// Init, and one a later config drops falls back to it.
+func TestTheConfigOverridesTheConnectionOptionKeyByKey(t *testing.T) {
+	mgr := newSQLiteMgr(t, nil, db.WithConnection(4, 0, 0, 0, 0))
+	assert.Equal(t, 4, mgr.DB().Stats().MaxOpenConnections, "no key: the option holds")
+
+	v := viper.New()
+	v.Set("db.connection.max_open", 2)
+	require.NoError(t, mgr.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
+	assert.Equal(t, 2, mgr.DB().Stats().MaxOpenConnections, "the key overrides it")
+
+	require.NoError(t, mgr.Init(confutil.WrapContext(context.Background(), confutil.New(viper.New()))))
+	assert.Equal(t, 4, mgr.DB().Stats().MaxOpenConnections, "the key dropped: back to the option")
+}
+
 // every Init reconnects - a supervisor restart re-inits - and the pool it
 // replaces is closed rather than leaked
 func TestReInitClosesThePreviousPool(t *testing.T) {

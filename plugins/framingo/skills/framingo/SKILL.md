@@ -74,7 +74,7 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [design/data-access.md](design/data-access.md) | orm stays in the repository; `types/repo` contracts and repo-only inputs; the repository decides nothing |
 | [design/service-wiring.md](design/service-wiring.md) | Platform first, nil-tolerant `Dependencies`, one instance per name, the api server last by ordering, restarts invisible to dependents, a dependent `Reconcile`s what it registered with a dependency stopped or started alone |
 | [design/lifecycle.md](design/lifecycle.md) | What a start waits for: each `Start` bounded, a service started once its `Init` succeeded and its dependencies run. What a stop may leave: the taker always awaited; other work left, cut, or waited for per resource, by what it holds |
-| [design/config.md](design/config.md) | Config read in `Init` from the context, a restart as the reload; a reload published whole; the file re-read on SIGHUP alone |
+| [design/config.md](design/config.md) | A setting is construction, fixed at `New`, or reloadable, its option the default of a key `Init` re-reads, the config winning where it sets the key; config read in `Init` from the context, a restart as the reload; a reload published whole; the file re-read on SIGHUP alone |
 | [design/websockets.md](design/websockets.md) | `wsutil.Bridge`, `wsutil.Close`, the server closing its connections on stop |
 | [design/certificates.md](design/certificates.md) | CSRs keep the requester's key; a server CA and an agent CA; CA keys in the database alone; downloads encoded as the caller asks; TLS verifies each side against the CAs it is given |
 | [design/checks.md](design/checks.md) | Which decisions a machine checks, and by what: the lint config's import boundaries and forbidden calls, `framingo vet`'s analyzers, the router, docs and template tests; how an exception carries its reason; `framingo verify` |
@@ -159,7 +159,8 @@ its own, `framingo vet ./...` — runs the framework's analyzers: a `Start`
 keeping its ctx, a held service missing from `Dependencies` or a
 `Dependencies` that filters, a service's
 `New` not taking the platform first, a `*gorm.DB` kept in a field, config
-read outside `Init`. A boundary or vet
+read outside `Init`, an option in an `option.go` marked neither construction
+nor reloadable. A boundary or vet
 failure names the design note it enforces — `(design/narrow-contracts.md)`
 — so read that note before changing the code or opting out; a `//nolint`,
 or a `//framingo:ignore <rule> <reason>` for an analyzer, carries its
@@ -187,7 +188,7 @@ reason. What each check holds: [design/checks.md](design/checks.md).
 | Service interfaces | `pkg/types/model` | `Supervisor`, `Database` (+ `DatabaseDebugger`), `Pubsub`, `MessageBus`, `Messenger`, `Plan`, `Task`, `Tracer`, `Meter` | [pkgs/types.md](pkgs/types.md) |
 | Logging | `pkg/utils/log` | `log.Logger` | [pkgs/utils.md](pkgs/utils.md) |
 | Errors | `github.com/xhanio/errors` | `errors.Newf`, `errors.Wrap`, category sentinels | [pkgs/errors.md](pkgs/errors.md) |
-| Config | `pkg/utils/confutil` | `confutil.Config` via `confutil.FromContext(ctx)`; getters take format-string keys (`GetInt("%s.max_open", nameutil.ConfigRoot(m.name))`) | [pkgs/supervisor.md](pkgs/supervisor.md), [pkgs/config.md](pkgs/config.md) |
+| Config | `pkg/utils/confutil` | `confutil.Config` via `confutil.FromContext(ctx)`; getters take format-string keys (`GetInt("%s.max_open", nameutil.ConfigRoot(m.name))`), a reloadable setting read over its default (`GetIntOr(s.maxOpen, "%s.max_open", root)`) | [pkgs/supervisor.md](pkgs/supervisor.md), [pkgs/config.md](pkgs/config.md) |
 | Health probes | `pkg/types/common` | `Liveness`/`Readiness` — `Alive(ctx)`/`Ready(ctx)`; served at `/healthz` + `/readyz` by the example's health router | [pkgs/supervisor.md](pkgs/supervisor.md), [app/services.md](app/services.md) |
 
 ## Architecture
@@ -253,6 +254,7 @@ For the full category rules, type-separation example, server component file stru
 - Every `func:` in `router.yaml` needs a matching method, or registration fails at startup with `handler function <Name> not found in router.Handlers()`. Middleware names must be registered first, or `middleware <name> not found`.
 - Don't call `Cleanup`/`Reload` through a `model.Database` — they are not there. They live on `model.DatabaseDebugger`, which only the `db.Manager` itself carries: tests and dev tooling, never a repository.
 - Don't write a `package db` test that blank-imports a driver — `db/drivers/*` import `db` to self-register, so an internal test package hits `import cycle not allowed in test`. Registry packages whose subpackages register back into them (framingo's `db` and its drivers) are the one place a `_test` package is required; everywhere else `package foo` is the default, since `newManager` exists to be used from inside.
+- Don't read a reloadable setting in `Init` with a plain getter: a key the config does not set reads zero and wipes the default its option set. Resolve the start's settings from `m.defaults` with the `Get…Or` getters (`s.interval = config.GetDurationOr(s.interval, "%s.interval", root)`), publish them whole, and put each option of `option.go` under a `// Construction options:` or `// Reloadable options:` comment — `framingo vet` reports one under neither ([design/config.md](design/config.md)).
 - Don't use the global Viper singleton — use the `confutil.Config` passed via `context.Context` (`confutil.FromContext(ctx)`), and read under the service's root (`"%s.key", nameutil.ConfigRoot(m.name)`) rather than a hardcoded one, or a second instance of the service reads the first one's config.
 - Don't fail `Alive` on a dependency outage — restarting the service raises no database; that fails `Ready` only. And probes take the caller's ctx: derive (`context.WithTimeout(ctx, cap)`), never fabricate from `Background()`.
 - Don't expect a query made through bare `db.ORM()` to appear inside the request's trace — it carries `context.Background()`, so with tracing wired its spans export as detached roots. Anything that gets a context to the statement parents correctly: `FromContext(ctx)`, `FromContextTimeout(ctx, d)`, or `ORM().WithContext(ctx)`. Prefer `FromContext(ctx)` — `ORM().WithContext(ctx)` traces the same but bypasses a transaction carried in the context, running on the base connection instead.

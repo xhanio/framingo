@@ -75,13 +75,7 @@ func (m *manager) newDatabase(opts ...db.Option) db.Manager {
 			m.config.GetString("db.migration.dir"),
 			m.config.GetUint("db.migration.version"),
 		),
-		db.WithConnection(
-			m.config.GetInt("db.connection.max_open"),
-			m.config.GetInt("db.connection.max_idle"),
-			m.config.GetDuration("db.connection.max_lifetime"),
-			m.config.GetDuration("db.connection.max_idle_time"),
-			m.config.GetDuration("db.connection.exec_timeout"),
-		),
+		// the pool, db.connection.*, is reloadable: Init reads it at every start
 		db.WithLogger(m.log),
 	}
 	return db.New(append(base, opts...)...)
@@ -112,25 +106,13 @@ func (m *manager) initServices() error {
 		),
 	)
 
-	// Init re-reads these keys, so a restart picks up changes
+	// tracing.* and metrics.* are reloadable: Init reads them at every start
 	m.tracing = tracing.New(
-		tracing.WithEnabled(m.config.GetBool("tracing.enabled")),
-		tracing.WithExporter(
-			m.config.GetString("tracing.exporter"),
-			m.config.GetStringMap("tracing.config"),
-		),
-		tracing.WithSampleRatio(m.config.GetFloat64("tracing.sample_ratio")),
 		tracing.WithLogger(m.log),
 	)
 
 	// the meter's provider is stable, so a service creates its instruments once, at its first Init
 	m.metrics = metrics.New(
-		metrics.WithEnabled(m.config.GetBool("metrics.enabled")),
-		metrics.WithExporter(
-			m.config.GetString("metrics.exporter"),
-			m.config.GetStringMap("metrics.config"),
-		),
-		metrics.WithInterval(m.config.GetDuration("metrics.interval")),
 		metrics.WithLogger(m.log),
 	)
 

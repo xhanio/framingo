@@ -11,7 +11,7 @@ import (
 // collector is never probed: metrics must not degrade the app.
 func (m *manager) Alive(_ context.Context) error {
 	m.mu.RLock()
-	enabled := m.enabled
+	enabled := m.settings.enabled
 	m.mu.RUnlock()
 	live, stopped := m.controller.state()
 	if enabled && !live && !stopped {

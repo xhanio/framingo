@@ -168,15 +168,34 @@ func TestInitUnknownExporterFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "not registered")
 }
 
+// A config block belongs to the exporter in effect: alone, it configures the
+// default exporter; with an exporter the config names, the block is that one's.
+func TestABlockFollowsTheExporterInEffect(t *testing.T) {
+	m := newManager(WithExporter(OTLPGRPC, map[string]any{"endpoint": "collector:4317"}))
+
+	require.NoError(t, m.Init(disabledCtx("metrics.config", map[string]any{"endpoint": "other:4317"})))
+	assert.Equal(t, OTLPGRPC, m.settings.exporterName)
+	assert.Equal(t, "other:4317", m.settings.exporterConfig["endpoint"], "the block alone configures the default exporter")
+
+	require.NoError(t, m.Init(disabledCtx("metrics.exporter", Stdout)))
+	assert.Equal(t, Stdout, m.settings.exporterName)
+	assert.Empty(t, m.settings.exporterConfig, "the default exporter's block is not another's")
+
+	require.NoError(t, m.Init(disabledCtx()))
+	assert.Equal(t, OTLPGRPC, m.settings.exporterName)
+	assert.Equal(t, "collector:4317", m.settings.exporterConfig["endpoint"], "neither key: the defaults")
+}
+
 func TestExporterConfigFromViper(t *testing.T) {
 	m := newManager() // disabled: Init records config and stops
-	require.NoError(t, m.Init(disabledCtx("metrics.config", map[string]any{
+	// the block is read with the exporter it belongs to
+	require.NoError(t, m.Init(disabledCtx("metrics.exporter", OTLPGRPC, "metrics.config", map[string]any{
 		"endpoint": "collector:4317",
 		"whatever": "the manager does not interpret keys",
 	})))
-	assert.Equal(t, "collector:4317", m.exporterConfig["endpoint"])
-	assert.Equal(t, "the manager does not interpret keys", m.exporterConfig["whatever"])
-	assert.Nil(t, newManager().exporterConfig)
+	assert.Equal(t, "collector:4317", m.settings.exporterConfig["endpoint"])
+	assert.Equal(t, "the manager does not interpret keys", m.settings.exporterConfig["whatever"])
+	assert.Nil(t, newManager().settings.exporterConfig)
 }
 
 func TestExporterOptionDoesNotEnable(t *testing.T) {
@@ -186,16 +205,28 @@ func TestExporterOptionDoesNotEnable(t *testing.T) {
 }
 
 func TestIntervalZeroMeansDefault(t *testing.T) {
-	assert.Equal(t, defaultInterval, newManager(WithInterval(0)).interval)
-	assert.Equal(t, 5*time.Second, newManager(WithInterval(5*time.Second)).interval)
+	assert.Equal(t, defaultInterval, newManager(WithInterval(0)).settings.interval)
+	assert.Equal(t, 5*time.Second, newManager(WithInterval(5*time.Second)).settings.interval)
 
+	m := newManager()
+	require.NoError(t, m.Init(disabledCtx("metrics.interval", "15s")))
+	assert.Equal(t, 15*time.Second, m.settings.interval)
+	require.NoError(t, m.Init(disabledCtx("metrics.interval", "0s")))
+	assert.Equal(t, defaultInterval, m.settings.interval, "a zero the config sets is unset too")
+}
+
+// A reloadable option is the baseline: a key the config sets overrides it at every
+// Init, and one a later config drops falls back to it, not to the last value read.
+func TestTheConfigOverridesTheOptionKeyByKey(t *testing.T) {
 	m := newManager(WithInterval(5 * time.Second))
 	require.NoError(t, m.Init(context.Background()))
-	assert.Equal(t, defaultInterval, m.interval)
+	assert.Equal(t, 5*time.Second, m.settings.interval, "no key: the option holds")
 
-	m = newManager()
 	require.NoError(t, m.Init(disabledCtx("metrics.interval", "15s")))
-	assert.Equal(t, 15*time.Second, m.interval)
+	assert.Equal(t, 15*time.Second, m.settings.interval, "the key overrides it")
+
+	require.NoError(t, m.Init(disabledCtx()))
+	assert.Equal(t, 5*time.Second, m.settings.interval, "the key dropped: back to the option")
 }
 
 func TestViperOverridesOptions(t *testing.T) {

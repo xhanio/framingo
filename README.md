@@ -180,7 +180,7 @@ Production-ready service implementations:
 - **[db](pkg/services/db/)** — Database manager (GORM)
   - Pluggable drivers under [db/drivers/](pkg/services/db/drivers/): PostgreSQL, MySQL, SQLite, ClickHouse — blank-import only the ones your binary needs (a SQLite-only binary drops ~17MB)
   - The SQLite driver uses [mattn/go-sqlite3](https://github.com/mattn/go-sqlite3), a cgo wrapper around the C library, so it needs `CGO_ENABLED=1` and a C toolchain. The other drivers are pure Go.
-  - Connection pooling (`WithConnection(maxOpen, maxIdle, maxLifetime, maxIdleTime, execTimeout)`)
+  - Connection pooling: `WithConnection(maxOpen, maxIdle, maxLifetime, maxIdleTime, execTimeout)` sets the pool's defaults, which `db.connection.*` overrides key by key at every `Init`
   - Migrations via `WithMigration(dir, version)` (`version` 0 = latest; an empty dir leaves the schema alone)
   - GORM plugins via `WithPlugins(...)` — [db/plugins/otelgorm](pkg/services/db/plugins/otelgorm/) traces every statement through a `model.Tracer`
   - Context-aware queries: `FromContext(ctx)` auto-extracts an active transaction
@@ -254,7 +254,7 @@ The module's root package is a command, versioned with the framework:
 
 - **[verify](pkg/tools/verify/)** — `framingo verify [dir...]`: gofmt, build, vet, the analyzers below, golangci-lint and the tests with `-race` for each module, every step run, one verdict at the end
 - **[docs](pkg/tools/docs/)** — `docs.Links` and `docs.Snippets`: a markdown link reaches its file and heading, and a Go snippet marked `<!-- source: path -->` says what that file says; the package's tests run both on this repository, check its version surfaces agree, and run `framingo verify` on an app laid out from the skill's templates
-- **[vet](pkg/tools/vet/)** — `framingo vet [packages]`: the framework's analyzers, run through `go vet`, one package per rule — `startctx` (a `Start` that keeps its context), `depslist` (a held service missing from `Dependencies`, or a condition in it), `platformfirst` (an app service's `New` not taking the platform first), `gormfield` (a `*gorm.DB` kept in a struct field outside db) and `confinit` (`confutil.FromContext` outside `Init`); `//framingo:ignore <rule> <reason>` opts a line out
+- **[vet](pkg/tools/vet/)** — `framingo vet [packages]`: the framework's analyzers, run through `go vet`, one package per rule — `startctx` (a `Start` that keeps its context), `depslist` (a held service missing from `Dependencies`, or a condition in it), `platformfirst` (an app service's `New` not taking the platform first), `gormfield` (a `*gorm.DB` kept in a struct field outside db), `confinit` (`confutil.FromContext` outside `Init`) and `optionclass` (an option in an `option.go` marked neither construction nor reloadable); `//framingo:ignore <rule> <reason>` opts a line out
 
 ### Data Structures (`pkg/structs/`)
 

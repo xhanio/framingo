@@ -15,10 +15,12 @@ type manager struct {
 	name string
 	log  log.Logger
 
-	dbtype     string
-	source     Source
-	migration  migrationConfig
-	connection connectionConfig
+	dbtype    string
+	source    Source
+	migration migrationConfig
+
+	defaults   connectionConfig // the built-in pool as WithConnection sets it, fixed at New
+	connection connectionConfig // the pool the last Init resolved from the defaults and the config
 
 	plugins []gorm.Plugin
 
@@ -43,6 +45,7 @@ func newManager(opts ...Option) *manager {
 	m := &manager{}
 	m.applyOptions(opts...)
 	m.setDefaults()
+	m.connection = m.defaults // what holds until the first Init
 	m.log = m.log.By(m)
 	return m
 }

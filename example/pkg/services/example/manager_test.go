@@ -78,7 +78,27 @@ func TestInitReadsGreetingUnderRoot(t *testing.T) {
 	v := viper.New()
 	v.Set("example.greeting", "hi there")
 	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
-	assert.Equal(t, "hi there", m.greeting)
+	assert.Equal(t, "hi there", m.settings.greeting)
+}
+
+// WithGreeting is the baseline: example.greeting overrides it at every Init, and a
+// config that drops the key falls back to it; neither set, the default.
+func TestTheGreetingIsLayered(t *testing.T) {
+	_, provider := testutil.NewMeterRecorder()
+	p := platform.New(nil, testutil.NewMeter(provider), nil, fakeMB{})
+	assert.Equal(t, "hello world!", newManager(p, fakeRepo{}).settings.greeting, "the default")
+
+	m := newManager(p, fakeRepo{}, WithGreeting("good day"))
+	require.NoError(t, m.Init(context.Background()))
+	assert.Equal(t, "good day", m.settings.greeting, "no key: the option holds")
+
+	v := viper.New()
+	v.Set("example.greeting", "hi there")
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
+	assert.Equal(t, "hi there", m.settings.greeting, "the key overrides it")
+
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(viper.New()))))
+	assert.Equal(t, "good day", m.settings.greeting, "the key dropped: back to the option")
 }
 
 // a restart re-inits while requests keep coming: the greeting it reloads is

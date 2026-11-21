@@ -319,14 +319,24 @@ import (
     "github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
-// In Init(ctx), read dynamic config under the service's root:
+// In Init(ctx), resolve the reloadable settings under the service's root, each
+// key over its default, and publish them whole:
 func (m *manager) Init(ctx context.Context) error {
     config := confutil.FromContext(ctx)
-    root := nameutil.ConfigRoot(m.name)
-    m.setting = config.GetString("%s.setting", root)
+    s := m.defaults // fixed at New: the built-in defaults as the options set them
+    s.setting = config.GetStringOr(s.setting, "%s.setting", nameutil.ConfigRoot(m.name))
+    m.mu.Lock()
+    m.settings = s
+    m.mu.Unlock()
     return nil
 }
 ```
+
+A setting `Init` reads is reloadable: its option sets the default, the config
+wins where it sets the key, and a key dropped at a reload falls back to the
+default. A setting it does not read is construction, fixed at `New`
+([design/config.md](../design/config.md),
+[app/services.md](../app/services.md#optiongo)).
 
 Every getter takes a **format string**: with no args it is the key itself (`GetString("my.setting")`), otherwise it is Sprintf-ed first. That is how a service reads under its own root instead of a hardcoded one — `nameutil.ConfigRoot(m.name)` is the whole name when `WithName` gave one, or the package segment of the auto name (`services/db/manager` → `db`); see [app/services.md](../app/services.md).
 

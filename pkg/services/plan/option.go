@@ -25,6 +25,8 @@ func (m *manager) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 // WithLogDir: one log file per run, a directory per plan; empty keeps none.
 func WithLogDir(dir string) Option {
 	return func(m *manager) {

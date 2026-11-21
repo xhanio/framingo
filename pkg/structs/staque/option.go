@@ -23,6 +23,8 @@ func (p *priority[T]) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithLessFunc[T PriorityItem](lf btree.LessFunc[T]) Option[T] {
 	return func(p *priority[T]) {
 		if lf != nil {

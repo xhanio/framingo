@@ -22,6 +22,8 @@ func (m *middleware) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 // WithLogger is stamped in New, after WithName, so a rename shows in the caller field.
 func WithLogger(logger log.Logger) Option {
 	return func(m *middleware) {

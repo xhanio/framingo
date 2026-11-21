@@ -5,18 +5,13 @@ import (
 	"io"
 
 	"github.com/xhanio/framingo/pkg/utils/confutil"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	config := confutil.FromContext(ctx)
-	root := nameutil.ConfigRoot(m.name)
-	// locked: requests read the greeting while a restart reloads it
+	s := m.resolve(confutil.FromContext(ctx))
+	// published whole: requests read the settings while a restart reloads them
 	m.mu.Lock()
-	m.applyOptions(
-		WithDynamicConfig(config.GetString("%s.greeting", root)),
-	)
-	m.setDefaults()
+	m.settings = s
 	m.mu.Unlock()
 	if m.inst == nil {
 		inst, err := m.newInstruments()

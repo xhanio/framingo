@@ -10,7 +10,7 @@ design note brought up to date.
 
 The lint config holds the import boundaries and the forbidden calls,
 `server.CheckRouter` a router's config against its handlers, `framingo vet`
-five rules that need types — a `Start`'s context, a service's `Dependencies`
+six rules that need types — a `Start`'s context, a service's `Dependencies`
 among them — the repository's tests its docs' links, marked snippets,
 version surfaces and the skill's templates, and `framingo verify` gives one
 verdict on a change

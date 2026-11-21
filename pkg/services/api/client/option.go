@@ -25,6 +25,8 @@ func (c *client) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithLogger(logger log.Logger) Option {
 	return func(c *client) {
 		c.log = logger

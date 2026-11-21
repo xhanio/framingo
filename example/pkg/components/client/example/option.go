@@ -6,6 +6,8 @@ import (
 
 type Option func(*cli)
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithEndpoint(endpoint string) Option {
 	return func(c *cli) {
 		c.endpoint = endpoint

@@ -12,27 +12,16 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/info"
 	"github.com/xhanio/framingo/pkg/utils/confutil"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	config := confutil.FromContext(ctx)
-	root := nameutil.ConfigRoot(m.name)
-	// reload through the constructor's options so setDefaults decides every zero;
-	// locked: probes, Info and the export loop read these fields
+	s := m.resolve(confutil.FromContext(ctx))
+	// published whole: probes, Info and the export loop read the settings
 	m.mu.Lock()
-	m.applyOptions(
-		WithEnabled(config.GetBool("%s.enabled", root)),
-		WithExporter(
-			config.GetString("%s.exporter", root),
-			config.GetStringMap("%s.config", root),
-		),
-		WithInterval(config.GetDuration("%s.interval", root)),
-	)
-	m.setDefaults()
-	enabled := m.enabled
+	m.settings = s
 	m.mu.Unlock()
+	enabled := s.enabled
 	// build before swapping so probes never see a gap; on failure still retire
 	// the old exporter so Alive reports the fault
 	if !enabled {
@@ -41,7 +30,7 @@ func (m *manager) Init(ctx context.Context) error {
 		}
 		return nil
 	}
-	exp, err := m.buildExporter(ctx)
+	exp, err := m.buildExporter(ctx, s)
 	if err != nil {
 		if serr := m.controller.shutdown(context.Background(), m.controller.retire(false)); serr != nil {
 			m.log.Warnf("failed to shut down retiring metrics exporter: %s", serr)
@@ -57,28 +46,28 @@ func (m *manager) Init(ctx context.Context) error {
 	return nil
 }
 
-// buildExporter reads config unlocked: Init is the only writer and calls it.
-func (m *manager) buildExporter(ctx context.Context) (sdkmetric.Exporter, error) {
+// buildExporter builds the exporter s names.
+func (m *manager) buildExporter(ctx context.Context, s settings) (sdkmetric.Exporter, error) {
 	if m.exporter != nil {
 		return m.exporter, nil
 	}
-	if m.exporterName == "" {
+	if s.exporterName == "" {
 		return nil, errors.Newf("metrics %s is enabled but no exporter is configured", m.Name())
 	}
-	f, err := lookupFactory(m.exporterName)
+	f, err := lookupFactory(s.exporterName)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
 	var raw []byte
-	if len(m.exporterConfig) > 0 {
-		if raw, err = yaml.Marshal(m.exporterConfig); err != nil {
+	if len(s.exporterConfig) > 0 {
+		if raw, err = yaml.Marshal(s.exporterConfig); err != nil {
 			return nil, errors.Wrapf(err, "invalid metrics exporter config")
 		}
 	}
 	// otlp connects lazily, so an unreachable collector does not fail the build
 	exp, err := f(ctx, raw)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to build %s metric exporter", m.exporterName)
+		return nil, errors.Wrapf(err, "failed to build %s metric exporter", s.exporterName)
 	}
 	return exp, nil
 }
@@ -138,7 +127,7 @@ func (m *manager) run(ctx context.Context) {
 func (m *manager) currentInterval() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.interval
+	return m.settings.interval
 }
 
 // Stop is idempotent; the final flush is best-effort, only a failed exporter
@@ -156,13 +145,12 @@ func (m *manager) Stop(ctx context.Context) error {
 
 func (m *manager) Info(w io.Writer, debug bool) {
 	m.mu.RLock()
-	enabled := m.enabled
-	exporter := m.exporterName
+	s := m.settings
+	m.mu.RUnlock()
+	enabled, exporter, interval := s.enabled, s.exporterName, s.interval
 	if m.exporter != nil {
 		exporter = "custom"
 	}
-	interval := m.interval
-	m.mu.RUnlock()
 	state := "idle"
 	if live, _ := m.controller.state(); live {
 		state = "exporting"

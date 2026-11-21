@@ -21,6 +21,8 @@ func (c *cmd) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithContext(ctx context.Context) Option {
 	return func(c *cmd) {
 		c.ctx = ctx

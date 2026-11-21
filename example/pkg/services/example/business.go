@@ -19,11 +19,8 @@ func (m *manager) HelloWorld(ctx context.Context, message string) (*entity.Hello
 		return nil, traceutil.Fail(span, errors.Unauthorized.Newf("credential not found in context"))
 	}
 	m.mu.RLock()
-	greeting := m.greeting
+	greeting := m.settings.greeting
 	m.mu.RUnlock()
-	if greeting == "" {
-		greeting = "hello world!"
-	}
 	m.log.Infof("%s %s from %s", greeting, message, credential.UserName)
 
 	result, err := m.repository.CreateHelloWorld(ctx, message)

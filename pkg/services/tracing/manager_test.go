@@ -182,8 +182,34 @@ func TestAKeptTracerUnderReInits(t *testing.T) {
 	require.NoError(t, m.Stop(context.Background()))
 }
 
+// A config block belongs to the exporter in effect: alone, it configures the
+// default exporter; with an exporter the config names, the block is that one's.
+func TestABlockFollowsTheExporterInEffect(t *testing.T) {
+	ctx := func(kv ...any) context.Context {
+		v := viper.New()
+		for i := 0; i+1 < len(kv); i += 2 {
+			v.Set(kv[i].(string), kv[i+1])
+		}
+		return confutil.WrapContext(context.Background(), confutil.New(v))
+	}
+	m := newManager(WithExporter(OTLPGRPC, map[string]any{"endpoint": "collector:4317"}))
+
+	require.NoError(t, m.Init(ctx("tracing.config", map[string]any{"endpoint": "other:4317"})))
+	assert.Equal(t, OTLPGRPC, m.settings.exporterName)
+	assert.Equal(t, "other:4317", m.settings.exporterConfig["endpoint"], "the block alone configures the default exporter")
+
+	require.NoError(t, m.Init(ctx("tracing.exporter", Stdout)))
+	assert.Equal(t, Stdout, m.settings.exporterName)
+	assert.Empty(t, m.settings.exporterConfig, "the default exporter's block is not another's")
+
+	require.NoError(t, m.Init(ctx()))
+	assert.Equal(t, OTLPGRPC, m.settings.exporterName)
+	assert.Equal(t, "collector:4317", m.settings.exporterConfig["endpoint"], "neither key: the defaults")
+}
+
 func TestExporterConfigFromViper(t *testing.T) {
 	v := viper.New()
+	v.Set("tracing.exporter", OTLPGRPC) // the block is read with the exporter it belongs to
 	v.Set("tracing.config", map[string]any{
 		"endpoint": "collector:4317",
 		"insecure": true,
@@ -195,10 +221,10 @@ func TestExporterConfigFromViper(t *testing.T) {
 
 	m := newManager() // disabled: Init records config and stops
 	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
-	assert.Equal(t, "collector:4317", m.exporterConfig["endpoint"])
-	assert.Equal(t, "the manager does not interpret keys", m.exporterConfig["whatever"])
+	assert.Equal(t, "collector:4317", m.settings.exporterConfig["endpoint"])
+	assert.Equal(t, "the manager does not interpret keys", m.settings.exporterConfig["whatever"])
 
-	assert.Nil(t, newManager().exporterConfig)
+	assert.Nil(t, newManager().settings.exporterConfig)
 }
 
 func TestWithEnabledAndConfigOverride(t *testing.T) {
@@ -216,18 +242,49 @@ func TestWithEnabledAndConfigOverride(t *testing.T) {
 }
 
 func TestSampleRatioZeroMeansDefault(t *testing.T) {
-	assert.Equal(t, 1.0, newManager(WithSampleRatio(0)).sampleRatio)
-	assert.Equal(t, 0.25, newManager(WithSampleRatio(0.25)).sampleRatio)
-
-	m := newManager(WithSampleRatio(0.25))
-	require.NoError(t, m.Init(context.Background()))
-	assert.Equal(t, 1.0, m.sampleRatio)
+	assert.Equal(t, 1.0, newManager(WithSampleRatio(0)).settings.sampleRatio)
+	assert.Equal(t, 0.25, newManager(WithSampleRatio(0.25)).settings.sampleRatio)
 
 	v := viper.New()
 	v.Set("tracing.sample_ratio", 0.25)
-	m = newManager()
+	m := newManager()
 	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
-	assert.Equal(t, 0.25, m.sampleRatio)
+	assert.Equal(t, 0.25, m.settings.sampleRatio)
+}
+
+// A reloadable option is the baseline: a key the config sets overrides it at every
+// Init, and one a later config drops falls back to it, not to the last value read.
+func TestTheConfigOverridesTheOptionKeyByKey(t *testing.T) {
+	m := newManager(WithSampleRatio(0.5))
+	require.NoError(t, m.Init(context.Background()))
+	assert.Equal(t, 0.5, m.settings.sampleRatio, "no key: the option holds")
+
+	v := viper.New()
+	v.Set("tracing.sample_ratio", 0.25)
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(v))))
+	assert.Equal(t, 0.25, m.settings.sampleRatio, "the key overrides it")
+
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(viper.New()))))
+	assert.Equal(t, 0.5, m.settings.sampleRatio, "the key dropped: back to the option")
+}
+
+// An option that enables tracing holds without a key, and the key turns it off.
+func TestAnEnablingOptionHoldsUntilTheConfigSaysOtherwise(t *testing.T) {
+	exp := tracetest.NewInMemoryExporter()
+	m := newTestManager(exp)
+	m.defaults.enabled = true
+	require.NoError(t, m.Init(context.Background()))
+	_, span := m.Provider().Tracer("test").Start(context.Background(), "op")
+	assert.True(t, span.IsRecording(), "on by the option")
+	span.End()
+
+	off := viper.New()
+	off.Set("tracing.enabled", false)
+	require.NoError(t, m.Init(confutil.WrapContext(context.Background(), confutil.New(off))))
+	_, span = m.Provider().Tracer("test").Start(context.Background(), "op")
+	assert.False(t, span.IsRecording(), "off by the key")
+	span.End()
+	require.NoError(t, m.Stop(context.Background()))
 }
 
 func TestExporterOptionDoesNotEnable(t *testing.T) {
@@ -426,9 +483,9 @@ func TestConfigRootFollowsName(t *testing.T) {
 
 	named := newManager(WithName("otel"))
 	require.NoError(t, named.Init(ctx))
-	assert.Equal(t, 0.25, named.sampleRatio)
+	assert.Equal(t, 0.25, named.settings.sampleRatio)
 
 	unnamed := newManager()
 	require.NoError(t, unnamed.Init(ctx))
-	assert.Equal(t, 0.5, unnamed.sampleRatio)
+	assert.Equal(t, 0.5, unnamed.settings.sampleRatio)
 }

@@ -8,6 +8,8 @@ func (m *manager) applyOptions(opts ...Option) {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 func WithCertFile(certFile, caFile, keyFile string) Option {
 	return func(m *manager) {
 		m.certFile = certFile

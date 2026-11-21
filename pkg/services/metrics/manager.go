@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"sync"
-	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -19,10 +18,8 @@ type manager struct {
 	name string
 	log  log.Logger
 
-	enabled        bool
-	exporterName   string
-	exporterConfig map[string]any
-	interval       time.Duration
+	defaults settings // the built-in defaults as the options set them, fixed at New
+	settings settings // what the last Init resolved from the defaults and the config
 
 	// exporter is the tests' seam bypassing the registry; nil means Init builds one.
 	exporter sdkmetric.Exporter
@@ -31,7 +28,7 @@ type manager struct {
 	provider *sdkmetric.MeterProvider
 	reader   *sdkmetric.ManualReader
 
-	// mu guards enabled, exporterName, exporterConfig and interval.
+	// mu guards settings.
 	mu         sync.RWMutex
 	controller *controller
 
@@ -51,6 +48,7 @@ func newManager(opts ...Option) *manager {
 	}
 	m.applyOptions(opts...)
 	m.setDefaults()
+	m.settings = m.defaults // what holds until the first Init
 	m.log = m.log.By(m)
 	// omit unset attributes rather than blank them, so backends show their placeholder
 	var attrs []attribute.KeyValue

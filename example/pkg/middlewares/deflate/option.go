@@ -19,6 +19,8 @@ func (m *middleware) setDefaults() {
 	}
 }
 
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+
 // WithName also renames the config key, so two instances can run side by side.
 func WithName(name string) Option {
 	return func(m *middleware) {

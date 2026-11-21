@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/xhanio/framingo/pkg/utils/confutil"
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/nameutil"
 )
@@ -32,19 +33,49 @@ func (m *manager) setDefaults() {
 		m.name = nameutil.Name(m)
 	}
 	// MaxIdleTime has no default: zero (never idle out) is a real choice
-	if m.connection.MaxOpen == 0 {
-		m.connection.MaxOpen = defaultMaxOpen
+	if m.defaults.MaxOpen == 0 {
+		m.defaults.MaxOpen = defaultMaxOpen
 	}
-	if m.connection.MaxIdle == 0 {
-		m.connection.MaxIdle = defaultMaxIdle
+	if m.defaults.MaxIdle == 0 {
+		m.defaults.MaxIdle = defaultMaxIdle
 	}
-	if m.connection.MaxLifetime == 0 {
-		m.connection.MaxLifetime = defaultMaxLifetime
+	if m.defaults.MaxLifetime == 0 {
+		m.defaults.MaxLifetime = defaultMaxLifetime
 	}
-	if m.connection.ExecTimeout == 0 {
-		m.connection.ExecTimeout = defaultExecTimeout
+	if m.defaults.ExecTimeout == 0 {
+		m.defaults.ExecTimeout = defaultExecTimeout
 	}
 }
+
+// resolve is the pool of a start, read under db.connection.* (or <name>.connection.*):
+// the defaults, each key config sets overriding one, a zero falling back to its
+// default (design/config.md).
+func (m *manager) resolve(config confutil.Config) connectionConfig {
+	c := m.defaults
+	root := nameutil.ConfigRoot(m.name)
+	c.MaxOpen = config.GetIntOr(c.MaxOpen, "%s.connection.max_open", root)
+	c.MaxIdle = config.GetIntOr(c.MaxIdle, "%s.connection.max_idle", root)
+	c.MaxLifetime = config.GetDurationOr(c.MaxLifetime, "%s.connection.max_lifetime", root)
+	c.MaxIdleTime = config.GetDurationOr(c.MaxIdleTime, "%s.connection.max_idle_time", root)
+	c.ExecTimeout = config.GetDurationOr(c.ExecTimeout, "%s.connection.exec_timeout", root)
+	// a zero MaxIdleTime is a real choice, never idle out, and stays
+	if c.MaxOpen == 0 {
+		c.MaxOpen = m.defaults.MaxOpen
+	}
+	if c.MaxIdle == 0 {
+		c.MaxIdle = m.defaults.MaxIdle
+	}
+	if c.MaxLifetime == 0 {
+		c.MaxLifetime = m.defaults.MaxLifetime
+	}
+	if c.ExecTimeout == 0 {
+		c.ExecTimeout = m.defaults.ExecTimeout
+	}
+	return c
+}
+
+// Construction options: fixed for the instance's life, set at New (design/config.md).
+// The data source, type and migration among them: a change needs a new process.
 
 func WithLogger(logger log.Logger) Option {
 	return func(m *manager) {
@@ -80,22 +111,27 @@ func WithMigration(sqlDir string, version uint) Option {
 	}
 }
 
-// WithConnection treats zeros as unset; setDefaults fills them.
+// WithPlugins appends; plugins are reinstalled in order on every connect.
+func WithPlugins(plugins ...gorm.Plugin) Option {
+	return func(m *manager) {
+		m.plugins = append(m.plugins, plugins...)
+	}
+}
+
+// Reloadable options: each sets the default of a key Init re-reads at every start;
+// where the config sets the key, the config wins (design/config.md).
+
+// WithConnection sets the defaults of db.connection.max_open, max_idle, max_lifetime,
+// max_idle_time and exec_timeout, themselves 10, 5, 5m, never and 30s, a zero being
+// unset.
 func WithConnection(maxOpen int, maxIdle int, maxLifetime time.Duration, maxIdleTime time.Duration, execTimeout time.Duration) Option {
 	return func(m *manager) {
-		m.connection = connectionConfig{
+		m.defaults = connectionConfig{
 			MaxOpen:     maxOpen,
 			MaxIdle:     maxIdle,
 			MaxLifetime: maxLifetime,
 			MaxIdleTime: maxIdleTime,
 			ExecTimeout: execTimeout,
 		}
-	}
-}
-
-// WithPlugins appends; plugins are reinstalled in order on every connect.
-func WithPlugins(plugins ...gorm.Plugin) Option {
-	return func(m *manager) {
-		m.plugins = append(m.plugins, plugins...)
 	}
 }

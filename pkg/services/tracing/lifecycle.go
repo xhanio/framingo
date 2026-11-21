@@ -13,27 +13,16 @@ import (
 
 	"github.com/xhanio/framingo/pkg/types/info"
 	"github.com/xhanio/framingo/pkg/utils/confutil"
-	"github.com/xhanio/framingo/pkg/utils/nameutil"
 	"github.com/xhanio/framingo/pkg/utils/printutil"
 )
 
 func (m *manager) Init(ctx context.Context) error {
-	config := confutil.FromContext(ctx)
-	root := nameutil.ConfigRoot(m.name)
-	// reload through the constructor's options so setDefaults decides every zero;
-	// locked: probes and Info read these fields concurrently
+	s := m.resolve(confutil.FromContext(ctx))
+	// published whole: probes and Info read the settings concurrently
 	m.mu.Lock()
-	m.applyOptions(
-		WithEnabled(config.GetBool("%s.enabled", root)),
-		WithExporter(
-			config.GetString("%s.exporter", root),
-			config.GetStringMap("%s.config", root),
-		),
-		WithSampleRatio(config.GetFloat64("%s.sample_ratio", root)),
-	)
-	m.setDefaults()
-	enabled := m.enabled
+	m.settings = s
 	m.mu.Unlock()
+	enabled := s.enabled
 	// a failed flush loses buffered spans, never the restart
 	if err := m.controller.flush(context.Background(), m.controller.retire(false)); err != nil {
 		m.log.Warnf("failed to flush retiring tracer provider: %s", err)
@@ -41,7 +30,7 @@ func (m *manager) Init(ctx context.Context) error {
 	if !enabled {
 		return nil
 	}
-	exp, err := m.buildExporter(ctx)
+	exp, err := m.buildExporter(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -55,35 +44,35 @@ func (m *manager) Init(ctx context.Context) error {
 	}
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithResource(resource.NewWithAttributes(semconv.SchemaURL, attrs...)),
-		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(m.sampleRatio))),
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(s.sampleRatio))),
 		sdktrace.WithBatcher(exp),
 	)
 	m.controller.promote(tp)
 	return nil
 }
 
-// buildExporter reads config unlocked: Init is the only writer and calls it.
-func (m *manager) buildExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
+// buildExporter builds the exporter s names.
+func (m *manager) buildExporter(ctx context.Context, s settings) (sdktrace.SpanExporter, error) {
 	if m.exporter != nil {
 		return m.exporter, nil
 	}
-	if m.exporterName == "" {
+	if s.exporterName == "" {
 		return nil, errors.Newf("tracing %s is enabled but no exporter is configured", m.Name())
 	}
-	f, err := lookupFactory(m.exporterName)
+	f, err := lookupFactory(s.exporterName)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
 	var raw []byte
-	if len(m.exporterConfig) > 0 {
-		if raw, err = yaml.Marshal(m.exporterConfig); err != nil {
+	if len(s.exporterConfig) > 0 {
+		if raw, err = yaml.Marshal(s.exporterConfig); err != nil {
 			return nil, errors.Wrapf(err, "invalid tracing exporter config")
 		}
 	}
 	// otlp connects lazily, so an unreachable collector does not fail the build
 	exp, err := f(ctx, raw)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to build %s span exporter", m.exporterName)
+		return nil, errors.Wrapf(err, "failed to build %s span exporter", s.exporterName)
 	}
 	return exp, nil
 }
@@ -99,13 +88,12 @@ func (m *manager) Stop(ctx context.Context) error {
 
 func (m *manager) Info(w io.Writer, debug bool) {
 	m.mu.RLock()
-	enabled := m.enabled
-	exporter := m.exporterName
+	s := m.settings
+	m.mu.RUnlock()
+	enabled, exporter, sampleRatio := s.enabled, s.exporterName, s.sampleRatio
 	if m.exporter != nil {
 		exporter = "custom"
 	}
-	sampleRatio := m.sampleRatio
-	m.mu.RUnlock()
 	state := "noop"
 	if live, _ := m.controller.state(); live {
 		state = "active"
