@@ -2,7 +2,42 @@
 version: "2"
 
 linters:
+  enable:
+    - depguard
+    - forbidigo
   settings:
+    # import boundaries: design/narrow-contracts.md and design/data-access.md
+    depguard:
+      rules:
+        errors:
+          files: ["!$test"]
+          deny:
+            - pkg: errors
+              desc: use github.com/xhanio/errors, which categorizes and wraps
+        routers:
+          files: ["**/pkg/routers/**"]
+          deny:
+            - pkg: github.com/xhanio/framingo/example/pkg/services
+              desc: a router holds a types/model interface, never a service package (design/narrow-contracts.md)
+        services:
+          list-mode: lax
+          files: ["**/pkg/services/**", "!$test"]
+          allow:
+            - github.com/xhanio/framingo/example/pkg/services/system/platform
+          deny:
+            - pkg: github.com/xhanio/framingo/example/pkg/services
+              desc: services do not import each other, the platform aside (design/narrow-contracts.md)
+        orm:
+          files: ["!**/pkg/services/repository/**", "!**/pkg/types/orm/**", "!$test"]
+          deny:
+            - pkg: github.com/xhanio/framingo/example/pkg/types/orm
+              desc: orm types never leave the repository (design/data-access.md)
+    forbidigo:
+      forbid:
+        - pattern: ^otel\.(Get|Set)\w+$
+          msg: no otel globals, pass the handle (model.Tracer, model.Meter)
+        - pattern: ^fmt\.Errorf$
+          msg: use github.com/xhanio/errors
     errcheck:
       # calls whose error nothing can act on
       exclude-functions:
@@ -17,6 +52,10 @@ linters:
       - path: _test\.go
         linters: [errcheck]
         text: Close
+      # a test's stub errors
+      - path: _test\.go
+        linters: [forbidigo]
+        text: fmt\.Errorf
 
 issues:
   # report everything: the defaults stop at 50 per linter and 3 of a kind

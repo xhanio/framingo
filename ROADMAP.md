@@ -6,6 +6,28 @@ what it is and where it stands, and links to the design note that holds the
 reasoning. A finished item is deleted — git history keeps it — and its
 design note brought up to date.
 
+## Checks
+
+The lint config holds the import boundaries and the forbidden calls
+([design/checks.md](plugins/framingo/skills/framingo/design/checks.md)).
+Next, in order:
+
+- **The router check in the framework.** Registration fails on a handler
+  `router.yaml` names that `Handlers()` lacks, but a handler whose signature
+  discovery skips is caught only by `TestHandlersCoverConfig`, which each of
+  the example's seven routers repeats; a framework test helper makes it one
+  line, and checks each handler's permission is one rbac defines.
+- **Analyzers, in `tools/vet/`.** A module of its own, so the framework
+  takes no `golang.org/x/tools`; run as `go vet -vettool` and as a
+  golangci-lint plugin, for apps as for the framework. First `startctx` (a
+  `Start` keeping its context, or deriving from it without `WithoutCancel`)
+  and `depslist` (a held `common.Service` missing from `Dependencies`); then
+  `platformfirst`, `gormfield` (a `*gorm.DB` kept in a field outside db) and
+  `confinit` (`confutil.FromContext` outside `Init`).
+- **The docs and a release, verified.** A doc's snippet against the function
+  it copies, every markdown link and anchor, the four version surfaces
+  agreeing — what a doc review and a release check by hand today.
+
 ## Sessions in a shared store
 
 The example keeps its sessions in one process's memory: a second replica
@@ -40,10 +62,6 @@ would not know them, and a user's sessions end only when an event says so.
 
 ## Routers
 
-- **The router check in the framework.** Registration fails on a handler
-  `router.yaml` names that `Handlers()` lacks, but a handler whose signature
-  discovery skips is caught only by `TestHandlersCoverConfig`, which each of
-  the example's seven routers repeats; a framework helper makes it one line.
 - **Candidate, not designed:** OpenAPI generated from `router.yaml` and the
   api types.
 

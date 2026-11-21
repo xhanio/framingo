@@ -171,9 +171,9 @@ func (p *recordingMeterProvider) wasCalled() bool {
 
 func TestMetricsReportingStaysOffTheOtelGlobals(t *testing.T) {
 	mp := &recordingMeterProvider{}
-	otel.SetMeterProvider(mp)
+	otel.SetMeterProvider(mp) //nolint:forbidigo // the global is the bait: the test proves nothing reads it
 	// not the previous value: otel rejects re-setting its own delegator
-	t.Cleanup(func() { otel.SetMeterProvider(metricnoop.NewMeterProvider()) })
+	t.Cleanup(func() { otel.SetMeterProvider(metricnoop.NewMeterProvider()) }) //nolint:forbidigo // as above
 
 	_, tp := testutil.NewRecorder()
 	tr := testutil.NewTracer(tp)

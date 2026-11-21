@@ -77,6 +77,7 @@ One file per concept, in two halves — `pkgs/` is how to **use framingo's packa
 | [design/config.md](design/config.md) | Config read in `Init` from the context, a restart as the reload; a reload published whole; the file re-read on SIGHUP alone |
 | [design/websockets.md](design/websockets.md) | `wsutil.Bridge`, `wsutil.Close`, the server closing its connections on stop |
 | [design/certificates.md](design/certificates.md) | CSRs keep the requester's key; a server CA and an agent CA; CA keys in the database alone; downloads encoded as the caller asks; TLS verifies each side against the CAs it is given |
+| [design/checks.md](design/checks.md) | Which decisions a machine checks, and by what: the lint config's import boundaries and forbidden calls |
 | [design/migrations.md](design/migrations.md) | Migrate on start locally, once per release in prod (`exampleapp migrate`), env-overridable config |
 
 ## Starting a New Backend
@@ -122,6 +123,9 @@ cp <skill>/_templates/{router.go,handler.go,router.yaml} pkg/routers/order/
 # The service's two interface halves (see app/services.md)
 cp <skill>/_templates/types-model-order.go    pkg/types/model/order.go
 cp <skill>/_templates/services-order-model.go pkg/services/order/model.go
+
+# The lint config that keeps the layout's import boundaries (see design/checks.md)
+cp <skill>/_templates/golangci.yml .golangci.yml
 ```
 
 All five `types/` subdirs are part of the layout ([app/layout.md](app/layout.md)); `model/` in particular is **not optional** — the router template imports `myapp/pkg/types/model`.
