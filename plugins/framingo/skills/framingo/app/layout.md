@@ -78,6 +78,7 @@ pkg/
 │   ├── api/ entity/ model/ orm/ repo/    # the five core categories
 │   └── message/ preset/ rbac/            # grown as the app needed them
 └── utils/
+    ├── apitest/                 # test helpers for routers: CheckRouter
     └── infra/                   # process-wide state: Debug, StartTime, SerialNumber, ConfigDir, EnvPrefix
 ```
 

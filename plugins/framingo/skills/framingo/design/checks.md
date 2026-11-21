@@ -7,7 +7,8 @@ the cheapest means that can, and the check's message names the design note it
 enforces. What cannot be — "the repository decides nothing" — stays with
 review, and is said to. The first means is a golangci-lint config: the
 repository's own `.golangci.yml`, and `_templates/golangci.yml` for an app
-built on the layout.
+built on the layout. What is not Go source takes a test: `router.yaml`
+against its handlers.
 
 | Check | Holds | Decided in |
 |---|---|---|
@@ -17,6 +18,8 @@ built on the layout.
 | depguard `errors`, forbidigo `fmt.Errorf` | errors come from `xhanio/errors`, which categorizes and wraps | — |
 | forbidigo `otel.Get*`/`Set*` | no otel globals: a handle is passed | — |
 | errcheck | a file's own `Close` is checked: a write the OS deferred fails there | — |
+| `server.CheckRouter`, in each router's test | every `func:` in `router.yaml` is a discovered handler whose signature fits its method; no route twice | [who-decides.md](who-decides.md) |
+| the example's `apitest.CheckRouter` | a declared `permission:` is one `rbac` defines | [who-decides.md](who-decides.md) |
 
 The boundary rules bind non-test files: a service's test builds the real
 repository, and migrates `types/orm` tables to do it, as a middleware's
@@ -35,5 +38,4 @@ only code laid out that way.
 
 What needs types rather than import paths — `Start` keeping its context,
 `Dependencies` missing a held service, a `*gorm.DB` kept in a field — and
-what is not Go: `router.yaml` against its handlers, the docs' snippets
-against the code. The repository's `ROADMAP.md` plans both.
+the docs' snippets against the code. The repository's `ROADMAP.md` plans both.

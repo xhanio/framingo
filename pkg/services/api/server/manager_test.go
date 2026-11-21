@@ -1185,3 +1185,25 @@ func TestAddRefusesHTTPSWithoutAKey(t *testing.T) {
 	assert.True(t, err != nil && errors.Is(err, errors.InvalidArgument), "a certificate without its key: got %v", err)
 	require.NoError(t, m.Add("https", WithEndpoint("127.0.0.1", 8443, "/"), WithTLS(signed)), "with its key")
 }
+
+// CheckRouter is registration without a server: what would fail startup fails here.
+func TestCheckRouter(t *testing.T) {
+	config := []byte("server: http\nprefix: /orders\nhandlers:\n  - method: get\n    path: /:id\n    func: Get\n    permission: order_read\n")
+	routes, err := CheckRouter(&mockRouter{name: "orders", config: config, handlers: map[string]any{"Get": okHandler}})
+	require.NoError(t, err)
+	assert.Equal(t, []Route{{Server: "http", Prefix: "/orders", Method: "GET", Path: "/orders/:id", Func: "Get", Permission: "order_read"}}, routes)
+
+	_, err = CheckRouter(&mockRouter{name: "orders", config: config, handlers: map[string]any{"List": okHandler}})
+	assert.True(t, err != nil && errors.Is(err, errors.NotImplemented), "a func Handlers lacks: got %v", err)
+
+	_, err = CheckRouter(&mockRouter{name: "orders", config: config, handlers: map[string]any{"Get": func() {}}})
+	assert.ErrorContains(t, err, "unsupported signature")
+
+	noServer := []byte("prefix: /orders\nhandlers:\n  - method: GET\n    path: /\n    func: Get\n")
+	_, err = CheckRouter(&mockRouter{name: "orders", config: noServer, handlers: map[string]any{"Get": okHandler}})
+	assert.ErrorContains(t, err, "server name not specified")
+
+	twice := append(append([]byte{}, config...), []byte("  - method: GET\n    path: /:id\n    func: Get\n")...)
+	_, err = CheckRouter(&mockRouter{name: "orders", config: twice, handlers: map[string]any{"Get": okHandler}})
+	assert.True(t, err != nil && errors.Is(err, errors.Conflict), "a route declared twice: got %v", err)
+}

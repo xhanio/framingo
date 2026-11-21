@@ -8,15 +8,11 @@ design note brought up to date.
 
 ## Checks
 
-The lint config holds the import boundaries and the forbidden calls
+The lint config holds the import boundaries and the forbidden calls, and
+`server.CheckRouter` a router's config against its handlers
 ([design/checks.md](plugins/framingo/skills/framingo/design/checks.md)).
 Next, in order:
 
-- **The router check in the framework.** Registration fails on a handler
-  `router.yaml` names that `Handlers()` lacks, but a handler whose signature
-  discovery skips is caught only by `TestHandlersCoverConfig`, which each of
-  the example's seven routers repeats; a framework test helper makes it one
-  line, and checks each handler's permission is one rbac defines.
 - **Analyzers, in `tools/vet/`.** A module of its own, so the framework
   takes no `golang.org/x/tools`; run as `go vet -vettool` and as a
   golangci-lint plugin, for apps as for the framework. First `startctx` (a
