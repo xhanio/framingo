@@ -112,9 +112,10 @@ func failure(err error) error {
 	return err
 }
 
-// PeerGone reports whether err means the peer left, hanging up or sending a close
-// frame. ReadFirst returns such an error as is; a handler tells it from a refused
-// handshake by PeerGone, to log the two apart.
+// PeerGone reports whether err means the connection went under a read: the peer hung up
+// or sent a close frame, or the server closed the connection. A handler tells it from a
+// refused handshake by PeerGone, to log the two apart; a context's end is neither, and
+// ReadFirst returns it as ctx.Err().
 func PeerGone(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) ||
 		websocket.CloseStatus(err) != -1

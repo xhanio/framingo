@@ -10,12 +10,18 @@ import (
 )
 
 // ReadFirst decodes the connection's first frame, JSON, into a T — a handshake such as a
-// registration — waiting no longer than timeout.
+// registration — waiting no longer than timeout. Short of a frame it returns one of three
+// errors, the handler's to return:
+//   - the peer left first: the read's error as is, for Close to release the connection
+//     quietly; PeerGone reports it.
+//   - ctx ended first: ctx.Err(). The read under ctx has torn the connection down, so
+//     nothing more is sent. framingo's api server never ends a WebSocket request's
+//     context: on stop it closes the connection, and the read sees a peer gone.
+//   - no frame in time, or one that does not decode: CloseWith(StatusPolicyViolation,
+//     reason), reason naming the handshake.
 //
-// If the peer leaves first, it returns the read's error as is, for Close to release the
-// connection quietly. If no frame comes in time, or the frame does not decode, it returns
-// CloseWith(StatusPolicyViolation, reason), reason naming the handshake. PeerGone tells
-// the two apart. Checking what the frame holds is the caller's, refusing one with
+// A handler logging refusals skips the first by PeerGone and the second by ctx.Err().
+// Checking what the frame holds is the caller's, refusing one with
 // CloseWithCause(StatusPolicyViolation, reason, why).
 //
 // The read runs on a goroutine of its own rather than under a context with the timeout,
@@ -42,6 +48,8 @@ func ReadFirst[T any](ctx context.Context, conn *websocket.Conn, timeout time.Du
 		return first, CloseWithCause(websocket.StatusPolicyViolation, reason, errors.Newf("no frame within %s", timeout))
 	case r := <-reads:
 		switch {
+		case r.err != nil && ctx.Err() != nil: // the read saw ctx end before select did
+			return first, ctx.Err()
 		case r.err != nil && PeerGone(r.err):
 			return first, r.err
 		case r.err != nil:
