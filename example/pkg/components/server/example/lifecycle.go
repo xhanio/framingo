@@ -63,8 +63,11 @@ func (m *manager) Init(ctx context.Context) error {
 		m.messagebus.Register(svc)
 	}
 
+	// the supervisor waits at Init until every service inits (WithInitPolicy);
+	// an Init it gives up on, the boot canceled, ends the boot. A reload starts
+	// what it can instead (config.go)
 	if err := m.services.Init(ctx); err != nil {
-		m.log.Error(err)
+		return errors.Wrap(err)
 	}
 
 	if err := m.initAPI(); err != nil {

@@ -56,9 +56,9 @@ func (m *manager) reload(ctx context.Context) error {
 	if err := m.config.ReadInConfig(); err != nil {
 		m.log.Errorf("failed to re-read config file %s, starting on the config already read: %s", configFile, err)
 	}
-	// a failed Init still starts what it can, as at boot: the supervisor
-	// starts no service whose Init or dependencies failed, and the monitor
-	// restarts those
+	// unlike the boot, a failed Init starts what it can: the process is
+	// serving, the error is logged and in /readyz, and the supervisor starts
+	// no service whose Init or dependencies failed, for the monitor to restart
 	initErr := m.services.Init(ctx)
 	return errors.Wrap(errors.Combine(initErr, m.services.Start(ctx)))
 }

@@ -8,6 +8,8 @@ import (
 	"github.com/xhanio/framingo/pkg/types/entity"
 )
 
+// Plan holds runtime state alone: a stop forgets every plan added, so a
+// dependent that adds plans is a common.Reconcilable, and adds them again.
 type Plan interface {
 	common.Service
 	// Add copies the plan, which needs an ID, a kind and a Task with Schedule or
