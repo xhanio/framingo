@@ -11,6 +11,7 @@ import (
 	"github.com/xhanio/framingo/pkg/utils/log"
 	"github.com/xhanio/framingo/pkg/utils/sliceutil"
 
+	"github.com/xhanio/framingo/example/pkg/types/entity"
 	"github.com/xhanio/framingo/example/pkg/types/model"
 	"github.com/xhanio/framingo/example/pkg/types/preset"
 )
@@ -61,7 +62,7 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 			if err != nil {
 				return errors.Unauthorized.Wrap(err)
 			}
-			c.Set(fapi.ContextKeyCredential, credential)
+			fapi.SetContext(c, entity.WithCredential(c.Request().Context(), credential))
 		} else {
 			sessionID := sliceutil.First(
 				c.Request().Header.Get(fapi.HeaderKeySession),
@@ -91,8 +92,8 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 			session.Lease.Refresh(preset.SessionExpiration)
 			// }
 			// the credential is shared by the whole session: never write derived state onto it
-			c.Set(fapi.ContextKeySession, session)
-			c.Set(fapi.ContextKeyCredential, session.Credential)
+			ctx := entity.WithSession(c.Request().Context(), session)
+			fapi.SetContext(c, entity.WithCredential(ctx, session.Credential))
 		}
 		return next(c)
 	}

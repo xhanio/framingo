@@ -63,15 +63,7 @@ func (c *ctx) Credential() (*entity.Credential, bool) {
 }
 
 func (c *ctx) Session() (*entity.Session, bool) {
-	session := c.Get(api.ContextKeySession)
-	if session == nil {
-		return nil, false
-	}
-	sess, ok := session.(*entity.Session)
-	if !ok {
-		return nil, false
-	}
-	return sess, true
+	return entity.SessionFrom(c)
 }
 
 func (c *ctx) TraceID() (string, bool) {

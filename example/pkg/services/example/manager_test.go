@@ -14,7 +14,6 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/services/supervisor"
-	"github.com/xhanio/framingo/pkg/types/api"
 	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/types/info"
 	fmodel "github.com/xhanio/framingo/pkg/types/model"
@@ -57,8 +56,7 @@ func TestHelloWorldIncrementsCounter(t *testing.T) {
 	m := newManager(platform.New(nil, testutil.NewMeter(provider), nil, fakeMB{}), fakeRepo{})
 	require.NoError(t, m.Init(context.Background()))
 
-	//nolint:staticcheck // SA1029: intentional, the api context keys are shared with echo's string-keyed store
-	ctx := context.WithValue(context.Background(), api.ContextKeyCredential, &entity.Credential{UserName: "tester"})
+	ctx := entity.WithCredential(context.Background(), &entity.Credential{UserName: "tester"})
 	_, err := m.HelloWorld(ctx, "hi")
 	require.NoError(t, err)
 	_, err = m.HelloWorld(ctx, "again")
@@ -110,8 +108,7 @@ func TestReInitUnderRequests(t *testing.T) {
 	ctx := confutil.WrapContext(context.Background(), confutil.New(v))
 	require.NoError(t, m.Init(ctx))
 
-	//nolint:staticcheck // SA1029: intentional, the api context keys are shared with echo's string-keyed store
-	reqCtx := context.WithValue(context.Background(), api.ContextKeyCredential, &entity.Credential{UserName: "tester"})
+	reqCtx := entity.WithCredential(context.Background(), &entity.Credential{UserName: "tester"})
 	// no t calls while the two run: t's own lock would order them and hide a race
 	stop := make(chan struct{})
 	var wg sync.WaitGroup

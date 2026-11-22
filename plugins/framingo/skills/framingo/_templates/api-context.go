@@ -189,14 +189,23 @@ func DiscoverHandlers(r any) map[string]any {
 // signatures stay `func(c api.Context) error`.
 //
 // Example, over your own pkg/types/entity package. Put the reader in entity,
-// so services read the credential the same way handlers do:
+// so services read the credential the same way handlers do, and its writer
+// beside it, for your authentication middleware:
 //
-//	// pkg/types/entity: works on c itself, because Value above answers
-//	// string keys from echo's store - pass c, not c.Request().Context()
+//	// pkg/types/entity: on c, Value above answers from echo's store, then the
+//	// request's context; a middleware passes c.Request().Context()
 //	func CredentialFrom(ctx context.Context) (*Credential, bool) {
 //	    cred, ok := ctx.Value(common.ContextKeyCredential).(*Credential)
 //	    return cred, ok && cred != nil
 //	}
+//
+//	func WithCredential(ctx context.Context, cred *Credential) context.Context {
+//	    //nolint:staticcheck // SA1029: framingo's keys are strings, shared with echo's store
+//	    return context.WithValue(ctx, common.ContextKeyCredential, cred)
+//	}
+//
+//	// in the authentication middleware, which holds an echo.Context:
+//	fapi.SetContext(c, entity.WithCredential(c.Request().Context(), cred))
 //
 //	// in the Context interface:
 //	Credential() (*entity.Credential, bool)
@@ -206,7 +215,9 @@ func DiscoverHandlers(r any) map[string]any {
 //	    return entity.CredentialFrom(c)
 //	}
 //
-// The value is whatever your authentication middleware stored under
-// fapi.ContextKeyCredential (= common.ContextKeyCredential). Framingo defines
-// the key; the type is yours. Session() over fapi.ContextKeySession follows
-// the same shape: c.Get the key, then assert your *entity.Session.
+// The request's context, not echo's store, because echo resets the store for
+// the next request once the handler returns, while a goroutine the request
+// started may still read the credential. Framingo defines the key
+// (fapi.ContextKeyCredential = common.ContextKeyCredential); the type is
+// yours. Session() over fapi.ContextKeySession follows the same shape:
+// entity.SessionFrom beside entity.WithSession.

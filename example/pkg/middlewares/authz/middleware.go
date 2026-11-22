@@ -50,9 +50,8 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 
 func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		credential := c.Get(fapi.ContextKeyCredential)
-		cred, ok := credential.(*entity.Credential)
-		if cred == nil || !ok {
+		cred, ok := entity.CredentialFrom(c.Request().Context())
+		if !ok {
 			return errors.Unauthorized
 		}
 		if cred.RequirePasswordReset {

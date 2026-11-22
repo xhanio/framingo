@@ -40,7 +40,7 @@ func serve(t *testing.T, cred *entity.Credential, permission string) (bool, erro
 	}
 	c := echo.New().NewContext(httptest.NewRequest(http.MethodGet, "/things", nil), httptest.NewRecorder())
 	if cred != nil {
-		c.Set(fapi.ContextKeyCredential, cred)
+		fapi.SetContext(c, entity.WithCredential(c.Request().Context(), cred))
 	}
 	c.Set(fapi.ContextKeyRequestInfo, &fapi.RequestInfo{Permission: permission})
 	reached := false

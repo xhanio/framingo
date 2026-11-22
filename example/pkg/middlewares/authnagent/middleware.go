@@ -87,7 +87,7 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 						Source:  preset.AuthSourceAgent,
 						AgentID: parts[1],
 					}
-					c.Set(fapi.ContextKeyCredential, credential)
+					fapi.SetContext(c, entity.WithCredential(c.Request().Context(), credential))
 				}
 			}
 		} else {
@@ -129,7 +129,7 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 					Source:  preset.AuthSourceAgent,
 					AgentID: parts[1],
 				}
-				c.Set(fapi.ContextKeyCredential, credential)
+				fapi.SetContext(c, entity.WithCredential(c.Request().Context(), credential))
 			}
 		}
 		return next(c)

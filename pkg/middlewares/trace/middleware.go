@@ -71,7 +71,7 @@ func (m *middleware) Func(enabled bool, config []byte) (func(echo.HandlerFunc) e
 				),
 			)
 			defer span.End()
-			c.SetRequest(r.WithContext(ctx))
+			fapi.SetContext(c, ctx)
 
 			err := next(c)
 
