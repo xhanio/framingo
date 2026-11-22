@@ -92,7 +92,7 @@ func TestReadFirst_APeerGoneIsReleasedQuietly(t *testing.T) {
 // A context ending before the handshake is ctx.Err() itself, whichever wait saw it first:
 // neither a peer gone nor a refusal.
 func TestReadFirst_AnEndedContextIsNeitherAPeerGoneNorARefusal(t *testing.T) {
-	errs := make(chan error, 1)
+	errs, closes := make(chan error, 1), make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -104,10 +104,12 @@ func TestReadFirst_AnEndedContextIsNeitherAPeerGoneNorARefusal(t *testing.T) {
 		cancel()
 		_, err = ReadFirst[registration](ctx, conn, time.Second, "registration required")
 		errs <- err
+		closes <- Close(context.Background(), conn, err) // the server's context, still running
 	}))
 	t.Cleanup(server.Close)
 	dialWS(t, "ws"+strings.TrimPrefix(server.URL, "http"))
 	err := <-errs
 	assert.Equal(t, context.Canceled, err, "ctx.Err(), not a refusal wrapping it")
 	assert.False(t, PeerGone(err))
+	assert.NoError(t, <-closes, "Close releases it, no failure")
 }

@@ -99,6 +99,26 @@ func TestClose_PeerDropIsReleasedNotAFailure(t *testing.T) {
 	}
 }
 
+// A context's end the handler returns, as ReadFirst's, is released with nothing sent: the
+// read under it tore the connection down.
+func TestClose_AnEndedContextIsReleasedNotAFailure(t *testing.T) {
+	for _, ended := range []error{context.Canceled, context.DeadlineExceeded, errors.Wrap(context.DeadlineExceeded)} {
+		returned, readErr := closeAfter(t, context.Background(), ended, true)
+		assert.NoError(t, returned, "a context's end (%v) is not a failure", ended)
+		assert.Equal(t, websocket.StatusCode(-1), websocket.CloseStatus(readErr), "nothing is sent once a read's context ended")
+	}
+}
+
+// A CloseWithCause whose cause is a context's end is the close the handler asked for still.
+func TestClose_ACloseWithAContextsEndForCauseIsSent(t *testing.T) {
+	err := CloseWithCause(websocket.StatusTryAgainLater, "busy", context.DeadlineExceeded)
+	returned, readErr := closeAfter(t, context.Background(), err, true)
+	assert.NoError(t, returned)
+	frame := closeFrame(t, readErr)
+	assert.Equal(t, websocket.StatusTryAgainLater, frame.Code)
+	assert.Equal(t, "busy", frame.Reason)
+}
+
 // A CloseWith says how to close, and is no failure.
 func TestClose_CloseWithSendsItsStatusAndReason(t *testing.T) {
 	returned, readErr := closeAfter(t, context.Background(), CloseWith(websocket.StatusPolicyViolation, "registration required"), true)

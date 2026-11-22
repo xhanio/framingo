@@ -59,9 +59,10 @@ func sent(err error) error {
 }
 
 // Close closes conn as the handler's err says: nil a normal closure; the peer's own
-// close, or EOF, nothing more; ctx done going away; a CloseWith its status and reason;
-// any other error an internal error, the one case it returns, for the caller to log. A
-// close the handler's Bridge sent already is not sent again.
+// close, an EOF, or a context's end — taken for a read's, which tore the connection
+// down — nothing more; ctx done going away; a CloseWith its status and reason, whatever
+// its cause; any other error an internal error, the one case it returns, for the caller
+// to log. A close the handler's Bridge sent already is not sent again.
 //
 //nolint:errcheck // closing is the last act on conn: a failed close has nowhere to go
 func Close(ctx context.Context, conn *websocket.Conn, err error) error {
@@ -76,7 +77,7 @@ func Close(ctx context.Context, conn *websocket.Conn, err error) error {
 	switch status := websocket.CloseStatus(err); {
 	case status == websocket.StatusNormalClosure, status == websocket.StatusGoingAway:
 		return nil
-	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+	case released(err):
 		// the library does not close the connection itself on EOF
 		conn.CloseNow()
 		return nil
@@ -86,6 +87,17 @@ func Close(ctx context.Context, conn *websocket.Conn, err error) error {
 	default:
 		return closeAs(conn, err)
 	}
+}
+
+// released reports whether err leaves nothing to send: the peer dropped the connection,
+// or a read's context ended. A CloseWith is never one, whatever its cause.
+func released(err error) bool {
+	var ce *closeError
+	if errors.As(err, &ce) {
+		return false
+	}
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // closeAs sends err's close: a CloseWith's status and reason, or else an internal error
