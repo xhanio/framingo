@@ -3,6 +3,9 @@ package supervisor
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/xhanio/framingo/pkg/types/common"
+	"github.com/xhanio/framingo/pkg/utils/log"
 )
 
 func failNTimes(n int) func() error {
@@ -55,6 +59,25 @@ func TestInitRetriesOwnInit(t *testing.T) {
 	require.NoError(t, m.Init(context.Background()))
 	assert.Equal(t, 3, db.initCalled, "first attempt plus two retries")
 	assert.Equal(t, 1, repo.initCalled)
+}
+
+// A retry is logged only when one follows: retry-go reports a policy's last failure as
+// it does the others, and a one-pass init's only one.
+func TestInitLogsARetryOnlyWhenOneFollows(t *testing.T) {
+	for _, tc := range []struct{ retries, logged int }{{0, 0}, {2, 2}} {
+		file := filepath.Join(t.TempDir(), "supervisor.log")
+		logger := log.New(log.WithLevel(-1), log.NoStdout(), log.WithFileWriter(file, 1, 1, 1))
+		db := newMockService("db")
+		db.initErr = fmt.Errorf("db down")
+		m := newManager(nil, WithLogger(logger), WithName("test"), WithInitPolicy(tc.retries, time.Millisecond, time.Millisecond))
+		require.NoError(t, m.Register(db))
+		require.NoError(t, m.TopoSort())
+
+		require.Error(t, m.Init(context.Background()))
+		logs, err := os.ReadFile(file)
+		require.NoError(t, err)
+		assert.Equal(t, tc.logged, strings.Count(string(logs), "retrying"), "MaxRetries %d", tc.retries)
+	}
 }
 
 // dependents fail fast without burning their own retry budget

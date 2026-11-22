@@ -127,7 +127,10 @@ func (c *controller) retryOptions(ctx context.Context, name string, policy entit
 		retry.Attempts(attempts),
 		retry.Delay(delay),
 		retry.LastErrorOnly(true),
-		retry.OnRetry(func(_ uint, err error) {
+		retry.OnRetry(func(n uint, err error) {
+			if n+1 == attempts { // retry-go reports the last try's failure too, no retry after it
+				return
+			}
 			c.log.Warnf("init of %s blocked, retrying: %s", name, err)
 		}),
 	}
