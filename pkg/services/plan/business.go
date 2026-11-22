@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/xhanio/errors"
-	"k8s.io/apimachinery/pkg/labels"
+	"github.com/xhanio/labels"
 
 	"github.com/xhanio/framingo/pkg/types/entity"
 	"github.com/xhanio/framingo/pkg/utils/job"

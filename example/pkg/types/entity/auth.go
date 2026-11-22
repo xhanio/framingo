@@ -3,7 +3,7 @@ package entity
 import (
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/labels"
+	"github.com/xhanio/labels"
 
 	"github.com/xhanio/framingo/pkg/structs/lease"
 

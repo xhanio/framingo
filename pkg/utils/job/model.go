@@ -6,8 +6,7 @@ import (
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/log"
-
-	"k8s.io/apimachinery/pkg/labels"
+	"github.com/xhanio/labels"
 )
 
 type Func func(ctx Context) error

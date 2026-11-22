@@ -3,7 +3,7 @@ package entity
 import (
 	"time"
 
-	"k8s.io/apimachinery/pkg/labels"
+	"github.com/xhanio/labels"
 )
 
 // PlanKindCommand takes a jobs.Command as Params; its runs report PlanRunStarted/PlanRunFinished.

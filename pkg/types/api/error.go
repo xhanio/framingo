@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
-	"k8s.io/apimachinery/pkg/labels"
+	"github.com/xhanio/labels"
 
 	"github.com/xhanio/errors"
 )
@@ -86,7 +86,7 @@ func WrapError(err error, c echo.Context) *ErrorBody {
 			Code:    code,
 			Kind:    e.Category().Error(),
 			Message: e.Message(), // only expose the latest level error message
-			Details: details,
+			Details: labels.Set(details),
 		}
 	case errors.Category:
 		status := e.StatusCode()

@@ -7,10 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/xhanio/errors"
 	"github.com/xhanio/framingo/pkg/utils/log"
+	"github.com/xhanio/labels"
 )
 
 var _ Job = (*job)(nil)

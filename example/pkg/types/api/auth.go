@@ -1,6 +1,6 @@
 package api
 
-import "k8s.io/apimachinery/pkg/labels"
+import "github.com/xhanio/labels"
 
 type SessionResponse struct {
 	Metadata             labels.Set `json:"metadata,omitempty"`

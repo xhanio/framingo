@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/xhanio/errors"
-	"k8s.io/apimachinery/pkg/labels"
+	"github.com/xhanio/labels"
 
 	"github.com/xhanio/framingo/pkg/services/task"
 	"github.com/xhanio/framingo/pkg/types/entity"

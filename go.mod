@@ -45,10 +45,11 @@ require (
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 	gorm.io/plugin/opentelemetry v0.1.16
-	k8s.io/apimachinery v0.34.1
 	moul.io/zapgorm2 v1.3.0
 	software.sslmate.com/src/go-pkcs12 v0.6.0
 )
+
+require k8s.io/apimachinery v0.34.1 // indirect
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -101,6 +102,7 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
+	github.com/xhanio/labels v0.1.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
