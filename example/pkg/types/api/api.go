@@ -27,28 +27,35 @@ type Context interface {
 	TraceID() (string, bool)
 }
 
-// ctx takes Deadline/Done/Err from the request's context but answers Value from echo's store.
+// ctx takes Deadline/Done/Err from the request's context as the handler got it, and
+// answers a string key from echo's store, then the request's context.
 type ctx struct {
 	echo.Context
+	// the request's context as the handler got it: database/sql reads Done and Err
+	// from a goroutine of its own, which may run after echo reset this pooled
+	// echo.Context for another request
+	request context.Context
 }
 
 func (c *ctx) Deadline() (time.Time, bool) {
-	return c.Request().Context().Deadline()
+	return c.request.Deadline()
 }
 
 func (c *ctx) Done() <-chan struct{} {
-	return c.Request().Context().Done()
+	return c.request.Done()
 }
 
 func (c *ctx) Err() error {
-	return c.Request().Context().Err()
+	return c.request.Err()
 }
 
 func (c *ctx) Value(key any) any {
 	if k, ok := key.(string); ok {
-		return c.Get(k)
+		if v := c.Get(k); v != nil {
+			return v
+		}
 	}
-	return c.Request().Context().Value(key)
+	return c.request.Value(key)
 }
 
 func (c *ctx) Credential() (*entity.Credential, bool) {
@@ -92,11 +99,26 @@ func (c *ctx) BindAny(i any) error {
 	return c.Bind(i)
 }
 
+// WrapContext adapts an echo.Context into a Context. WrapHandler and WrapWebSocket
+// call it; call it yourself only to serve a handler on a bare echo instance, as a
+// test does.
+//
+// Deadline, Done and Err, and Value for any key but a string, answer from the
+// request's context as it is at the call, after the middlewares: a goroutine the
+// request started, database/sql's once a query's rows close, may still ask them after
+// the handler returned. The echo half, Value's string keys, Param, Bind and the rest,
+// must not outlive the handler: echo pools its contexts and resets one for the next
+// request. context.WithoutCancel(c) drops the cancellation, not the echo half; work
+// that outlives the request takes what it needs as arguments.
+func WrapContext(c echo.Context) Context {
+	return &ctx{Context: c, request: c.Request().Context()}
+}
+
 type WebSocketHandlerFunc func(Context, *websocket.Conn) error
 
 func WrapWebSocket(wf WebSocketHandlerFunc) func(echo.Context, *websocket.Conn) error {
 	return func(c echo.Context, conn *websocket.Conn) error {
-		return wf(&ctx{c}, conn)
+		return wf(WrapContext(c), conn)
 	}
 }
 
@@ -104,7 +126,7 @@ type HandlerFunc func(Context) error
 
 func WrapHandler(hf HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		return hf(&ctx{c})
+		return hf(WrapContext(c))
 	}
 }
 
