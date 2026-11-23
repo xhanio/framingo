@@ -30,7 +30,7 @@ func (mw *middlewares) Error(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		err := next(c)
 		if err != nil {
-			apiError := api.WrapError(err, c)
+			apiError := api.WrapError(err)
 			apiError.Source = mw.server.Name()
 			c.Set(api.ContextKeyError, apiError)
 			return apiError
@@ -81,9 +81,7 @@ func (mw *middlewares) Recover(next echo.HandlerFunc) echo.HandlerFunc {
 				mw.server.log.Error(string(debug.Stack()))
 				var err error
 				switch e := r.(type) {
-				case errors.Error:
-					err = errors.Wrapf(e, "!! recover from panic")
-				case errors.Category:
+				case error: // keeps its category, whichever package wrapped it
 					err = errors.Wrapf(e, "!! recover from panic")
 				default:
 					err = errors.Newf("!! recover from panic: %v", r)

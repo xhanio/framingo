@@ -663,7 +663,8 @@ WantedBy=multi-user.target
 
 3. **Error Handling**
    - Always use `github.com/xhanio/errors` — never `fmt.Errorf` or stdlib `errors`
-   - Always wrap with `errors.Wrap`/`errors.Wrapf` instead of returning raw `err`
+   - Wrap an error where it enters from another package (`errors.Wrap`, `errors.Wrapf`, a category's `Wrap`); return your own code's errors as they are, or `Wrapf` them with what the caller knows
+   - Match errors with `errors.Is`/`errors.As`, never `==`
    - Pick the category (`NotFound`, `BadRequest`, `Internal`, …) that should map to the HTTP status
 
 4. **Configuration**

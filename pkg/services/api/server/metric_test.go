@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	tracemw "github.com/xhanio/framingo/pkg/middlewares/trace"
+	"github.com/xhanio/framingo/pkg/types/common"
 	"github.com/xhanio/framingo/pkg/utils/testutil"
 )
 
@@ -149,6 +150,51 @@ func TestMetrics_StatusFromErrorBody(t *testing.T) {
 
 	fail := pointsWith(pts, status(500), route("/fail"), attribute.String("error.type", "500"))
 	require.Len(t, fail, 1)
+}
+
+// methodGate is a user middleware answering 405 for /ok itself, ahead of the
+// server's info and error middlewares.
+type methodGate struct{}
+
+func (m *methodGate) Name() string                   { return "gate" }
+func (m *methodGate) Dependencies() []common.Service { return nil }
+func (m *methodGate) Func(enabled bool, config []byte) (func(echo.HandlerFunc) echo.HandlerFunc, error) {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if c.Request().URL.Path == "/ok" {
+				return echo.ErrMethodNotAllowed
+			}
+			return next(c)
+		}
+	}, nil
+}
+
+// An HTTP error from a middleware outside the error middleware reaches the
+// client and the metrics with the same status.
+func TestMetrics_StatusFromAMiddlewaresHTTPError(t *testing.T) {
+	reader, provider := testutil.NewMeterRecorder()
+	port := freePort(t)
+	m := testManager()
+	require.NoError(t, m.Add("http",
+		WithEndpoint("127.0.0.1", port, "/"),
+		WithMeter(testutil.NewMeter(provider)),
+		WithMiddlewares(&methodGate{}),
+		WithMiddlewareConfigs([]byte("gate:\n")),
+	))
+	require.NoError(t, m.RegisterRouters(metricsRouter()))
+	require.NoError(t, m.Start(context.Background()))
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	waitReady(t, base)
+	t.Cleanup(func() {
+		dropIdleConns()
+		require.NoError(t, m.Stop(context.Background()))
+	})
+
+	code, _ := httpDo(t, "GET", base+"/ok")
+	require.Equal(t, http.StatusMethodNotAllowed, code)
+	pts := pointsWith(histogramPoints[float64](t, reader, "http.server.request.duration"), status(http.StatusMethodNotAllowed))
+	require.Len(t, pts, 1)
+	assert.Equal(t, uint64(1), pts[0].Count)
 }
 
 func TestMetrics_UnmatchedRouteHasNoRoute(t *testing.T) {

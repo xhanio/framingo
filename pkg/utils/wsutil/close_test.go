@@ -2,6 +2,7 @@ package wsutil
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -74,6 +75,17 @@ func TestClose_HandlerErrorIsAnInternalErrorAndReturned(t *testing.T) {
 	frame := closeFrame(t, readErr)
 	assert.Equal(t, websocket.StatusInternalError, frame.Code)
 	assert.Equal(t, "handler broke", frame.Reason)
+}
+
+// The reason tells the client no more than a 500 would: another package's message, a
+// driver's, stays in the returned error for the log.
+func TestClose_AnotherPackagesMessageStaysInTheLog(t *testing.T) {
+	handlerErr := errors.Wrap(fmt.Errorf("dial tcp 10.0.0.7:5432: connection refused"))
+	returned, readErr := closeAfter(t, context.Background(), handlerErr, true)
+	assert.ErrorIs(t, returned, handlerErr)
+	frame := closeFrame(t, readErr)
+	assert.Equal(t, websocket.StatusInternalError, frame.Code)
+	assert.Equal(t, "Internal Server Error", frame.Reason)
 }
 
 func TestClose_EndedContextIsGoingAway(t *testing.T) {

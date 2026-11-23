@@ -48,12 +48,9 @@ func (m *manager) AuthenticateUser(ctx context.Context, organization, username, 
 	cred, localUserErr := m.authenticateLocalUser(ctx, organization, username, password)
 	if localUserErr == nil {
 		return cred, nil
-	} else {
-		if baseErr, ok := ldapErr.(errors.Error); ok {
-			if baseErr.Category() == errors.Forbidden {
-				return nil, errors.Wrap(ldapErr)
-			}
-		}
+	}
+	if errors.Is(ldapErr, errors.Forbidden) {
+		return nil, errors.Wrap(ldapErr)
 	}
 
 	return nil, errors.Unauthorized.Newf("failed to authenticate user %s", username)

@@ -31,8 +31,9 @@ func (m *manager) webSocket(s *server, fn wsHandler) echo.HandlerFunc {
 			conn.Close(websocket.StatusGoingAway, "server shutting down")
 		})()
 		// hijacked: fn's error cannot go back to echo; ctx, not the request's, ends on stop
+		// only an error the handler did not mean comes back: this is its one report
 		if err := wsutil.Close(ctx, conn, fn(c, conn)); err != nil {
-			m.log.Error(errors.Wrap(err))
+			m.log.Errorf("websocket %s failed: %+v", c.Path(), err)
 		}
 		return nil
 	}

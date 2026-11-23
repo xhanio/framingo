@@ -20,7 +20,8 @@ require (
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	github.com/xhanio/errors v1.1.0
+	github.com/xhanio/errors v1.3.0
+	github.com/xhanio/labels v0.1.0
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.45.0
@@ -48,8 +49,6 @@ require (
 	moul.io/zapgorm2 v1.3.0
 	software.sslmate.com/src/go-pkcs12 v0.6.0
 )
-
-require k8s.io/apimachinery v0.34.1 // indirect
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -102,7 +101,6 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	github.com/xhanio/labels v0.1.0
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
@@ -117,6 +115,4 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 )

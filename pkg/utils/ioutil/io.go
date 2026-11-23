@@ -16,7 +16,7 @@ func LimitWriteAll(ctx context.Context, w io.Writer, p []byte) (int, error) {
 	for offset < length {
 		select {
 		case <-ctx.Done():
-			return offset, errors.Cancaled
+			return offset, errors.Wrap(ctx.Err()) // Canceled or DeadlineExceeded, as ctx ended
 		default:
 			n, err := w.Write(p[offset:])
 			if err != nil {
@@ -37,7 +37,7 @@ func LimitReadAll(ctx context.Context, r io.Reader, p []byte) (int, error) {
 	for offset < length {
 		select {
 		case <-ctx.Done():
-			return offset, errors.Cancaled
+			return offset, errors.Wrap(ctx.Err()) // Canceled or DeadlineExceeded, as ctx ended
 		default:
 			n, err := r.Read(p[offset:])
 			if err != nil {
@@ -65,7 +65,7 @@ func CopyBuffer(ctx context.Context, dst io.Writer, src io.Reader, buf []byte) (
 	for {
 		select {
 		case <-ctx.Done():
-			return written, errors.Cancaled
+			return written, errors.Wrap(ctx.Err()) // Canceled or DeadlineExceeded, as ctx ended
 		default:
 			nr, er := src.Read(buf)
 			if nr > 0 {

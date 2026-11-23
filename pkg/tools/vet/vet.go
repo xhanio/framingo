@@ -12,6 +12,7 @@ import (
 
 	"github.com/xhanio/framingo/pkg/tools/vet/confinit"
 	"github.com/xhanio/framingo/pkg/tools/vet/depslist"
+	"github.com/xhanio/framingo/pkg/tools/vet/errmsg"
 	"github.com/xhanio/framingo/pkg/tools/vet/gormfield"
 	"github.com/xhanio/framingo/pkg/tools/vet/optionclass"
 	"github.com/xhanio/framingo/pkg/tools/vet/platformfirst"
@@ -22,6 +23,7 @@ func Analyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
 		confinit.Analyzer,
 		depslist.Analyzer,
+		errmsg.Analyzer,
 		gormfield.Analyzer,
 		optionclass.Analyzer,
 		platformfirst.Analyzer,

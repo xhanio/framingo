@@ -22,7 +22,7 @@ type desDecryptor struct {
 func (r *desDecryptor) Read(buf []byte) (n int, err error) {
 	select {
 	case <-r.ctx.Done():
-		return 0, errors.Cancaled
+		return 0, errors.Wrap(r.ctx.Err()) // Canceled or DeadlineExceeded, as ctx ended
 	default:
 		block := make([]byte, r.m.BlockSize())
 		n, err = io.ReadFull(r.r, block)

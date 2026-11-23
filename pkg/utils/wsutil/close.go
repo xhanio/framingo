@@ -4,10 +4,13 @@ import (
 	"context"
 	"io"
 	"net"
+	"net/http"
 	"unicode/utf8"
 
 	"github.com/coder/websocket"
 	"github.com/xhanio/errors"
+
+	fapi "github.com/xhanio/framingo/pkg/types/api"
 )
 
 // maxReason is as long as a close frame's reason may be: coder/websocket drops a longer
@@ -101,7 +104,8 @@ func released(err error) bool {
 }
 
 // closeAs sends err's close: a CloseWith's status and reason, or else an internal error
-// carrying err's message — returned then, for the caller to log.
+// carrying what a 500 would tell the client (fapi.PublicMessage) — err returned then,
+// whole, for the caller to log.
 //
 //nolint:errcheck // closing is the last act on conn: a failed close has nowhere to go
 func closeAs(conn *websocket.Conn, err error) error {
@@ -109,7 +113,7 @@ func closeAs(conn *websocket.Conn, err error) error {
 	if errors.As(err, &ce) {
 		conn.Close(ce.status, truncate(ce.reason))
 	} else {
-		conn.Close(websocket.StatusInternalError, truncate(err.Error()))
+		conn.Close(websocket.StatusInternalError, truncate(fapi.PublicMessage(err, http.StatusInternalServerError)))
 	}
 	return failure(err)
 }

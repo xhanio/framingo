@@ -88,10 +88,17 @@ func (s *server) print(req *api.RequestInfo, resp *api.ResponseInfo) {
 	parts = append(parts, fmt.Sprintf("%-23s", "tid="+color.YellowString(tid)))
 	parts = append(parts, req.URI)
 	if resp.Status >= 400 && resp.Error != nil {
-		if s.log.Level() == zapcore.DebugLevel {
-			s.log.Errorf("%v", resp.Error.Origin)
-		} else if resp.Status >= 500 {
-			s.log.Errorf("%s", resp.Error.Origin)
+		var origin error = resp.Error
+		if resp.Error.Origin != nil { // a body a handler returned as is has none
+			origin = resp.Error.Origin
+		}
+		switch {
+		case s.log.Level() == zapcore.DebugLevel, resp.Status == http.StatusInternalServerError:
+			// the server's own fault: code, details and the stack that locates it
+			s.log.Errorf("%+v", origin)
+		case resp.Status >= http.StatusInternalServerError:
+			// a dependency down or a deadline passed: a stack adds nothing, and an outage repeats it on every request
+			s.log.Errorf("%s", origin)
 		}
 		s.log.Error(parts...)
 	} else {

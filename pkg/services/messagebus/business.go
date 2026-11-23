@@ -84,15 +84,16 @@ func (m *manager) listen(ctx context.Context, svc common.Named, ch <-chan entity
 			if isMH {
 				if e, ok := msg.Payload.(common.Message); ok {
 					handled = true
+					// a subscriber's error ends here, so this log carries its stack
 					if err := mh.HandleMessage(ctx, e); err != nil {
-						m.log.Errorf("error handling message: subscriber=%s error=%v", svc.Name(), err)
+						m.log.Errorf("error handling message: subscriber=%s error=%+v", svc.Name(), err)
 					}
 				}
 			}
 			if isRMH {
 				handled = true
 				if err := rmh.HandleRawMessage(ctx, msg.Kind, msg.Payload); err != nil {
-					m.log.Errorf("error handling raw message: subscriber=%s error=%v", svc.Name(), err)
+					m.log.Errorf("error handling raw message: subscriber=%s error=%+v", svc.Name(), err)
 				}
 			}
 			if !handled {

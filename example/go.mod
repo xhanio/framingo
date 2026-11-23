@@ -6,8 +6,9 @@ require (
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
-	github.com/xhanio/errors v1.1.0
+	github.com/xhanio/errors v1.3.0
 	github.com/xhanio/framingo v0.9.11
+	github.com/xhanio/labels v0.1.0
 )
 
 // remove this when you bootstrap your own project
@@ -29,8 +30,6 @@ require (
 	gorm.io/gorm v1.31.1
 	gorm.io/plugin/opentelemetry v0.1.16
 )
-
-require k8s.io/apimachinery v0.34.1 // indirect
 
 require (
 	dario.cat/mergo v1.0.1 // indirect
@@ -99,7 +98,6 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
-	github.com/xhanio/labels v0.1.0
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.45.0 // indirect
@@ -128,8 +126,6 @@ require (
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
 	gorm.io/driver/sqlite v1.6.0 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 	moul.io/zapgorm2 v1.3.0 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.6.0 // indirect
 )

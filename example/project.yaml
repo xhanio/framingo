@@ -43,9 +43,11 @@ env:
     docker_compose_tgt: dist/local
 
   prod:
-    # replaces default's debug build args (-N -l disables optimization)
+    # replaces default's debug build args (-N -l disables optimization); -trimpath
+    # keeps the build machine's paths out of the stack traces a 500 logs
     binary_build_args:
       - -v
+      - -trimpath
     # image_prefix: registry.example.com/framingo-example   # your registry
 
     config_src: env/prod/config
