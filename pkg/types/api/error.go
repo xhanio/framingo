@@ -83,7 +83,7 @@ func (e *ErrorBody) verbose() string {
 // c.Bind's 400 among them - answers with its code, and no kind. An *ErrorBody
 // returned as is is the handler's own answer and goes out unchanged; wrapped, it
 // may be another service's, which is not honoured. Message is PublicMessage's;
-// Origin keeps the whole chain for the log.
+// Origin keeps the whole chain for the log (design/errors.md).
 func WrapError(err error) *ErrorBody {
 	if body, ok := err.(*ErrorBody); ok { //nolint:errorlint // returned as is alone: see the doc
 		return body
@@ -111,13 +111,10 @@ func StatusCode(err error) int {
 }
 
 // PublicMessage is what a response at status tells a client of err: the
-// outermost message the server's own code wrote (errors.MessageOf), as
-// errors.Wrapf(err, "failed to load user") does, and nothing for a bare
-// Category, which the response's kind names. Where the server's code wrote
-// none, a 5xx says its status text: the text of the error it received, which
-// errors.Wrap(err) would surface, can carry hosts, users or queries. A 4xx is
-// the caller's to fix and says that text, which tells them how: an echo error's
-// message, a failed validation's fields.
+// outermost message the server's own code wrote (errors.MessageOf), and nothing
+// for a bare Category, which the response's kind names. Where the code wrote
+// none, a 5xx says its status text, and a 4xx the text of the error it received
+// - an echo error's message, a failed validation's fields (design/errors.md).
 func PublicMessage(err error, status int) string {
 	if err == nil {
 		return ""

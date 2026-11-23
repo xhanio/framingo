@@ -19,7 +19,8 @@ func main() {
 Everything real lives in the component packages; the `main` never grows.
 `exampleapp` prints its exit error with `%+v`, so a failed startup shows
 where it failed; `examplecli` prints `%v`, the message alone, for whoever
-runs the CLI.
+runs the CLI. Both roots set `SilenceErrors`, so cobra prints nothing of its
+own and the `main`'s line is the error's only one.
 
 ## `cmd/app` — The Daemon Binary
 

@@ -19,7 +19,7 @@ import "github.com/xhanio/errors"
 errors.Newf("unsupported db type: %s", dbtype)
 
 // Categorized errors (maps to specific HTTP status codes)
-errors.BadRequest.Newf("invalid request: %v", err)
+errors.BadRequest.Newf("page size %d over the limit of %d", size, limit)
 errors.NotFound.Newf("user %s not found", id)
 errors.Unauthorized.Newf("invalid token")
 errors.Conflict.Newf("resource %s already exists", name)
@@ -111,8 +111,8 @@ result per item instead.
 
 A category travels with its error, so a `NotFound` from another service you
 call becomes your own 404 when you return it. `Handled` puts a barrier in
-front of it — `Is`, `As`, categories and codes no longer see it, the stack
-trace still does — so you say what the failure means to you:
+front of it — `Is`, `As`, categories and codes do not see past it, the stack
+trace does — so you say what the failure means to you:
 
 ```go
 return errors.Unavailable.Wrapf(errors.Handled(err), "call users service") // 503
@@ -207,9 +207,9 @@ level; a 503 or 504 it logs with `%s`.
 | `Unavailable` | 503 | Service unavailable |
 | `DeadlineExceeded` | 504 | Timeout; `context.DeadlineExceeded` resolves to it |
 
-`Cancaled` is a deprecated alias of `Canceled`, the same category. `Canceled`
-was named `Cancelled` before errors v1.2, and `LookupCategory("Cancelled")`
-still finds it, so a client reads a `Kind` from an older server.
+`Cancaled` is a deprecated alias of `Canceled`, the same category.
+`LookupCategory("Cancelled")` finds `Canceled` too: it is the `Kind` a server
+on errors before v1.2 sends.
 
 The API server turns a handler's error into the response by this table —
 status from the category the error resolves to, `Kind` from its name

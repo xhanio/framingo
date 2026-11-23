@@ -53,7 +53,7 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 		if r.Header.Get("Content-Encoding") == "deflate" {
 			reader, err := zlib.NewReader(r.Body)
 			if err != nil {
-				return errors.BadRequest.Newf("failed to deflate request body: %s", err)
+				return errors.BadRequest.Wrapf(err, "failed to deflate request body")
 			}
 			// its Close releases the zlib reader; net/http closes the original body itself
 			c.Request().Body = ioutil.NewLimitReader(reader, m.maxDecompressed)

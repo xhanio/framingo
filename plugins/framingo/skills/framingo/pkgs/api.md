@@ -526,7 +526,7 @@ Returning `errors.NotFound.Newf(...)` from a handler sets `Status: 404` and `Kin
 | `context.Canceled` / `context.DeadlineExceeded`, however wrapped | 499 with its message / 504 with the status text | `Canceled` / `DeadlineExceeded` |
 | an `errors.Combine` of several reasons no category wraps | 500, the status text | `Combined` |
 | an `*echo.HTTPError`, however wrapped, where no category was declared (`errors.Categorized`) | its code, its message | none |
-| `*api.ErrorBody` | passed through as is | as set |
+| an `*api.ErrorBody` returned as is (wrapped, it may be another service's: anything else) | passed through | as set |
 | a request matching no route | 404 | `NotFound` |
 | anything else | 500, the status text | `Internal` |
 
@@ -534,7 +534,7 @@ The server logs a 500's `Origin` with `%+v` — code, details and stack trace �
 
 ### Request validation
 
-The server installs a `go-playground/validator` instance as each echo's validator, so `c.Validate(&body)` checks the DTO's `validate:` tags. A failed tag comes back as `errors.InvalidArgument` — a 400 — so a handler returns it with a plain `errors.Wrap(err)`; validating something that is not a struct stays uncategorised, a 500, since that is the handler's bug. A failed `c.Bind` is echo's `*HTTPError`, a 400 the server honours however it was wrapped; the example's handlers still declare it, `errors.BadRequest.Wrap(err)`.
+The server installs a `go-playground/validator` instance as each echo's validator, so `c.Validate(&body)` checks the DTO's `validate:` tags. A failed tag comes back as `errors.InvalidArgument` — a 400 — so a handler returns it with a plain `errors.Wrap(err)`; validating something that is not a struct stays uncategorised, a 500, since that is the handler's bug. A failed `c.Bind` is echo's `*HTTPError`, a 400 the server honours however it was wrapped; the example's handlers declare it anyway, `errors.BadRequest.Wrap(err)`.
 
 `Source` is populated automatically by the server's built-in error middleware with the name passed to `srvMgr.Add("<name>", ...)` (e.g. `"http"`, `"admin"`). It is informational — useful when a caller talks to multiple framingo servers or when a gateway aggregates errors from several upstreams. Clients SHOULD NOT branch logic on `Source` value (the server name is a deployment detail, not part of the API contract). Its main practical use is the client-side check at [`pkg/services/api/client/client.go`](https://github.com/xhanio/framingo/blob/main/pkg/services/api/client/client.go): a 4xx/5xx body that does not parse as an `ErrorBody`, or parses with an empty `Source`, did not originate from a framingo server — a load balancer's 503 page, an HTML error from an upstream proxy — and the client reports it as an `ErrorBody` with `Source: api.ErrorSourceUnknown` (`"Unknown"`), the response's status, the raw body as `Message`, and no `Kind`.
 
@@ -566,13 +566,15 @@ func (c *myClient) doJSON(ctx context.Context, method, path string, in, out any)
             if cat := errors.LookupCategory(eb.Kind); cat != nil {
                 return cat.Wrap(eb)
             }
-            return eb // unknown category — preserve the structured payload
+            // Unknown category: wrapped, so a handler returning it never passes the
+            // backend's body off as its own answer; errors.As still finds it.
+            return errors.Wrap(eb)
         }
         return errors.Wrap(err) // transport / non-API error
     }
     defer resp.Body.Close()
     if out != nil {
-        return json.NewDecoder(resp.Body).Decode(out)
+        return errors.Wrap(json.NewDecoder(resp.Body).Decode(out))
     }
     return nil
 }

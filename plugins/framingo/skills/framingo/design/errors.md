@@ -50,9 +50,9 @@ repositories did this. An assertion fails the same way, and an
 
 **Cost.** Code that looks at an error's outermost value on purpose says so:
 `fapi.WrapError` passes an `*api.ErrorBody` through only when the handler
-returned it as is — wrapped, it may be another service's — and a bare
-category says nothing past its name; each carries a `//nolint:errorlint` with
-that reason.
+returned it as is — wrapped, it may be another service's — and
+`fapi.PublicMessage` says nothing past a bare category's name; each carries a
+`//nolint:errorlint` with that reason.
 
 ## A category is declared once, outermost
 
@@ -95,8 +95,8 @@ and `Details` first.
 reasons, and whoever combines declares what the failure is:
 `errors.BadRequest.Wrapf(errors.Combine(fieldErrs...), "invalid request")`.
 Undeclared, it is `Combined`, a 500. Where the reasons are about alike items,
-each names its item — the supervisor's each name their service. A batch whose
-items fail one by one returns a result per item instead.
+each names its item. A batch whose items fail one by one returns a result per
+item instead.
 
 **Why.** Several `BadRequest`s are not a `BadRequest` until someone says so:
 `Combined` is an archive judged only once unpacked, with `Any`, `All` or

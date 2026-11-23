@@ -34,7 +34,7 @@ func NewProgressWriter(ctx context.Context, w io.Writer, size int64) ProgressWri
 func (pw *pwriter) Write(p []byte) (int, error) {
 	select {
 	case <-pw.ctx.Done():
-		return 0, errors.Wrap(pw.ctx.Err()) // resolves to Canceled or DeadlineExceeded
+		return 0, errors.Wrap(pw.ctx.Err()) // Canceled or DeadlineExceeded, as ctx ended
 	default:
 		n, err := pw.w.Write(p)
 		pw.Lock()
