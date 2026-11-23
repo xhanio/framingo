@@ -13,7 +13,7 @@ var (
 
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		// SilenceErrors: true,
+		SilenceErrors: true, // main prints the error, with its stack
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if help {
 				_ = cmd.Help()

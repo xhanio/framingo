@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/xhanio/errors"
 
 	"github.com/xhanio/framingo/pkg/services/pubsub/driver"
 	"github.com/xhanio/framingo/pkg/types/entity"
@@ -223,4 +224,22 @@ func TestManagerInfoReportsDeliveryStats(t *testing.T) {
 	out := buf.String()
 	assert.Contains(t, out, "dropped")
 	assert.Contains(t, out, "evicted")
+}
+
+// failingDriver is a memory driver whose Publish fails as a backend would.
+type failingDriver struct {
+	driver.Driver
+	err error
+}
+
+func (d *failingDriver) Publish(context.Context, string, string, string, any) error { return d.err }
+
+// A failed publish is returned with its topic, for the caller's one report of it.
+func TestManagerPublishFailureCarriesTheTopic(t *testing.T) {
+	backend := errors.Newf("redis: connection refused")
+	m := newManager(&failingDriver{Driver: driver.NewMemory(log.Default), err: backend})
+	err := m.Publish(context.Background(), "a", "orders/created", "kind", nil)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, backend)
+	assert.Equal(t, "publish to topic orders/created: redis: connection refused", err.Error())
 }

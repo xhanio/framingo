@@ -22,7 +22,8 @@ var (
 
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		SilenceUsage: true,
+		SilenceErrors: true, // main prints the error
+		SilenceUsage:  true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if help {
 				_ = cmd.Help()
