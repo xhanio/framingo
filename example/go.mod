@@ -7,7 +7,7 @@ require (
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
 	github.com/xhanio/errors v1.3.0
-	github.com/xhanio/framingo v0.9.11
+	github.com/xhanio/framingo v0.9.12
 	github.com/xhanio/labels v0.1.0
 )
 
