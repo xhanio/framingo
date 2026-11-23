@@ -31,13 +31,11 @@ func (m *manager) migrate(url string, version uint) error {
 		m.log.Info("migrating db to latest version")
 		err = migrator.Up()
 	}
-	if err != nil {
-		switch err {
-		case migrate.ErrNoChange:
-			m.log.Warn("skip migrating db: no change detected")
-		default:
-			return errors.Wrap(err)
-		}
+	switch {
+	case errors.Is(err, migrate.ErrNoChange):
+		m.log.Warn("skip migrating db: no change detected")
+	case err != nil:
+		return errors.Wrap(err)
 	}
 	m.Info(os.Stdout, true)
 	return nil

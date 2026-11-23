@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/xhanio/errors"
 )
 
 func srcDir(t *testing.T) string {
@@ -35,7 +37,7 @@ func TestTargzRoundTrips(t *testing.T) {
 	tr := tar.NewReader(gzr)
 	for {
 		h, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

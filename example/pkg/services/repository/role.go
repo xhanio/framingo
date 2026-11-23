@@ -18,8 +18,8 @@ func (m *manager) CreateRole(ctx context.Context, opts entity.RoleCreateOptions)
 		Description: opts.Description,
 	}
 	if err := tx.Create(&role).Error; err != nil {
-		switch err {
-		case gorm.ErrDuplicatedKey:
+		switch {
+		case errors.Is(err, gorm.ErrDuplicatedKey):
 			return nil, errors.AlreadyExist.Wrapf(err, "role %s already exists", opts.Name)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -31,8 +31,8 @@ func (m *manager) CreateRole(ctx context.Context, opts entity.RoleCreateOptions)
 func (m *manager) getRole(tx *gorm.DB, roleID int32) (*orm.Role, error) {
 	var role *orm.Role
 	if err := tx.Model(&role).Where("id = ?", roleID).First(&role).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return nil, errors.NotFound.Wrapf(err, "role %d not found", roleID)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -52,8 +52,8 @@ func (m *manager) GetRole(ctx context.Context, roleID int32) (*entity.Role, erro
 func (m *manager) getRoleByName(tx *gorm.DB, roleName string) (*orm.Role, error) {
 	var role *orm.Role
 	if err := tx.Model(&role).Where("name = ?", roleName).First(&role).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return nil, errors.NotFound.Wrapf(err, "role %s not found", roleName)
 		default:
 			return nil, errors.DBFailed.Wrap(err)

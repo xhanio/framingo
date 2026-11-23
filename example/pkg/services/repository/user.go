@@ -26,8 +26,8 @@ func (m *manager) CreateUser(ctx context.Context, opts repo.UserCreateOptions) (
 			Title:          opts.Title,
 		}
 		if err := itx.Create(&contact).Error; err != nil {
-			switch err {
-			case gorm.ErrDuplicatedKey:
+			switch {
+			case errors.Is(err, gorm.ErrDuplicatedKey):
 				return errors.AlreadyExist.Wrapf(err, "user contact %s already exists", opts.Email)
 			default:
 				return errors.DBFailed.Wrap(err)
@@ -43,8 +43,8 @@ func (m *manager) CreateUser(ctx context.Context, opts repo.UserCreateOptions) (
 			RequirePasswordReset: opts.RequirePasswordReset,
 		}
 		if err := itx.Create(&user).Error; err != nil {
-			switch err {
-			case gorm.ErrDuplicatedKey:
+			switch {
+			case errors.Is(err, gorm.ErrDuplicatedKey):
 				return errors.AlreadyExist.Wrapf(err, "user %s already exists", opts.Username)
 			default:
 				return errors.DBFailed.Wrap(err)
@@ -63,8 +63,8 @@ func (m *manager) getUser(tx *gorm.DB, userID int32) (*orm.User, *orm.Contact, e
 	var contact *orm.Contact
 	err := tx.Transaction(func(itx *gorm.DB) error {
 		if err := itx.Model(&user).Where("id = ?", userID).First(&user).Error; err != nil {
-			switch err {
-			case gorm.ErrRecordNotFound:
+			switch {
+			case errors.Is(err, gorm.ErrRecordNotFound):
 				return errors.NotFound.Wrap(err)
 			default:
 				return errors.DBFailed.Wrap(err)
@@ -107,10 +107,7 @@ func (m *manager) ListUsers(ctx context.Context, opts entity.UserListOptions) ([
 			query = query.Where("organization_id = ?", opts.OrganizationID)
 		}
 		if err := query.Find(&users).Error; err != nil {
-			switch err {
-			default:
-				return errors.DBFailed.Wrap(err)
-			}
+			return errors.DBFailed.Wrap(err)
 		}
 		// one query for all contacts, avoiding N+1
 		ids := make([]int32, 0, len(users))
@@ -189,8 +186,8 @@ func (m *manager) DeleteUsers(ctx context.Context, userIDs []int32) error {
 func (m *manager) deleteContact(tx *gorm.DB, contactID int32) (*orm.Contact, error) {
 	var contact *orm.Contact
 	if err := tx.Model(&contact).Where("id = ?", contactID).Delete(&contact).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return nil, errors.NotFound.Wrap(err)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -202,8 +199,8 @@ func (m *manager) deleteContact(tx *gorm.DB, contactID int32) (*orm.Contact, err
 func (m *manager) getContact(tx *gorm.DB, contactID int32) (*orm.Contact, error) {
 	var contact *orm.Contact
 	if err := tx.Model(&contact).Where("id = ?", contactID).First(&contact).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return nil, errors.NotFound.Wrapf(err, "contact id %d not found", contactID)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -214,8 +211,8 @@ func (m *manager) getContact(tx *gorm.DB, contactID int32) (*orm.Contact, error)
 
 func (m *manager) updateUser(tx *gorm.DB, user *orm.User, updateMap map[string]any) error {
 	if err := tx.Model(&user).Select("username", "role", "expired").Updates(updateMap).Error; err != nil {
-		switch err {
-		case gorm.ErrDuplicatedKey:
+		switch {
+		case errors.Is(err, gorm.ErrDuplicatedKey):
 			return errors.AlreadyExist.Wrapf(err, "user %d already exists", user.ID)
 		default:
 			return errors.DBFailed.Wrap(err)
@@ -303,8 +300,8 @@ func (m *manager) GetUserByName(ctx context.Context, organizationID int32, usern
 	var user *orm.User
 	tx := m.db.FromContext(ctx)
 	if err := tx.Model(&user).Where("username = ? AND organization_id = ?", username, organizationID).First(&user).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return nil, errors.NotFound.Wrapf(err, "user %s in organization %d not found", username, organizationID)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -322,8 +319,8 @@ func (m *manager) GetUserPasswordHash(ctx context.Context, userID int32) (string
 	var user orm.User
 	tx := m.db.FromContext(ctx)
 	if err := tx.Model(&orm.User{}).Select("password").Where("id = ?", userID).First(&user).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return "", errors.NotFound.Wrapf(err, "user %d not found", userID)
 		default:
 			return "", errors.DBFailed.Wrap(err)

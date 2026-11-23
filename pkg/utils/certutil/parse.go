@@ -108,11 +108,13 @@ func ParseDERKey(der []byte, password string) (crypto.PrivateKey, error) {
 	} else {
 		_key, err = pkcs8.ParsePKCS8PrivateKey(der)
 	}
-	if err != nil {
-		if strings.Contains(err.Error(), "ParseECPrivateKey") {
-			_key, err = x509.ParseECPrivateKey(der)
-		} else if strings.Contains(err.Error(), "ParsePKCS1PrivateKey") {
-			_key, err = x509.ParsePKCS1PrivateKey(der)
+	// not PKCS #8: the two unencrypted forms left, SEC 1 and PKCS #1, keeping
+	// PKCS #8's error when neither fits rather than reading its message
+	if err != nil && password == "" {
+		if key, ecErr := x509.ParseECPrivateKey(der); ecErr == nil {
+			_key, err = key, nil
+		} else if key, rsaErr := x509.ParsePKCS1PrivateKey(der); rsaErr == nil {
+			_key, err = key, nil
 		}
 	}
 	if err != nil {

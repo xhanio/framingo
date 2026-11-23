@@ -14,8 +14,8 @@ func (m *manager) CreateOrganization(ctx context.Context, opts entity.Organizati
 	tx := m.db.FromContext(ctx)
 	organization := &orm.Organization{Name: opts.Name}
 	if err := tx.Create(&organization).Error; err != nil {
-		switch err {
-		case gorm.ErrDuplicatedKey:
+		switch {
+		case errors.Is(err, gorm.ErrDuplicatedKey):
 			return nil, errors.AlreadyExist.Wrapf(err, "organization %s already exists", opts.Name)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -27,8 +27,8 @@ func (m *manager) CreateOrganization(ctx context.Context, opts entity.Organizati
 func (m *manager) getOrganization(tx *gorm.DB, organizationID int32) (*orm.Organization, error) {
 	var organization *orm.Organization
 	if err := tx.Model(&organization).Where("id = ?", organizationID).First(&organization).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return nil, errors.NotFound.Wrapf(err, "organization %d not found", organizationID)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -49,8 +49,8 @@ func (m *manager) GetOrganizationID(ctx context.Context, organizationName string
 	tx := m.db.FromContext(ctx)
 	var org *orm.Organization
 	if err := tx.Model(&org).Where("name = ?", organizationName).First(&org).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return 0, errors.NotFound.Wrapf(err, "organization %s not found", organizationName)
 		default:
 			return 0, errors.DBFailed.Wrap(err)

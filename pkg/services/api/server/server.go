@@ -50,7 +50,7 @@ func (s *server) serve() {
 	s.err = nil
 	s.Unlock()
 	err := s.start()
-	if err == nil || err == http.ErrServerClosed {
+	if err == nil || errors.Is(err, http.ErrServerClosed) {
 		return
 	}
 	s.Lock()

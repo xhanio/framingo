@@ -86,7 +86,7 @@ func TestDownloadTar(t *testing.T) {
 	tr := tar.NewReader(bytes.NewReader(body))
 	for {
 		h, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

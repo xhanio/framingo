@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/xhanio/errors"
 )
 
 func TestNewDoubleBufferQueue(t *testing.T) {
@@ -169,7 +171,7 @@ func TestBufferedReadAfterClose(t *testing.T) {
 
 	readBuf := make([]byte, 10)
 	n, err := queue.Read(readBuf)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("Expected EOF after close, got %v", err)
 	}
 	if n != 0 {
@@ -264,7 +266,7 @@ func TestBufferedConcurrentWriteRead(t *testing.T) {
 		maxReads := 20 // prevent infinite loop
 		for reads := 0; reads < maxReads; reads++ {
 			n, err := queue.Read(readBuf)
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) {
 				t.Errorf("Reader failed: %v", err)
 				return
 			}

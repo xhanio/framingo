@@ -48,7 +48,7 @@ func parseRouterConfig(data []byte) ([]*handlerGroupConfig, error) {
 	for doc := 1; ; doc++ {
 		var g *handlerGroupConfig
 		err := dec.Decode(&g)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

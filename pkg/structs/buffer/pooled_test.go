@@ -3,6 +3,8 @@ package buffer
 import (
 	"io"
 	"testing"
+
+	"github.com/xhanio/errors"
 )
 
 var test_pool = NewPool[byte]()
@@ -101,7 +103,7 @@ func TestPooledBufferRead(t *testing.T) {
 	}
 
 	n, err = buffer.Read(readBuf2)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("Expected EOF, got %v", err)
 	}
 	if n != 0 {

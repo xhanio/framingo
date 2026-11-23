@@ -28,8 +28,8 @@ func (m *manager) CreateCertificate(ctx context.Context, opts entity.CertCreateO
 	}
 	tx := m.db.FromContext(ctx)
 	if err := tx.Create(&cert).Error; err != nil {
-		switch err {
-		case gorm.ErrDuplicatedKey:
+		switch {
+		case errors.Is(err, gorm.ErrDuplicatedKey):
 			return nil, errors.AlreadyExist.Wrapf(err, "certificate %s already exists", cert.Name)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -41,8 +41,8 @@ func (m *manager) CreateCertificate(ctx context.Context, opts entity.CertCreateO
 func (m *manager) getCertificate(tx *gorm.DB, certID int32) (*orm.Certificate, error) {
 	var cert *orm.Certificate
 	if err := tx.Model(&orm.Certificate{}).Where("id = ?", certID).First(&cert).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return nil, errors.NotFound.Wrapf(err, "certificate %d not found", certID)
 		default:
 			return nil, errors.DBFailed.Wrap(err)
@@ -63,8 +63,8 @@ func (m *manager) GetCertificateByName(ctx context.Context, certName string) (*e
 	tx := m.db.FromContext(ctx)
 	var cert *orm.Certificate
 	if err := tx.Model(&orm.Certificate{}).Where("name = ?", certName).First(&cert).Error; err != nil {
-		switch err {
-		case gorm.ErrRecordNotFound:
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			return nil, errors.NotFound.Wrapf(err, "certificate %s not found", certName)
 		default:
 			return nil, errors.DBFailed.Wrap(err)

@@ -71,8 +71,8 @@ func (m *middleware) handle(next echo.HandlerFunc) echo.HandlerFunc {
 			if sessionID == "" {
 				cookie, err := c.Cookie(fapi.CookiesKeySession)
 				if err != nil {
-					switch err {
-					case http.ErrNoCookie:
+					switch {
+					case errors.Is(err, http.ErrNoCookie):
 						return errors.Unauthorized.Newf("no session header or cookie available")
 					default:
 						return errors.BadRequest.Wrap(err)

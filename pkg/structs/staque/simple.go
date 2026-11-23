@@ -203,12 +203,12 @@ func convert[T any](data any) (T, error) {
 	}
 	b, err := json.Marshal(&data)
 	if err != nil {
-		return *new(T), errors.Wrapf(err, "")
+		return *new(T), errors.Wrap(err)
 	}
 	var r T
 	err = json.Unmarshal(b, &r)
 	if err != nil {
-		return *new(T), errors.Wrapf(err, "")
+		return *new(T), errors.Wrap(err)
 	}
 	return r, nil
 }
